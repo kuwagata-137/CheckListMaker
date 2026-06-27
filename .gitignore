@@ -1,0 +1,14 @@
+# 依存パッケージ
+node_modules/
+
+# 録画機能が出力するスクリーンショット
+00_スクリーンショット/
+
+# Electron ビルド成果物
+dist/
+out/
+
+# OS / エディタ
+.DS_Store
+Thumbs.db
+*.log
