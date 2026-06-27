@@ -42,6 +42,35 @@ npm start            # CheckListMaker を起動
 > OS連携が必要な録画機能だけが使えず（録画ボタンは無効表示）になります。混乱を避けるため、
 > 通常は上記のデスクトップ起動を使ってください。
 
+## 配布物（インストーラ）を作る — Windows
+
+毎回 `npm start` せずに**ダブルクリックで起動できるインストーラ (.exe)** を作れます。
+`electron-builder` を同梱しているので、**Windows 上で**以下を実行してください。
+
+```bash
+npm install          # 依存を取得（electron / electron-builder など）
+npm run dist         # dist/ に CheckListMaker のインストーラ(.exe)を生成
+```
+
+- 出力先: **`dist/`**（例: `dist/CheckListMaker Setup 1.0.0.exe`）。
+- インストール方式: 現在のユーザー向けワンクリック（管理者不要）。既定の導入先は
+  `%LOCALAPPDATA%\Programs\CheckListMaker\` で、デスクトップとスタートメニューに
+  ショートカットが作られます。
+- 録画のスクリーンショットは、このアプリ実行ファイルと同じフォルダ直下の
+  `00_スクリーンショット` に保存されます（上記の導入先はユーザー書き込み可のため、
+  管理者権限なしで保存できます）。
+
+前提・注意:
+- **ビルドは利用する OS と同じ OS 上で行うのが確実**です（録画用ネイティブモジュール
+  `uiohook-napi` を含むため）。Windows 用インストーラは Windows 上で作成してください。
+- `uiohook-napi` はプリビルドのネイティブバイナリを同梱しますが、環境によっては
+  ビルドツール（Visual Studio Build Tools / Python）が必要になることがあります。その場合は
+  先に `npm run rebuild` を実行してください。
+- アイコンは未同梱のため既定の Electron アイコンになります。独自アイコンを使う場合は
+  `build/icon.ico`（256x256 以上）を置けば自動採用されます。
+- macOS / Linux 版が必要な場合は、それぞれの OS 上で `npx electron-builder --mac` /
+  `--linux` を実行してください（`package.json` の `build` 設定は流用できます）。
+
 ## 録画（クリック連動スクリーンショット）
 
 操作手順を記録したいとき向けの機能です。**録画ボタン（⏺）を押すと、以降クリックする
