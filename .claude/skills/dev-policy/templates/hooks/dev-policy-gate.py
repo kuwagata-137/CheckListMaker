@@ -16,16 +16,25 @@ import re
 import sys
 
 
-def ask(reason: str) -> None:
-    """ユーザー確認を要求して終了する。"""
+def _decide(decision: str, reason: str) -> None:
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
-            "permissionDecision": "ask",
+            "permissionDecision": decision,
             "permissionDecisionReason": reason,
         }
     }))
     sys.exit(0)
+
+
+def ask(reason: str) -> None:
+    """ユーザー確認を要求して終了する（指示があれば通せる操作向け）。"""
+    _decide("ask", reason)
+
+
+def deny(reason: str) -> None:
+    """操作をハード遮断して終了する（そもそも行ってはいけない操作向け）。"""
+    _decide("deny", reason)
 
 
 def main() -> None:
@@ -59,8 +68,9 @@ def main() -> None:
                 r")",
                 cmd,
             ):
-                ask("開発方針 領域3: `main` への直接 push は禁止。"
-                    "ユーザーの明示的な許可があるか確認してください。")
+                deny("開発方針 領域3: `main` への直接 push は禁止。"
+                     "main へ入れるのは『ユーザーが PR をマージする』経路のみ。"
+                     "作業ブランチへ push し、PR 化はユーザーに任せること。")
             # ブランチ削除の push
             if re.search(r"\bgit\s+push\b[^|;&\n]*"
                          r"(\s--delete\b|\s-d\b|\borigin\s+:)", cmd):
