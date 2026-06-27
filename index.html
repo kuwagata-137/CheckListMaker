@@ -266,17 +266,98 @@
   .item-text:focus { border-color: var(--border); background: var(--surface); outline: none; }
   .item input[type='checkbox'] { width: 18px; height: 18px; cursor: pointer; }
 
-  .add-item { padding: 4px 14px 12px; }
-  .add-item-input {
-    width: 100%;
-    padding: 7px 10px;
-    border: 1px dashed var(--border);
-    border-radius: 8px;
+  /* セクションバーの「＋」追加ボタン */
+  .icon.add {
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 1.15rem;
+    line-height: 1;
+  }
+  .icon.add:hover { background: var(--primary); color: var(--primary-text); }
+
+  /* 空セクションの余白（項目ゼロでもバーがつぶれないように） */
+  .items:empty { padding: 2px 8px; }
+  .items.steps:empty::after {
+    content: '右上の ＋ から手順を追加';
+    display: block;
+    color: var(--muted);
+    font-size: 0.85rem;
+    padding: 6px 8px 10px 8px;
+  }
+
+  /* ---- テンプレート型：番号付きタイムライン手順 ---- */
+  .items.steps { padding: 8px 12px 12px; }
+  .step {
+    display: grid;
+    grid-template-columns: 30px 1fr;
+    gap: 10px;
+    align-items: stretch;
+    padding: 0;
+  }
+  .step:hover { background: transparent; }
+  .step-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: grab;
+  }
+  .step-badge {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 700;
+  }
+  .step.done .step-badge {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .step-line {
+    flex: 1 1 auto;
+    width: 2px;
+    background: var(--border);
+    margin: 4px 0 0;
+    min-height: 6px;
+  }
+  .step:last-child .step-line { display: none; }
+  .step-body { padding-bottom: 12px; min-width: 0; }
+  .step-main { display: flex; align-items: center; gap: 8px; }
+  .step-text { flex: 1; font-weight: 600; }
+  .step.done .step-text { text-decoration: line-through; color: var(--muted); font-weight: 500; }
+  .step-time { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); white-space: nowrap; }
+  .step-time-input {
+    width: 38px;
+    text-align: right;
+    border: 1px solid transparent;
+    border-radius: 6px;
     background: transparent;
     color: var(--text);
     font: inherit;
+    padding: 3px 4px;
   }
-  .add-item-input:focus { outline: none; border-style: solid; border-color: var(--primary); }
+  .step-time-input:focus { border-color: var(--border); background: var(--surface); outline: none; }
+  .step-time .unit { font-size: 0.8rem; }
+  .step-note-input {
+    width: 100%;
+    margin-top: 2px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.85rem;
+    padding: 2px 6px;
+  }
+  .step-note-input::placeholder { color: var(--muted); opacity: 0.6; }
+  .step-note-input:focus { border-color: var(--border); background: var(--surface); color: var(--text); outline: none; }
 
   /* ドラッグ中 */
   .dragging { opacity: 0.5; }
@@ -378,7 +459,7 @@
     const MODES = { TEMPLATE: 'template', TODO: 'todo' };
 
     function createItem(text = '') {
-      return { id: uid(), text, done: false, note: '' };
+      return { id: uid(), text, done: false, note: '', time: '' };
     }
     function createSection(title = '') {
       return { id: uid(), title, items: [] };
@@ -466,11 +547,28 @@
       if (s && text.trim()) s.items.push(createItem(text.trim()));
       return touch(checklist);
     }
-    function editItem(checklist, sectionId, itemId, text) {
+    // セクションバーの「＋」用：空の項目を末尾に追加し、その項目を返す
+    function addBlankItem(checklist, sectionId) {
+      const s = findSection(checklist, sectionId);
+      if (!s) return null;
+      const item = createItem('');
+      s.items.push(item);
+      touch(checklist);
+      return item;
+    }
+    // テキスト/メモ/所要時間など任意フィールドを更新する汎用関数
+    function setItemField(checklist, sectionId, itemId, field, value) {
       const s = findSection(checklist, sectionId);
       const i = s && s.items.find((x) => x.id === itemId);
-      if (i) i.text = text;
+      if (i) i[field] = value;
       return touch(checklist);
+    }
+    function editItem(checklist, sectionId, itemId, text) {
+      return setItemField(checklist, sectionId, itemId, 'text', text);
+    }
+    // 所要時間(分)の合計。数値解釈できない time は 0 とみなす
+    function sumMinutes(items) {
+      return items.reduce((a, i) => a + (parseInt(i.time, 10) || 0), 0);
     }
     function toggleItem(checklist, sectionId, itemId) {
       const s = findSection(checklist, sectionId);
@@ -514,9 +612,10 @@
     // app 側から M.xxx で参照する名前空間
     const M = {
       MODES, createItem, createSection, createChecklist, createInitialState,
-      findChecklist, progress, addChecklist, removeChecklist, duplicateChecklist,
-      renameChecklist, addSection, renameSection, removeSection, addItem, editItem,
-      toggleItem, removeItem, resetChecklist, clearCompleted, moveItem, moveSection,
+      findChecklist, progress, sumMinutes, addChecklist, removeChecklist, duplicateChecklist,
+      renameChecklist, addSection, renameSection, removeSection, addItem, addBlankItem,
+      setItemField, editItem, toggleItem, removeItem, resetChecklist, clearCompleted,
+      moveItem, moveSection,
     };
 
     // =========================================================================
@@ -718,11 +817,21 @@
     function renderEditor(checklist) {
       const p = progress(checklist);
       const isTemplate = checklist.type === MODES.TEMPLATE;
+      // テンプレート型はセクションをまたいで手順を連番(1..N)で振る
+      let stepNo = 0;
       const sections = checklist.sections
-        .map((s, idx) => renderSection(s, p.sections[idx]))
+        .map((s, idx) => {
+          const html = renderSection(s, p.sections[idx], checklist.type, stepNo);
+          stepNo += s.items.length;
+          return html;
+        })
         .join('');
+      const totalMin = isTemplate
+        ? checklist.sections.reduce((a, s) => a + sumMinutes(s.items), 0)
+        : 0;
+      const timeNote = isTemplate && totalMin ? ` ・ 総所要 約${totalMin}分` : '';
       return `
-        <section class="editor" data-id="${checklist.id}">
+        <section class="editor ${isTemplate ? 'is-template' : 'is-todo'}" data-id="${checklist.id}">
           <div class="editor-head">
             <button class="btn" data-action="home">← 一覧</button>
             <input class="title-input" data-action="edit-title"
@@ -731,10 +840,10 @@
           </div>
           <div class="editor-progress">
             <div class="progress"><div class="progress-bar" style="width:${p.percent}%"></div></div>
-            <small>${p.done} / ${p.total} 完了（${p.percent}%）</small>
+            <small>${p.done} / ${p.total} 完了（${p.percent}%）${timeNote}</small>
           </div>
           <div class="editor-toolbar">
-            <button class="btn" data-action="add-section">＋ セクション</button>
+            <button class="btn" data-action="add-section">＋ ${isTemplate ? 'フェーズ' : 'セクション'}</button>
             ${
               isTemplate
                 ? `<button class="btn" data-action="reset">↺ 一括リセット</button>`
@@ -745,24 +854,31 @@
           <div class="sections">${sections}</div>
         </section>`;
     }
-    function renderSection(section, prog) {
-      const items = section.items.map((i) => renderItem(section.id, i)).join('');
+    // type/startNo を受け取り、テンプレート時は手順タイムライン、ToDo時は通常リストを描く
+    function renderSection(section, prog, type, startNo) {
+      const isTemplate = type === MODES.TEMPLATE;
+      const items = isTemplate
+        ? section.items.map((it, i) => renderStep(section.id, it, startNo + i + 1)).join('')
+        : section.items.map((it) => renderItem(section.id, it)).join('');
+      const mins = isTemplate ? sumMinutes(section.items) : 0;
+      const meta = `${prog.done}/${prog.total}${mins ? ` ・⏱${mins}分` : ''}`;
       return `
         <div class="section" data-section="${section.id}" draggable="false">
           <div class="section-head" draggable="true" data-drag="section">
             <span class="grip" title="ドラッグで並べ替え">⠿</span>
             <input class="section-title" data-action="edit-section" data-section="${section.id}"
-                   placeholder="セクション名（任意）" value="${escapeHtml(section.title)}" />
-            <small class="section-progress">${prog.done}/${prog.total}</small>
-            <button class="icon danger" title="セクション削除"
+                   placeholder="${isTemplate ? 'フェーズ名（任意）' : 'セクション名（任意）'}"
+                   value="${escapeHtml(section.title)}" />
+            <small class="section-progress">${meta}</small>
+            <button class="icon add" title="${isTemplate ? '手順を追加' : '項目を追加'}"
+                    data-action="add-item-btn" data-section="${section.id}">＋</button>
+            <button class="icon danger" title="削除"
                     data-action="delete-section" data-section="${section.id}">🗑</button>
           </div>
-          <ul class="items" data-section="${section.id}">${items}</ul>
-          <form class="add-item" data-action="add-item" data-section="${section.id}">
-            <input class="add-item-input" placeholder="項目を追加してEnter" aria-label="項目を追加" />
-          </form>
+          <ul class="items ${isTemplate ? 'steps' : ''}" data-section="${section.id}">${items}</ul>
         </div>`;
     }
+    // ToDo型の項目
     function renderItem(sectionId, item) {
       return `
         <li class="item ${item.done ? 'done' : ''}" data-item="${item.id}"
@@ -775,6 +891,39 @@
                  value="${escapeHtml(item.text)}" />
           <button class="icon danger" title="削除"
                   data-action="delete-item" data-section="${sectionId}" data-item="${item.id}">✕</button>
+        </li>`;
+    }
+    // テンプレート型の手順ステップ（番号バッジ＋連結線＋メモ＋所要時間）
+    function renderStep(sectionId, item, no) {
+      const note = item.note || '';
+      const time = item.time || '';
+      return `
+        <li class="item step ${item.done ? 'done' : ''}" data-item="${item.id}"
+            data-section="${sectionId}" draggable="true" data-drag="item">
+          <div class="step-rail" title="ドラッグで並べ替え">
+            <span class="step-badge">${no}</span>
+            <span class="step-line"></span>
+          </div>
+          <div class="step-body">
+            <div class="step-main">
+              <input type="checkbox" ${item.done ? 'checked' : ''}
+                     data-action="toggle" data-section="${sectionId}" data-item="${item.id}" />
+              <input class="item-text step-text" data-action="edit-item"
+                     data-section="${sectionId}" data-item="${item.id}"
+                     placeholder="手順の内容" value="${escapeHtml(item.text)}" />
+              <span class="step-time">
+                <input class="step-time-input" data-action="edit-time" inputmode="numeric"
+                       data-section="${sectionId}" data-item="${item.id}"
+                       placeholder="–" aria-label="所要時間（分）" value="${escapeHtml(time)}" />
+                <span class="unit">分</span>
+              </span>
+              <button class="icon danger" title="削除"
+                      data-action="delete-item" data-section="${sectionId}" data-item="${item.id}">✕</button>
+            </div>
+            <input class="step-note-input" data-action="edit-note"
+                   data-section="${sectionId}" data-item="${item.id}"
+                   placeholder="メモ（任意）" value="${escapeHtml(note)}" />
+          </div>
         </li>`;
     }
 
@@ -1052,6 +1201,17 @@
         }
         case 'add-section':
           return c && store.commit((s) => M.addSection(M.findChecklist(s, c.id)));
+        case 'add-item-btn': {
+          if (!c) return;
+          const blank = M.createItem(''); // IDを先に確定して追加後にフォーカス
+          pendingFocusItem = blank.id;
+          store.commit((s) => {
+            const cc = M.findChecklist(s, c.id);
+            const sec = cc.sections.find((x) => x.id === sectionId);
+            if (sec) { sec.items.push(blank); cc.updatedAt = Date.now(); }
+          });
+          return;
+        }
         case 'delete-section':
           return c && store.commit((s) => M.removeSection(M.findChecklist(s, c.id), sectionId));
         case 'delete-item':
@@ -1089,30 +1249,23 @@
         store.commit((s) =>
           M.editItem(M.findChecklist(s, c.id), el.dataset.section, el.dataset.item, el.value)
         );
+      } else if (el.matches('[data-action="edit-note"]')) {
+        store.commit((s) =>
+          M.setItemField(M.findChecklist(s, c.id), el.dataset.section, el.dataset.item, 'note', el.value)
+        );
+      } else if (el.matches('[data-action="edit-time"]')) {
+        store.commit((s) =>
+          M.setItemField(M.findChecklist(s, c.id), el.dataset.section, el.dataset.item, 'time', el.value)
+        );
       }
     });
 
-    document.addEventListener('submit', (e) => {
-      const form = e.target.closest('[data-action="add-item"]');
-      if (!form) return;
-      e.preventDefault();
-      const c = currentChecklist();
-      if (!c) return;
-      const input = form.querySelector('.add-item-input');
-      const text = input.value;
-      const sectionId = form.dataset.section;
-      if (!text.trim()) return;
-      pendingFocusSection = sectionId;
-      store.commit((s) => M.addItem(M.findChecklist(s, c.id), sectionId, text));
-    });
-
-    let pendingFocusSection = null;
+    // セクションバーの「＋」で追加した項目に、再描画後フォーカスする
+    let pendingFocusItem = null;
     function restoreFocus() {
-      if (!pendingFocusSection) return;
-      const input = app.querySelector(
-        `.add-item[data-section="${pendingFocusSection}"] .add-item-input`
-      );
-      pendingFocusSection = null;
+      if (!pendingFocusItem) return;
+      const input = app.querySelector(`[data-item="${pendingFocusItem}"] .item-text`);
+      pendingFocusItem = null;
       if (input) input.focus();
     }
 
