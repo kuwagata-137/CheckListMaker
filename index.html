@@ -383,6 +383,93 @@
   .step-note-input::placeholder { color: var(--muted); opacity: 0.6; }
   .step-note-input:focus { border-color: var(--border); background: var(--surface); color: var(--text); outline: none; }
 
+  /* ---- 添付画像（スクリーンショット注釈）のサムネイル ---- */
+  .item-images {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  /* ToDo項目（flexの.item直下）は画像列を独立行に折り返す */
+  .item > .item-images { flex-basis: 100%; margin-left: 26px; }
+  .thumb-wrap { position: relative; display: inline-flex; }
+  .thumb {
+    height: 56px;
+    max-width: 120px;
+    object-fit: cover;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    display: block;
+  }
+  .thumb:hover { border-color: var(--primary); }
+  .thumb-del {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 18px;
+    height: 18px;
+    line-height: 1;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--danger, #e5484d);
+    color: #fff;
+    font-size: 0.7rem;
+    cursor: pointer;
+    display: none;
+  }
+  .thumb-wrap:hover .thumb-del { display: block; }
+  .add-image {
+    font: inherit;
+    font-size: 0.8rem;
+    color: var(--primary);
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 4px 10px;
+    cursor: pointer;
+  }
+  .add-image:hover { background: var(--surface-2); border-color: var(--primary); }
+
+  /* ---- 画像ペイントエディタ ---- */
+  .img-editor { max-width: min(960px, 96vw); padding: 16px; }
+  .ie-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .ie-tools { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+  .ie-tool {
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  .ie-tool:hover { background: var(--surface-2); }
+  .ie-tool.active { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
+  .ie-color input { width: 34px; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: none; cursor: pointer; }
+  .ie-size input { vertical-align: middle; }
+  .ie-canvas-wrap {
+    max-height: 64vh;
+    overflow: auto;
+    background: repeating-conic-gradient(#0001 0% 25%, transparent 0% 50%) 50% / 20px 20px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    justify-content: center;
+  }
+  .ie-canvas { max-width: 100%; height: auto; touch-action: none; cursor: crosshair; }
+  .ie-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .ie-hint { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
+
   /* ドラッグ中 */
   .dragging { opacity: 0.5; }
   .drop-target { outline: 2px dashed var(--primary); outline-offset: 2px; }
@@ -491,6 +578,20 @@
     font-size: 0.85rem;
     word-break: break-word;
   }
+  .print-imgs {
+    flex-basis: 100%;
+    margin: 4px 0 4px 1.9em;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .print-img {
+    max-width: 48%;
+    max-height: 220px;
+    object-fit: contain;
+    border: 1px solid #ccc;
+    break-inside: avoid;
+  }
 
   @media print {
     #topbar, #app { display: none !important; }
@@ -528,7 +629,7 @@
     const MODES = { TEMPLATE: 'template', TODO: 'todo' };
 
     function createItem(text = '') {
-      return { id: uid(), text, done: false, note: '', time: '' };
+      return { id: uid(), text, done: false, note: '', time: '', images: [] };
     }
     function createSection(title = '') {
       return { id: uid(), title, items: [] };
@@ -635,6 +736,30 @@
     function editItem(checklist, sectionId, itemId, text) {
       return setItemField(checklist, sectionId, itemId, 'text', text);
     }
+    // ---- 画像（スクリーンショット注釈）操作 ----
+    // 画像は圧縮済み JPEG の dataURL 文字列として item.images に配列で持つ。
+    function itemImages(item) {
+      if (!Array.isArray(item.images)) item.images = [];
+      return item.images;
+    }
+    function addItemImage(checklist, sectionId, itemId, dataUrl) {
+      const s = findSection(checklist, sectionId);
+      const i = s && s.items.find((x) => x.id === itemId);
+      if (i) itemImages(i).push(dataUrl);
+      return touch(checklist);
+    }
+    function replaceItemImage(checklist, sectionId, itemId, index, dataUrl) {
+      const s = findSection(checklist, sectionId);
+      const i = s && s.items.find((x) => x.id === itemId);
+      if (i && itemImages(i)[index] !== undefined) i.images[index] = dataUrl;
+      return touch(checklist);
+    }
+    function removeItemImage(checklist, sectionId, itemId, index) {
+      const s = findSection(checklist, sectionId);
+      const i = s && s.items.find((x) => x.id === itemId);
+      if (i && Array.isArray(i.images)) i.images.splice(index, 1);
+      return touch(checklist);
+    }
     // 所要時間(分)の合計。数値解釈できない time は 0 とみなす
     function sumMinutes(items) {
       return items.reduce((a, i) => a + (parseInt(i.time, 10) || 0), 0);
@@ -685,6 +810,7 @@
       renameChecklist, addSection, renameSection, removeSection, addItem, addBlankItem,
       setItemField, editItem, toggleItem, removeItem, resetChecklist, clearCompleted,
       moveItem, moveSection,
+      addItemImage, replaceItemImage, removeItemImage,
     };
 
     // =========================================================================
@@ -773,7 +899,9 @@
         this.notify();
       }
       persist() {
-        this.adapter.save(this.state);
+        // 画像追加などで localStorage 上限に達したか呼び出し側が判定できるよう結果を保持。
+        this.lastSaveOk = this.adapter.save(this.state);
+        return this.lastSaveOk;
       }
     }
 
@@ -817,10 +945,22 @@
       return decodeURIComponent(escape(atob(b64)));
     }
     function encodeShareLink(checklist) {
-      const payload = utf8ToBase64(JSON.stringify(checklist));
+      // 画像はサイズが大きく URL に載せると共有リンクが破綻するため除外する。
+      // 画像も渡したい場合は JSON エクスポートを使う想定（ダイアログで案内）。
+      const stripped = JSON.parse(JSON.stringify(checklist));
+      let hadImages = false;
+      stripped.sections.forEach((s) =>
+        s.items.forEach((it) => {
+          if (Array.isArray(it.images) && it.images.length) {
+            hadImages = true;
+            it.images = [];
+          }
+        })
+      );
+      const payload = utf8ToBase64(JSON.stringify(stripped));
       const base = location.origin + location.pathname;
       const url = `${base}#share=${payload}`;
-      return { url, length: url.length };
+      return { url, length: url.length, hadImages };
     }
     function readShareFromHash(hash = location.hash) {
       const m = hash.match(/[#&]share=([^&]+)/);
@@ -948,6 +1088,30 @@
           <ul class="items ${isTemplate ? 'steps' : ''}" data-section="${section.id}">${items}</ul>
         </div>`;
     }
+    // 項目に添付された画像のサムネイル列 ＋「画像を追加」ボタン。
+    // サムネイルのクリックでペイント編集を開く。複数枚に対応。
+    function renderImages(sectionId, item) {
+      const imgs = Array.isArray(item.images) ? item.images : [];
+      const thumbs = imgs
+        .map(
+          (src, idx) => `
+          <span class="thumb-wrap">
+            <img class="thumb" src="${src}" alt="添付画像 ${idx + 1}" draggable="false"
+                 data-action="edit-image" data-section="${sectionId}"
+                 data-item="${item.id}" data-index="${idx}" title="クリックで編集" />
+            <button class="thumb-del" title="画像を削除" data-action="delete-image"
+                    data-section="${sectionId}" data-item="${item.id}" data-index="${idx}">✕</button>
+          </span>`
+        )
+        .join('');
+      return `
+        <div class="item-images" data-section="${sectionId}" data-item="${item.id}">
+          ${thumbs}
+          <button class="add-image" data-action="add-image"
+                  data-section="${sectionId}" data-item="${item.id}"
+                  title="画像を貼り付け／選択して追加">🖼 画像</button>
+        </div>`;
+    }
     // ToDo型の項目
     function renderItem(sectionId, item) {
       return `
@@ -961,6 +1125,7 @@
                  value="${escapeHtml(item.text)}" />
           <button class="icon danger" title="削除"
                   data-action="delete-item" data-section="${sectionId}" data-item="${item.id}">✕</button>
+          ${renderImages(sectionId, item)}
           <button class="insert-after" data-action="insert-item-after"
                   data-section="${sectionId}" data-item="${item.id}"
                   title="この下に項目を追加">＋ ここに追加</button>
@@ -996,6 +1161,7 @@
             <input class="step-note-input" data-action="edit-note"
                    data-section="${sectionId}" data-item="${item.id}"
                    placeholder="メモ（任意）" value="${escapeHtml(note)}" />
+            ${renderImages(sectionId, item)}
           </div>
           <button class="insert-after" data-action="insert-item-after"
                   data-section="${sectionId}" data-item="${item.id}"
@@ -1018,6 +1184,10 @@
           const itemsHtml = s.items
             .map((it) => {
               const box = it.done ? '☑' : '☐';
+              const imgs = (Array.isArray(it.images) ? it.images : [])
+                .map((src) => `<img class="print-img" src="${src}" alt="" />`)
+                .join('');
+              const imgsHtml = imgs ? `<div class="print-imgs">${imgs}</div>` : '';
               if (isTemplate) {
                 stepNo += 1;
                 const time = it.time
@@ -1030,12 +1200,13 @@
                   <span class="print-no">${stepNo}</span>
                   <span class="print-box">${box}</span>
                   <span class="print-text">${escapeHtml(it.text)}</span>
-                  ${time}${note}
+                  ${time}${note}${imgsHtml}
                 </li>`;
               }
               return `<li class="print-item ${it.done ? 'done' : ''}">
                 <span class="print-box">${box}</span>
                 <span class="print-text">${escapeHtml(it.text)}</span>
+                ${imgsHtml}
               </li>`;
             })
             .join('');
@@ -1246,16 +1417,19 @@
     }
 
     function openShareDialog(checklist) {
-      const { url, length } = encodeShareLink(checklist);
+      const { url, length, hadImages } = encodeShareLink(checklist);
       const warn =
         length > 2000
           ? `<p class="warn">⚠ リンクが長い（${length}文字）ため一部の環境で開けない場合があります。大きなリストはエクスポート(JSON)での共有を推奨します。</p>`
           : '';
+      const imgNote = hadImages
+        ? `<p class="warn">※ 画像は共有リンクには含まれません（容量のため）。画像も渡す場合はエクスポート(JSON)をご利用ください。</p>`
+        : '';
       const overlay = buildModal(`
         <h3>共有リンク</h3>
         <p>このリンクを開くと、相手の端末にこのチェックリストを取り込めます（サーバー不要）。</p>
         <textarea class="share-url" readonly rows="4">${url}</textarea>
-        ${warn}
+        ${warn}${imgNote}
         <div class="modal-actions">
           <button class="btn primary" data-copy>コピー</button>
           <button class="btn" data-close>閉じる</button>
@@ -1321,35 +1495,376 @@
     }
     function closeModal(overlay) { overlay.remove(); }
 
-    // ---- 「ここに追加」（途中挿入）専用ハンドラ ----
-    // メモ等の入力欄を編集中でも確実に押せるよう pointerdown で処理する。
-    // 1) preventDefault で入力欄からボタンへフォーカスが移るのを止める
-    // 2) 編集中の入力欄があれば blur で内容を先に確定させる（文字入力を終了）
-    // 3) そのうえで対象項目の直後へ空項目を挿入する
+    // =========================================================================
+    // images — スクリーンショットの貼り付け・圧縮保存・ペイント編集
+    // =========================================================================
+    const IMG_MAX_EDGE = 1600; // 長辺の上限(px)。これを超える画像は縮小する
+    const IMG_QUALITY = 0.85;  // JPEG 品質
+
+    function blobToDataUrl(blob) {
+      return new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = () => rej(new Error('画像の読み込みに失敗しました'));
+        r.readAsDataURL(blob);
+      });
+    }
+    // 長辺 IMG_MAX_EDGE までリサイズし JPEG 圧縮した dataURL を返す。
+    function compressImage(srcDataUrl, maxEdge = IMG_MAX_EDGE, quality = IMG_QUALITY) {
+      return new Promise((res, rej) => {
+        const img = new Image();
+        img.onload = () => {
+          let w = img.naturalWidth, h = img.naturalHeight;
+          const scale = Math.min(1, maxEdge / Math.max(w, h));
+          w = Math.max(1, Math.round(w * scale));
+          h = Math.max(1, Math.round(h * scale));
+          const cv = document.createElement('canvas');
+          cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(img, 0, 0, w, h);
+          res(cv.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => rej(new Error('画像の解析に失敗しました'));
+        img.src = srcDataUrl;
+      });
+    }
+    function findItemLive(checklistId, sectionId, itemId) {
+      const cc = M.findChecklist(store.state, checklistId);
+      const sec = cc && cc.sections.find((x) => x.id === sectionId);
+      return sec ? sec.items.find((x) => x.id === itemId) : null;
+    }
+    // 保存に失敗（localStorage 上限）したら取り消して false を返す。
+    function commitImage(mutator) {
+      store.commit(mutator);
+      if (store.lastSaveOk === false) {
+        store.undo();
+        alert('保存容量の上限に達したため保存できませんでした。\n不要な画像やリストを減らすか、JSON エクスポートで退避してください。');
+        return false;
+      }
+      return true;
+    }
+    async function addImageFromBlob(c, sectionId, itemId, blob, openEditor) {
+      try {
+        const compressed = await compressImage(await blobToDataUrl(blob));
+        const ok = commitImage((s) =>
+          M.addItemImage(M.findChecklist(s, c.id), sectionId, itemId, compressed)
+        );
+        if (ok && openEditor) {
+          const item = findItemLive(c.id, sectionId, itemId);
+          const idx = item ? item.images.length - 1 : -1;
+          if (idx >= 0) openImageEditor(c, sectionId, itemId, idx);
+        }
+      } catch (err) {
+        alert(err.message || '画像の追加に失敗しました');
+      }
+    }
+    function pickAndAddImage(c, sectionId, itemId) {
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = 'image/*';
+      inp.addEventListener('change', () => {
+        const f = inp.files && inp.files[0];
+        if (f) addImageFromBlob(c, sectionId, itemId, f, true);
+      });
+      inp.click();
+    }
+
+    // クリップボードからの画像貼り付け。フォーカス中の手順/項目に添付する。
+    document.addEventListener('paste', (e) => {
+      const c = currentChecklist();
+      if (!c) return;
+      const dt = e.clipboardData;
+      if (!dt) return;
+      let blob = null;
+      for (const it of dt.items || []) {
+        if (it.kind === 'file' && it.type && it.type.startsWith('image/')) {
+          blob = it.getAsFile();
+          break;
+        }
+      }
+      if (!blob) return;
+      const host = document.activeElement && document.activeElement.closest
+        ? document.activeElement.closest('.item')
+        : null;
+      if (!host) return; // 貼り付け先の手順が不明な場合は何もしない
+      e.preventDefault();
+      addImageFromBlob(c, host.dataset.section, host.dataset.item, blob, true);
+    });
+
+    // ペイント編集モーダル。矢印/四角/丸・ペン・ハイライト・テキスト・モザイク・
+    // トリミングに対応。Undo は標準搭載。保存時に JPEG 圧縮して item に書き戻す。
+    function openImageEditor(c, sectionId, itemId, index) {
+      const item = findItemLive(c.id, sectionId, itemId);
+      if (!item || !Array.isArray(item.images) || item.images[index] === undefined) return;
+      const srcUrl = item.images[index];
+
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal img-editor" role="dialog" aria-modal="true">
+          <div class="ie-toolbar">
+            <div class="ie-tools">
+              <button class="ie-tool" data-tool="arrow" title="矢印">↗</button>
+              <button class="ie-tool" data-tool="rect" title="四角">▢</button>
+              <button class="ie-tool" data-tool="ellipse" title="丸">◯</button>
+              <button class="ie-tool" data-tool="pen" title="フリーハンドペン">✏</button>
+              <button class="ie-tool" data-tool="marker" title="ハイライト">🖍</button>
+              <button class="ie-tool" data-tool="text" title="テキスト">T</button>
+              <button class="ie-tool" data-tool="mosaic" title="モザイク/ぼかし">▦</button>
+              <button class="ie-tool" data-tool="crop" title="トリミング">⛶</button>
+            </div>
+            <label class="ie-color" title="色"><input type="color" value="#ff3b30" /></label>
+            <label class="ie-size" title="線の太さ"><input type="range" min="1" max="40" value="6" /></label>
+            <button class="btn ie-undo" title="元に戻す">↶ 元に戻す</button>
+          </div>
+          <div class="ie-canvas-wrap"><canvas class="ie-canvas"></canvas></div>
+          <p class="ie-hint">ドラッグで描画。テキストはクリック位置に入力。モザイク/トリミングは範囲を選んで離すと確定。</p>
+          <div class="ie-actions">
+            <button class="btn primary ie-save">保存</button>
+            <button class="btn ie-cancel">キャンセル</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+
+      const canvas = overlay.querySelector('.ie-canvas');
+      const ctx = canvas.getContext('2d');
+      const colorInput = overlay.querySelector('.ie-color input');
+      const sizeInput = overlay.querySelector('.ie-size input');
+      const toolBtns = overlay.querySelectorAll('.ie-tool');
+      let tool = 'arrow';
+      const undoStack = [];
+
+      function selectTool(t) {
+        tool = t;
+        toolBtns.forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
+      }
+      toolBtns.forEach((b) => b.addEventListener('click', () => selectTool(b.dataset.tool)));
+      selectTool('arrow');
+
+      const baseImg = new Image();
+      baseImg.onload = () => {
+        canvas.width = baseImg.naturalWidth;
+        canvas.height = baseImg.naturalHeight;
+        ctx.drawImage(baseImg, 0, 0);
+      };
+      baseImg.src = srcUrl;
+
+      function pushUndo() {
+        try { undoStack.push(canvas.toDataURL('image/png')); } catch (_) {}
+        if (undoStack.length > 25) undoStack.shift();
+      }
+      function restore(url) {
+        const im = new Image();
+        im.onload = () => {
+          canvas.width = im.naturalWidth;
+          canvas.height = im.naturalHeight;
+          ctx.drawImage(im, 0, 0);
+        };
+        im.src = url;
+      }
+      overlay.querySelector('.ie-undo').addEventListener('click', () => {
+        if (undoStack.length) restore(undoStack.pop());
+      });
+
+      function xy(e) {
+        const r = canvas.getBoundingClientRect();
+        return {
+          x: (e.clientX - r.left) * (canvas.width / r.width),
+          y: (e.clientY - r.top) * (canvas.height / r.height),
+        };
+      }
+      function setupStroke(alpha) {
+        ctx.strokeStyle = colorInput.value;
+        ctx.fillStyle = colorInput.value;
+        ctx.lineWidth = Number(sizeInput.value);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.globalAlpha = alpha;
+      }
+      function drawArrow(x1, y1, x2, y2) {
+        const w = Number(sizeInput.value);
+        setupStroke(1);
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        const ang = Math.atan2(y2 - y1, x2 - x1);
+        const head = Math.max(12, w * 3);
+        ctx.beginPath();
+        ctx.moveTo(x2, y2);
+        ctx.lineTo(x2 - head * Math.cos(ang - Math.PI / 6), y2 - head * Math.sin(ang - Math.PI / 6));
+        ctx.lineTo(x2 - head * Math.cos(ang + Math.PI / 6), y2 - head * Math.sin(ang + Math.PI / 6));
+        ctx.closePath(); ctx.fill();
+      }
+      function applyMosaic(rx, ry, rw, rh) {
+        rx = Math.max(0, Math.round(rx)); ry = Math.max(0, Math.round(ry));
+        rw = Math.min(canvas.width - rx, Math.round(rw));
+        rh = Math.min(canvas.height - ry, Math.round(rh));
+        if (rw <= 0 || rh <= 0) return;
+        const block = Math.max(8, Number(sizeInput.value) * 2);
+        const data = ctx.getImageData(rx, ry, rw, rh).data;
+        ctx.globalAlpha = 1;
+        for (let by = 0; by < rh; by += block) {
+          for (let bx = 0; bx < rw; bx += block) {
+            const xmax = Math.min(bx + block, rw), ymax = Math.min(by + block, rh);
+            let r = 0, g = 0, b = 0, n = 0;
+            for (let y = by; y < ymax; y++) for (let x = bx; x < xmax; x++) {
+              const i = (y * rw + x) * 4;
+              r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+            }
+            ctx.fillStyle = `rgb(${(r / n) | 0},${(g / n) | 0},${(b / n) | 0})`;
+            ctx.fillRect(rx + bx, ry + by, xmax - bx, ymax - by);
+          }
+        }
+      }
+
+      let drawing = false;
+      let start = null;
+      let dragBase = null;
+
+      canvas.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        const p = xy(e);
+        if (tool === 'text') {
+          const t = prompt('画像に追加するテキスト');
+          if (t) {
+            pushUndo();
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = colorInput.value;
+            const fs = Math.max(16, Number(sizeInput.value) * 4);
+            ctx.font = `bold ${fs}px sans-serif`;
+            ctx.textBaseline = 'top';
+            ctx.fillText(t, p.x, p.y);
+          }
+          return;
+        }
+        drawing = true;
+        start = p;
+        pushUndo();
+        dragBase = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        if (tool === 'pen' || tool === 'marker') {
+          setupStroke(tool === 'marker' ? 0.35 : 1);
+          if (tool === 'marker') ctx.lineWidth = Number(sizeInput.value) * 3;
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+        }
+        canvas.setPointerCapture(e.pointerId);
+      });
+
+      canvas.addEventListener('pointermove', (e) => {
+        if (!drawing) return;
+        const p = xy(e);
+        if (tool === 'pen' || tool === 'marker') {
+          ctx.lineTo(p.x, p.y);
+          ctx.stroke();
+          return;
+        }
+        ctx.putImageData(dragBase, 0, 0); // 開始時へ戻してプレビュー描画
+        ctx.globalAlpha = 1;
+        if (tool === 'arrow') {
+          drawArrow(start.x, start.y, p.x, p.y);
+        } else if (tool === 'rect') {
+          setupStroke(1);
+          ctx.strokeRect(start.x, start.y, p.x - start.x, p.y - start.y);
+        } else if (tool === 'ellipse') {
+          setupStroke(1);
+          ctx.beginPath();
+          ctx.ellipse((start.x + p.x) / 2, (start.y + p.y) / 2,
+            Math.abs(p.x - start.x) / 2, Math.abs(p.y - start.y) / 2, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        } else if (tool === 'mosaic' || tool === 'crop') {
+          ctx.save();
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = '#1a73e8';
+          ctx.setLineDash([6, 4]);
+          ctx.lineWidth = 2;
+          ctx.strokeRect(start.x, start.y, p.x - start.x, p.y - start.y);
+          ctx.restore();
+        }
+      });
+
+      function finish(e) {
+        if (!drawing) return;
+        drawing = false;
+        const p = xy(e);
+        ctx.globalAlpha = 1;
+        if (tool === 'mosaic') {
+          ctx.putImageData(dragBase, 0, 0);
+          applyMosaic(Math.min(start.x, p.x), Math.min(start.y, p.y),
+            Math.abs(p.x - start.x), Math.abs(p.y - start.y));
+        } else if (tool === 'crop') {
+          ctx.putImageData(dragBase, 0, 0);
+          const rx = Math.max(0, Math.min(start.x, p.x));
+          const ry = Math.max(0, Math.min(start.y, p.y));
+          const rw = Math.min(canvas.width - rx, Math.abs(p.x - start.x));
+          const rh = Math.min(canvas.height - ry, Math.abs(p.y - start.y));
+          if (rw > 4 && rh > 4) {
+            const tmp = document.createElement('canvas');
+            tmp.width = rw; tmp.height = rh;
+            tmp.getContext('2d').drawImage(canvas, rx, ry, rw, rh, 0, 0, rw, rh);
+            canvas.width = rw; canvas.height = rh;
+            ctx.drawImage(tmp, 0, 0);
+          }
+        }
+        dragBase = null;
+      }
+      canvas.addEventListener('pointerup', finish);
+      canvas.addEventListener('pointercancel', () => { drawing = false; dragBase = null; });
+
+      function close() {
+        document.removeEventListener('keydown', onKey);
+        overlay.remove();
+      }
+      function onKey(ev) { if (ev.key === 'Escape') close(); }
+      document.addEventListener('keydown', onKey);
+      overlay.querySelector('.ie-cancel').addEventListener('click', close);
+      overlay.querySelector('.ie-save').addEventListener('click', () => {
+        const out = canvas.toDataURL('image/jpeg', IMG_QUALITY);
+        const ok = commitImage((s) =>
+          M.replaceItemImage(M.findChecklist(s, c.id), sectionId, itemId, index, out)
+        );
+        if (ok) close();
+      });
+    }
+
+    // ---- 入力欄の編集中でも確実に押せるボタン群（pointerdown 処理）----
+    // click だと、入力欄の blur→change による再描画でボタンが消えてクリックが
+    // 失われるため、pointerdown で「編集中の入力を確定 → 実行」する。
     document.addEventListener('pointerdown', (e) => {
-      const btn = e.target.closest('[data-action="insert-item-after"]');
+      const btn = e.target.closest('[data-action]');
       if (!btn) return;
+      const action = btn.dataset.action;
+      if (!['insert-item-after', 'add-image', 'edit-image', 'delete-image'].includes(action)) return;
       e.preventDefault();
       const c = currentChecklist();
       if (!c) return;
       const sectionId = btn.dataset.section;
       const itemId = btn.dataset.item;
-      // 編集中の入力内容を確定（change を発火させてから挿入する）
+      const index = btn.dataset.index !== undefined ? Number(btn.dataset.index) : -1;
+      // 編集中の入力内容を先に確定（change を発火）させる
       const active = document.activeElement;
       if (active && active !== btn && typeof active.blur === 'function'
           && active.matches('input, textarea')) {
         active.blur();
       }
-      const blank = M.createItem(''); // 対象項目の直後に挿入し、追加後にフォーカス
-      pendingFocusItem = blank.id;
-      store.commit((s) => {
-        const cc = M.findChecklist(s, c.id);
-        const sec = cc.sections.find((x) => x.id === sectionId);
-        if (!sec) return;
-        const idx = sec.items.findIndex((x) => x.id === itemId);
-        sec.items.splice(idx < 0 ? sec.items.length : idx + 1, 0, blank);
-        cc.updatedAt = Date.now();
-      });
+      if (action === 'insert-item-after') {
+        const blank = M.createItem(''); // 対象項目の直後に挿入し、追加後にフォーカス
+        pendingFocusItem = blank.id;
+        store.commit((s) => {
+          const cc = M.findChecklist(s, c.id);
+          const sec = cc.sections.find((x) => x.id === sectionId);
+          if (!sec) return;
+          const idx = sec.items.findIndex((x) => x.id === itemId);
+          sec.items.splice(idx < 0 ? sec.items.length : idx + 1, 0, blank);
+          cc.updatedAt = Date.now();
+        });
+      } else if (action === 'add-image') {
+        pickAndAddImage(c, sectionId, itemId);
+      } else if (action === 'edit-image') {
+        openImageEditor(c, sectionId, itemId, index);
+      } else if (action === 'delete-image') {
+        if (confirm('この画像を削除しますか？')) {
+          store.commit((s) =>
+            M.removeItemImage(M.findChecklist(s, c.id), sectionId, itemId, index)
+          );
+        }
+      }
     });
 
     // ---- イベント委譲 ----
