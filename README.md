@@ -20,33 +20,29 @@
 
 ## 使い方
 
-ES Modules を使用しているため、ローカルの簡易サーバー経由で開いてください。
+**`index.html` をダブルクリックするだけ**で起動します。インストールもサーバーも不要で、
+全機能が1つのファイルに収まっています。スマホへ送りたい場合はそのファイルを共有してください。
 
-```sh
-cd CheckListMaker
-python3 -m http.server 8000
-# ブラウザで http://localhost:8000 を開く
-```
-
-GitHub Pages などの静的ホスティングにそのまま置いても動作します。
+GitHub Pages などの静的ホスティングに `index.html` を置けば、URLを開くだけで使えます。
 
 ## 構成
 
+すべて `index.html` 1ファイルに収めています（外部依存ゼロ・ビルド不要・`file://` で動作）。
+ファイル内のスクリプトは、保守しやすいよう以下のセクションに整理しています。
+
 ```
-index.html        画面骨格とトップバー
-css/styles.css    テーマ変数・レイアウト・ダーク/印刷対応
-js/model.js       データモデルと純粋な操作関数
-js/storage.js     永続化の抽象化(StorageAdapter)＋Undo/Redoストア
-js/render.js      画面の描画
-js/dragdrop.js    ドラッグ&ドロップ並べ替え
-js/io.js          JSON入出力・URL共有のエンコード/デコード
-js/router.js      ハッシュベースのルーティング
-js/app.js         エントリポイント（結線）
+model     データモデルと純粋な操作関数
+storage   永続化の抽象化(StorageAdapter)＋Undo/Redoストア
+io        JSON入出力・URL共有のエンコード/デコード
+render    画面の描画
+dragdrop  ドラッグ&ドロップ並べ替え
+router    ハッシュベースのルーティング
+app       エントリポイント（結線）
 ```
 
-`storage.js` の `StorageAdapter` は「アプリ全体の状態を読み書きする」薄いインターフェースです。
-今回は `LocalStorageAdapter` のみ実装していますが、同じIFを満たすリモートアダプタ（サーバー
-同期）に差し替えれば、将来グループウェア等での共用にも拡張できます。
+`StorageAdapter` は「アプリ全体の状態を読み書きする」薄いインターフェースです。今回は
+`LocalStorageAdapter` のみ実装していますが、同じIFを満たすリモートアダプタ（サーバー同期）に
+差し替えれば、将来グループウェア等での共用にも拡張できます。
 
 ## 着想元・クレジット
 
