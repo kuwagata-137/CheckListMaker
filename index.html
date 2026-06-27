@@ -6,7 +6,349 @@
   <title>チェックリストメーカー</title>
   <link rel="icon"
         href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3E%E2%9C%93%3C/text%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+  /* テーマ変数・レイアウト・ダーク対応・印刷向け簡易調整。
+     外部依存なし。色は CSS カスタムプロパティで一元管理する。 */
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --surface-2: #f0f1f4;
+    --text: #1f2329;
+    --muted: #6b7280;
+    --border: #e2e4e9;
+    --primary: #2563eb;
+    --primary-text: #ffffff;
+    --danger: #dc2626;
+    --accent: #10b981;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --radius: 10px;
+  }
+  /* 手動ダーク */
+  :root[data-theme='dark'] {
+    --bg: #14171c;
+    --surface: #1e232b;
+    --surface-2: #262c35;
+    --text: #e6e8eb;
+    --muted: #9aa3af;
+    --border: #333a44;
+    --primary: #3b82f6;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+  /* 自動（OS設定に追従。data-theme 未指定時のみ） */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+      --bg: #14171c;
+      --surface: #1e232b;
+      --surface-2: #262c35;
+      --text: #e6e8eb;
+      --muted: #9aa3af;
+      --border: #333a44;
+      --primary: #3b82f6;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', Meiryo, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  /* ---- トップバー ---- */
+  #topbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-brand { font-weight: 700; }
+  .topbar-spacer { flex: 1; }
+
+  #app {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 20px 16px 60px;
+  }
+
+  /* ---- ボタン類 ---- */
+  .btn {
+    font: inherit;
+    padding: 7px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .btn:hover { background: var(--surface-2); }
+  .btn.primary {
+    background: var(--primary);
+    color: var(--primary-text);
+    border-color: var(--primary);
+  }
+  .icon {
+    font: inherit;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+    padding: 4px 7px;
+    border-radius: 8px;
+    font-size: 1rem;
+  }
+  .icon:hover { background: var(--surface-2); color: var(--text); }
+  .icon:disabled { opacity: 0.35; cursor: default; }
+  .icon.danger:hover { color: var(--danger); }
+
+  /* ---- ホーム ---- */
+  .home-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .home-head h1 { margin: 0; font-size: 1.6rem; }
+  .home-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
+  }
+  .empty { color: var(--muted); }
+
+  .card {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .card-open {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    padding: 14px 14px 10px;
+  }
+  .card-open h2 { margin: 6px 0 10px; font-size: 1.1rem; }
+  .card-tools {
+    display: flex;
+    justify-content: flex-end;
+    gap: 2px;
+    padding: 4px 8px 8px;
+    border-top: 1px solid var(--border);
+  }
+
+  .badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--muted);
+  }
+  .badge.template { background: #ede9fe; color: #6d28d9; }
+  .badge.todo { background: #dbeafe; color: #1d4ed8; }
+  :root[data-theme='dark'] .badge.template { background: #3b2f5e; color: #c4b5fd; }
+  :root[data-theme='dark'] .badge.todo { background: #1e3a5f; color: #93c5fd; }
+
+  /* ---- 進捗バー ---- */
+  .progress {
+    height: 8px;
+    background: var(--surface-2);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.2s ease;
+  }
+
+  /* ---- エディタ ---- */
+  .editor-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .title-input {
+    flex: 1;
+    min-width: 160px;
+    font-size: 1.3rem;
+    font-weight: 700;
+    padding: 4px 8px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+  }
+  .title-input:focus { border-color: var(--border); background: var(--surface); outline: none; }
+
+  .editor-progress { margin-bottom: 14px; }
+  .editor-progress small { color: var(--muted); }
+
+  .editor-toolbar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+
+  /* セクション */
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 14px;
+    box-shadow: var(--shadow);
+  }
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    cursor: grab;
+  }
+  .section-title {
+    flex: 1;
+    font-weight: 600;
+    font-size: 1rem;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    padding: 3px 6px;
+  }
+  .section-title:focus { border-color: var(--border); background: var(--bg); outline: none; }
+  .section-progress { color: var(--muted); white-space: nowrap; }
+
+  .grip { color: var(--muted); cursor: grab; user-select: none; }
+
+  .items { list-style: none; margin: 0; padding: 6px 8px; }
+  .item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 8px;
+  }
+  .item:hover { background: var(--surface-2); }
+  .item.done .item-text { text-decoration: line-through; color: var(--muted); }
+  .item-text {
+    flex: 1;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    padding: 3px 6px;
+  }
+  .item-text:focus { border-color: var(--border); background: var(--surface); outline: none; }
+  .item input[type='checkbox'] { width: 18px; height: 18px; cursor: pointer; }
+
+  .add-item { padding: 4px 14px 12px; }
+  .add-item-input {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+  }
+  .add-item-input:focus { outline: none; border-style: solid; border-color: var(--primary); }
+
+  /* ドラッグ中 */
+  .dragging { opacity: 0.5; }
+  .drop-target { outline: 2px dashed var(--primary); outline-offset: 2px; }
+
+  /* ---- モーダル ---- */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 100;
+  }
+  .modal {
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 22px;
+    width: 100%;
+    max-width: 460px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  }
+  .modal h3 { margin: 0 0 8px; }
+  .modal p { color: var(--muted); margin: 0 0 14px; }
+  .mode-choices { display: grid; gap: 10px; margin-bottom: 14px; }
+  .mode-card {
+    text-align: left;
+    display: grid;
+    gap: 4px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+  }
+  .mode-card:hover { border-color: var(--primary); background: var(--surface-2); }
+  .mode-card span { color: var(--muted); font-size: 0.85rem; }
+  .field { display: grid; gap: 6px; margin-bottom: 14px; font-size: 0.9rem; color: var(--muted); }
+  .field input {
+    font: inherit;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .share-url {
+    width: 100%;
+    font-family: monospace;
+    font-size: 0.8rem;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    resize: vertical;
+  }
+  .warn { color: var(--danger); font-size: 0.85rem; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+  /* ---- 印刷 ---- */
+  @media print {
+    #topbar, .editor-toolbar, .card-tools, .add-item, .grip,
+    .item .icon, .section-head .icon { display: none !important; }
+    body { background: #fff; }
+    .section, .card { box-shadow: none; }
+  }
+  </style>
 </head>
 <body>
   <div id="topbar">
@@ -21,6 +363,785 @@
 
   <input id="file-input" type="file" accept="application/json" hidden />
 
-  <script type="module" src="js/app.js"></script>
+  <!-- アプリ全体を1ファイルに内包（ES Modules不使用 → file:// のダブルクリックで動作） -->
+  <script>
+  (function () {
+    'use strict';
+
+    // =========================================================================
+    // model — データモデルと純粋な操作関数（副作用なし。永続化やDOMには触れない）
+    // =========================================================================
+    const uid = () =>
+      (crypto.randomUUID && crypto.randomUUID()) ||
+      'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+    const MODES = { TEMPLATE: 'template', TODO: 'todo' };
+
+    function createItem(text = '') {
+      return { id: uid(), text, done: false, note: '' };
+    }
+    function createSection(title = '') {
+      return { id: uid(), title, items: [] };
+    }
+    function createChecklist(type = MODES.TODO, title = '') {
+      const now = Date.now();
+      return {
+        id: uid(),
+        title: title || (type === MODES.TEMPLATE ? '新しいテンプレート' : '新しいリスト'),
+        type,
+        sections: [createSection('')],
+        createdAt: now,
+        updatedAt: now,
+      };
+    }
+    function createInitialState() {
+      return { checklists: [], settings: { theme: 'auto' } };
+    }
+
+    const findChecklist = (state, id) =>
+      state.checklists.find((c) => c.id === id) || null;
+    const findSection = (checklist, sectionId) =>
+      checklist.sections.find((s) => s.id === sectionId) || null;
+
+    function progress(checklist) {
+      let total = 0;
+      let done = 0;
+      const sections = checklist.sections.map((s) => {
+        const t = s.items.length;
+        const d = s.items.filter((i) => i.done).length;
+        total += t;
+        done += d;
+        return { id: s.id, total: t, done: d, percent: t ? Math.round((d / t) * 100) : 0 };
+      });
+      return { total, done, percent: total ? Math.round((done / total) * 100) : 0, sections };
+    }
+
+    function touch(checklist) {
+      checklist.updatedAt = Date.now();
+      return checklist;
+    }
+    function addChecklist(state, checklist) {
+      state.checklists.unshift(checklist);
+      return state;
+    }
+    function removeChecklist(state, id) {
+      state.checklists = state.checklists.filter((c) => c.id !== id);
+      return state;
+    }
+    function duplicateChecklist(state, id) {
+      const src = findChecklist(state, id);
+      if (!src) return state;
+      const copy = JSON.parse(JSON.stringify(src));
+      copy.id = uid();
+      copy.title = src.title + '（コピー）';
+      copy.createdAt = copy.updatedAt = Date.now();
+      copy.sections.forEach((s) => {
+        s.id = uid();
+        s.items.forEach((i) => (i.id = uid()));
+      });
+      const idx = state.checklists.findIndex((c) => c.id === id);
+      state.checklists.splice(idx + 1, 0, copy);
+      return state;
+    }
+    function renameChecklist(checklist, title) {
+      checklist.title = title;
+      return touch(checklist);
+    }
+    function addSection(checklist, title = '') {
+      checklist.sections.push(createSection(title));
+      return touch(checklist);
+    }
+    function renameSection(checklist, sectionId, title) {
+      const s = findSection(checklist, sectionId);
+      if (s) s.title = title;
+      return touch(checklist);
+    }
+    function removeSection(checklist, sectionId) {
+      checklist.sections = checklist.sections.filter((s) => s.id !== sectionId);
+      if (checklist.sections.length === 0) checklist.sections.push(createSection(''));
+      return touch(checklist);
+    }
+    function addItem(checklist, sectionId, text) {
+      const s = findSection(checklist, sectionId);
+      if (s && text.trim()) s.items.push(createItem(text.trim()));
+      return touch(checklist);
+    }
+    function editItem(checklist, sectionId, itemId, text) {
+      const s = findSection(checklist, sectionId);
+      const i = s && s.items.find((x) => x.id === itemId);
+      if (i) i.text = text;
+      return touch(checklist);
+    }
+    function toggleItem(checklist, sectionId, itemId) {
+      const s = findSection(checklist, sectionId);
+      const i = s && s.items.find((x) => x.id === itemId);
+      if (i) i.done = !i.done;
+      return touch(checklist);
+    }
+    function removeItem(checklist, sectionId, itemId) {
+      const s = findSection(checklist, sectionId);
+      if (s) s.items = s.items.filter((x) => x.id !== itemId);
+      return touch(checklist);
+    }
+    function resetChecklist(checklist) {
+      checklist.sections.forEach((s) => s.items.forEach((i) => (i.done = false)));
+      return touch(checklist);
+    }
+    function clearCompleted(checklist) {
+      checklist.sections.forEach((s) => (s.items = s.items.filter((i) => !i.done)));
+      return touch(checklist);
+    }
+    function moveItem(checklist, fromSectionId, itemId, toSectionId, toIndex) {
+      const from = findSection(checklist, fromSectionId);
+      const to = findSection(checklist, toSectionId);
+      if (!from || !to) return checklist;
+      const idx = from.items.findIndex((i) => i.id === itemId);
+      if (idx < 0) return checklist;
+      const [item] = from.items.splice(idx, 1);
+      const insertAt = Math.max(0, Math.min(toIndex, to.items.length));
+      to.items.splice(insertAt, 0, item);
+      return touch(checklist);
+    }
+    function moveSection(checklist, sectionId, toIndex) {
+      const idx = checklist.sections.findIndex((s) => s.id === sectionId);
+      if (idx < 0) return checklist;
+      const [sec] = checklist.sections.splice(idx, 1);
+      const insertAt = Math.max(0, Math.min(toIndex, checklist.sections.length));
+      checklist.sections.splice(insertAt, 0, sec);
+      return touch(checklist);
+    }
+
+    // app 側から M.xxx で参照する名前空間
+    const M = {
+      MODES, createItem, createSection, createChecklist, createInitialState,
+      findChecklist, progress, addChecklist, removeChecklist, duplicateChecklist,
+      renameChecklist, addSection, renameSection, removeSection, addItem, editItem,
+      toggleItem, removeItem, resetChecklist, clearCompleted, moveItem, moveSection,
+    };
+
+    // =========================================================================
+    // storage — 永続化の抽象化(StorageAdapter) と Undo/Redo を備えた中央ストア(Store)
+    //   将来グループウェア等で共用したくなったら、同じIFの RemoteAdapter に差し替え可能。
+    // =========================================================================
+    const STORAGE_KEY = 'checklistmaker.v1';
+    const HISTORY_LIMIT = 50;
+
+    class LocalStorageAdapter {
+      constructor(key = STORAGE_KEY) {
+        this.key = key;
+      }
+      load() {
+        try {
+          const raw = localStorage.getItem(this.key);
+          return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+          console.warn('状態の読み込みに失敗しました:', e);
+          return null;
+        }
+      }
+      save(state) {
+        try {
+          localStorage.setItem(this.key, JSON.stringify(state));
+          return true;
+        } catch (e) {
+          console.warn('状態の保存に失敗しました:', e);
+          return false;
+        }
+      }
+    }
+
+    const clone = (obj) => JSON.parse(JSON.stringify(obj));
+
+    class Store {
+      constructor(adapter) {
+        this.adapter = adapter;
+        this.state = adapter.load() || createInitialState();
+        if (!this.state.settings) this.state.settings = { theme: 'auto' };
+        if (!Array.isArray(this.state.checklists)) this.state.checklists = [];
+        this.undoStack = [];
+        this.redoStack = [];
+        this.listeners = new Set();
+      }
+      subscribe(fn) {
+        this.listeners.add(fn);
+        return () => this.listeners.delete(fn);
+      }
+      notify() {
+        this.listeners.forEach((fn) => fn(this.state));
+      }
+      commit(mutator, { history = true } = {}) {
+        if (history) {
+          this.undoStack.push(clone(this.state));
+          if (this.undoStack.length > HISTORY_LIMIT) this.undoStack.shift();
+          this.redoStack = [];
+        }
+        mutator(this.state);
+        this.persist();
+        this.notify();
+      }
+      replaceState(newState, { history = true } = {}) {
+        if (history) {
+          this.undoStack.push(clone(this.state));
+          this.redoStack = [];
+        }
+        this.state = newState;
+        this.persist();
+        this.notify();
+      }
+      canUndo() { return this.undoStack.length > 0; }
+      canRedo() { return this.redoStack.length > 0; }
+      undo() {
+        if (!this.canUndo()) return;
+        this.redoStack.push(clone(this.state));
+        this.state = this.undoStack.pop();
+        this.persist();
+        this.notify();
+      }
+      redo() {
+        if (!this.canRedo()) return;
+        this.undoStack.push(clone(this.state));
+        this.state = this.redoStack.pop();
+        this.persist();
+        this.notify();
+      }
+      persist() {
+        this.adapter.save(this.state);
+      }
+    }
+
+    // =========================================================================
+    // io — JSON のエクスポート/インポートと、URLリンク共有のエンコード/デコード
+    // =========================================================================
+    function exportStateToFile(state) {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const stamp = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `checklists-${stamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+    function readStateFromFile(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const data = JSON.parse(reader.result);
+            if (!data || !Array.isArray(data.checklists)) {
+              throw new Error('checklists 配列が見つかりません');
+            }
+            resolve(data);
+          } catch (e) {
+            reject(new Error('JSONの読み込みに失敗しました: ' + e.message));
+          }
+        };
+        reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました'));
+        reader.readAsText(file);
+      });
+    }
+    function utf8ToBase64(str) {
+      return btoa(unescape(encodeURIComponent(str)));
+    }
+    function base64ToUtf8(b64) {
+      return decodeURIComponent(escape(atob(b64)));
+    }
+    function encodeShareLink(checklist) {
+      const payload = utf8ToBase64(JSON.stringify(checklist));
+      const base = location.origin + location.pathname;
+      const url = `${base}#share=${payload}`;
+      return { url, length: url.length };
+    }
+    function readShareFromHash(hash = location.hash) {
+      const m = hash.match(/[#&]share=([^&]+)/);
+      if (!m) return null;
+      try {
+        const checklist = JSON.parse(base64ToUtf8(m[1]));
+        if (!checklist || !Array.isArray(checklist.sections)) return null;
+        return checklist;
+      } catch (e) {
+        console.warn('共有データの解析に失敗しました:', e);
+        return null;
+      }
+    }
+
+    // =========================================================================
+    // render — 状態から HTML 文字列を組み立てる純粋な描画関数
+    // =========================================================================
+    function escapeHtml(str = '') {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+    const modeLabel = (type) => (type === MODES.TEMPLATE ? 'テンプレート' : 'ToDo');
+
+    function renderHome(state) {
+      const { checklists } = state;
+      const cards = checklists.length
+        ? checklists.map((c) => renderCard(c)).join('')
+        : `<p class="empty">まだチェックリストがありません。「新規作成」から始めましょう。</p>`;
+      return `
+        <section class="home">
+          <div class="home-head">
+            <h1>チェックリスト</h1>
+            <div class="home-actions">
+              <button class="btn primary" data-action="new">＋ 新規作成</button>
+              <button class="btn" data-action="import">インポート</button>
+              <button class="btn" data-action="export">エクスポート</button>
+            </div>
+          </div>
+          <div class="cards">${cards}</div>
+        </section>`;
+    }
+    function renderCard(c) {
+      const p = progress(c);
+      return `
+        <article class="card" data-id="${c.id}">
+          <button class="card-open" data-action="open" data-id="${c.id}">
+            <span class="badge ${c.type}">${modeLabel(c.type)}</span>
+            <h2>${escapeHtml(c.title)}</h2>
+            <div class="progress"><div class="progress-bar" style="width:${p.percent}%"></div></div>
+            <small>${p.done} / ${p.total} 完了（${p.percent}%）</small>
+          </button>
+          <div class="card-tools">
+            <button class="icon" title="複製" data-action="duplicate" data-id="${c.id}">⧉</button>
+            <button class="icon" title="名前変更" data-action="rename" data-id="${c.id}">✎</button>
+            <button class="icon danger" title="削除" data-action="delete" data-id="${c.id}">🗑</button>
+          </div>
+        </article>`;
+    }
+    function renderEditor(checklist) {
+      const p = progress(checklist);
+      const isTemplate = checklist.type === MODES.TEMPLATE;
+      const sections = checklist.sections
+        .map((s, idx) => renderSection(s, p.sections[idx]))
+        .join('');
+      return `
+        <section class="editor" data-id="${checklist.id}">
+          <div class="editor-head">
+            <button class="btn" data-action="home">← 一覧</button>
+            <input class="title-input" data-action="edit-title"
+                   value="${escapeHtml(checklist.title)}" aria-label="タイトル" />
+            <span class="badge ${checklist.type}">${modeLabel(checklist.type)}</span>
+          </div>
+          <div class="editor-progress">
+            <div class="progress"><div class="progress-bar" style="width:${p.percent}%"></div></div>
+            <small>${p.done} / ${p.total} 完了（${p.percent}%）</small>
+          </div>
+          <div class="editor-toolbar">
+            <button class="btn" data-action="add-section">＋ セクション</button>
+            ${
+              isTemplate
+                ? `<button class="btn" data-action="reset">↺ 一括リセット</button>`
+                : `<button class="btn" data-action="clear-completed">完了を削除</button>`
+            }
+            <button class="btn" data-action="share">🔗 共有リンク</button>
+          </div>
+          <div class="sections">${sections}</div>
+        </section>`;
+    }
+    function renderSection(section, prog) {
+      const items = section.items.map((i) => renderItem(section.id, i)).join('');
+      return `
+        <div class="section" data-section="${section.id}" draggable="false">
+          <div class="section-head" draggable="true" data-drag="section">
+            <span class="grip" title="ドラッグで並べ替え">⠿</span>
+            <input class="section-title" data-action="edit-section" data-section="${section.id}"
+                   placeholder="セクション名（任意）" value="${escapeHtml(section.title)}" />
+            <small class="section-progress">${prog.done}/${prog.total}</small>
+            <button class="icon danger" title="セクション削除"
+                    data-action="delete-section" data-section="${section.id}">🗑</button>
+          </div>
+          <ul class="items" data-section="${section.id}">${items}</ul>
+          <form class="add-item" data-action="add-item" data-section="${section.id}">
+            <input class="add-item-input" placeholder="項目を追加してEnter" aria-label="項目を追加" />
+          </form>
+        </div>`;
+    }
+    function renderItem(sectionId, item) {
+      return `
+        <li class="item ${item.done ? 'done' : ''}" data-item="${item.id}"
+            data-section="${sectionId}" draggable="true" data-drag="item">
+          <span class="grip" title="ドラッグで並べ替え">⠿</span>
+          <input type="checkbox" ${item.done ? 'checked' : ''}
+                 data-action="toggle" data-section="${sectionId}" data-item="${item.id}" />
+          <input class="item-text" data-action="edit-item"
+                 data-section="${sectionId}" data-item="${item.id}"
+                 value="${escapeHtml(item.text)}" />
+          <button class="icon danger" title="削除"
+                  data-action="delete-item" data-section="${sectionId}" data-item="${item.id}">✕</button>
+        </li>`;
+    }
+
+    // =========================================================================
+    // dragdrop — セクション/項目のドラッグ&ドロップ並べ替え
+    // =========================================================================
+    function attachDragAndDrop(container, onMove) {
+      let dragging = null;
+      container.addEventListener('dragstart', (e) => {
+        const el = e.target.closest('[data-drag]');
+        if (!el) return;
+        const kind = el.dataset.drag;
+        if (kind === 'item') {
+          const li = el.closest('.item');
+          dragging = { kind, id: li.dataset.item, fromSection: li.dataset.section };
+        } else if (kind === 'section') {
+          const sec = el.closest('.section');
+          dragging = { kind, id: sec.dataset.section, fromSection: null };
+        }
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', dragging ? dragging.id : '');
+        requestAnimationFrame(() => el.closest('.item, .section')?.classList.add('dragging'));
+      });
+      container.addEventListener('dragend', () => {
+        container.querySelectorAll('.dragging, .drop-target')
+          .forEach((n) => n.classList.remove('dragging', 'drop-target'));
+        dragging = null;
+      });
+      container.addEventListener('dragover', (e) => {
+        if (!dragging) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const target = dragging.kind === 'item'
+          ? e.target.closest('.item, .items, .section')
+          : e.target.closest('.section');
+        container.querySelectorAll('.drop-target').forEach((n) => n.classList.remove('drop-target'));
+        if (target) target.classList.add('drop-target');
+      });
+      container.addEventListener('drop', (e) => {
+        if (!dragging) return;
+        e.preventDefault();
+        if (dragging.kind === 'item') {
+          const overItem = e.target.closest('.item');
+          const overList = e.target.closest('.items');
+          let toSection;
+          let toIndex;
+          if (overItem) {
+            toSection = overItem.dataset.section;
+            const siblings = [...overItem.parentElement.querySelectorAll('.item')];
+            toIndex = siblings.indexOf(overItem);
+            const rect = overItem.getBoundingClientRect();
+            if (e.clientY > rect.top + rect.height / 2) toIndex += 1;
+          } else if (overList) {
+            toSection = overList.dataset.section;
+            toIndex = overList.querySelectorAll('.item').length;
+          } else {
+            return;
+          }
+          onMove({
+            kind: 'item',
+            itemId: dragging.id,
+            fromSection: dragging.fromSection,
+            toSection,
+            toIndex,
+          });
+        } else if (dragging.kind === 'section') {
+          const overSection = e.target.closest('.section');
+          if (!overSection || overSection.dataset.section === dragging.id) return;
+          const sections = [...container.querySelectorAll('.section')];
+          let toIndex = sections.indexOf(overSection);
+          const rect = overSection.getBoundingClientRect();
+          if (e.clientY > rect.top + rect.height / 2) toIndex += 1;
+          onMove({ kind: 'section', sectionId: dragging.id, toIndex });
+        }
+      });
+    }
+
+    // =========================================================================
+    // router — ハッシュベースの簡易ルーター
+    //   #/ → ホーム / #/c/<id> → エディタ / #share=... → 共有データ
+    // =========================================================================
+    function parseHash(hash = location.hash) {
+      if (hash.startsWith('#share=')) return { name: 'share', raw: hash };
+      const m = hash.match(/^#\/c\/(.+)$/);
+      if (m) return { name: 'editor', id: m[1] };
+      return { name: 'home' };
+    }
+    function goHome() { location.hash = '#/'; }
+    function goEditor(id) { location.hash = '#/c/' + id; }
+    function startRouter(onChange) {
+      const handler = () => onChange(parseHash());
+      window.addEventListener('hashchange', handler);
+      handler();
+      return () => window.removeEventListener('hashchange', handler);
+    }
+
+    // =========================================================================
+    // app — ストア・ルーター・描画・イベントの結線（エントリポイント）
+    // =========================================================================
+    const store = new Store(new LocalStorageAdapter());
+    const app = document.getElementById('app');
+    const fileInput = document.getElementById('file-input');
+
+    function applyTheme(theme) {
+      if (theme === 'auto') document.documentElement.removeAttribute('data-theme');
+      else document.documentElement.setAttribute('data-theme', theme);
+    }
+    function cycleTheme() {
+      const order = ['auto', 'light', 'dark'];
+      const cur = store.state.settings.theme || 'auto';
+      const next = order[(order.indexOf(cur) + 1) % order.length];
+      store.commit((s) => (s.settings.theme = next), { history: false });
+      applyTheme(next);
+    }
+
+    function render() {
+      const route = parseHash();
+      if (route.name === 'editor') {
+        const checklist = M.findChecklist(store.state, route.id);
+        if (!checklist) { goHome(); return; }
+        app.innerHTML = renderEditor(checklist);
+        attachDragAndDrop(app, handleMove);
+      } else {
+        app.innerHTML = renderHome(store.state);
+      }
+      updateTopbar();
+    }
+    function updateTopbar() {
+      document.querySelector('[data-action="undo"]').disabled = !store.canUndo();
+      document.querySelector('[data-action="redo"]').disabled = !store.canRedo();
+    }
+    function currentChecklist() {
+      const route = parseHash();
+      return route.name === 'editor' ? M.findChecklist(store.state, route.id) : null;
+    }
+
+    function handleMove(move) {
+      const c = currentChecklist();
+      if (!c) return;
+      if (move.kind === 'item') {
+        store.commit((s) => {
+          const cc = M.findChecklist(s, c.id);
+          M.moveItem(cc, move.fromSection, move.itemId, move.toSection, move.toIndex);
+        });
+      } else if (move.kind === 'section') {
+        store.commit((s) => {
+          const cc = M.findChecklist(s, c.id);
+          M.moveSection(cc, move.sectionId, move.toIndex);
+        });
+      }
+    }
+
+    function openNewDialog() {
+      const overlay = buildModal(`
+        <h3>新しいチェックリスト</h3>
+        <p>使い方に合わせて種類を選んでください。</p>
+        <div class="mode-choices">
+          <button class="mode-card" data-mode="template">
+            <strong>テンプレート型</strong>
+            <span>点検表・持ち物・手順など、繰り返し使う。チェック後に一括リセットして再利用。</span>
+          </button>
+          <button class="mode-card" data-mode="todo">
+            <strong>ToDo型</strong>
+            <span>その都度追加して消化する使い捨てのリスト。</span>
+          </button>
+        </div>
+        <label class="field">タイトル
+          <input class="new-title" placeholder="（後で変更できます）" />
+        </label>
+        <div class="modal-actions">
+          <button class="btn" data-close>キャンセル</button>
+        </div>
+      `);
+      overlay.querySelectorAll('.mode-card').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const mode = btn.dataset.mode;
+          const title = overlay.querySelector('.new-title').value.trim();
+          const checklist = M.createChecklist(mode, title);
+          store.commit((s) => M.addChecklist(s, checklist));
+          closeModal(overlay);
+          goEditor(checklist.id);
+        });
+      });
+    }
+
+    function openShareDialog(checklist) {
+      const { url, length } = encodeShareLink(checklist);
+      const warn =
+        length > 2000
+          ? `<p class="warn">⚠ リンクが長い（${length}文字）ため一部の環境で開けない場合があります。大きなリストはエクスポート(JSON)での共有を推奨します。</p>`
+          : '';
+      const overlay = buildModal(`
+        <h3>共有リンク</h3>
+        <p>このリンクを開くと、相手の端末にこのチェックリストを取り込めます（サーバー不要）。</p>
+        <textarea class="share-url" readonly rows="4">${url}</textarea>
+        ${warn}
+        <div class="modal-actions">
+          <button class="btn primary" data-copy>コピー</button>
+          <button class="btn" data-close>閉じる</button>
+        </div>
+      `);
+      const ta = overlay.querySelector('.share-url');
+      overlay.querySelector('[data-copy]').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(url);
+        } catch {
+          ta.select();
+          document.execCommand('copy');
+        }
+        overlay.querySelector('[data-copy]').textContent = 'コピーしました ✓';
+      });
+    }
+
+    function maybeImportShare() {
+      const route = parseHash();
+      if (route.name !== 'share') return false;
+      const checklist = readShareFromHash();
+      if (!checklist) { goHome(); return true; }
+      const ok = confirm(`「${checklist.title}」を取り込みますか？`);
+      if (ok) {
+        const copy = JSON.parse(JSON.stringify(checklist));
+        copy.id = M.createChecklist().id;
+        copy.createdAt = copy.updatedAt = Date.now();
+        store.commit((s) => M.addChecklist(s, copy));
+        goEditor(copy.id);
+      } else {
+        goHome();
+      }
+      return true;
+    }
+
+    function buildModal(innerHtml) {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `<div class="modal" role="dialog" aria-modal="true">${innerHtml}</div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay || e.target.hasAttribute('data-close')) closeModal(overlay);
+      });
+      return overlay;
+    }
+    function closeModal(overlay) { overlay.remove(); }
+
+    // ---- イベント委譲 ----
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+      const sectionId = btn.dataset.section;
+      const itemId = btn.dataset.item;
+      const c = currentChecklist();
+      switch (action) {
+        case 'undo': return store.undo();
+        case 'redo': return store.redo();
+        case 'theme': return cycleTheme();
+        case 'home': return goHome();
+        case 'new': return openNewDialog();
+        case 'open': return goEditor(id);
+        case 'import': return fileInput.click();
+        case 'export': return exportStateToFile(store.state);
+        case 'duplicate':
+          return store.commit((s) => M.duplicateChecklist(s, id));
+        case 'rename': {
+          const cur = M.findChecklist(store.state, id);
+          const title = prompt('新しい名前', cur ? cur.title : '');
+          if (title != null) store.commit((s) => M.renameChecklist(M.findChecklist(s, id), title));
+          return;
+        }
+        case 'delete': {
+          const cur = M.findChecklist(store.state, id);
+          if (confirm(`「${cur ? cur.title : ''}」を削除しますか？`))
+            store.commit((s) => M.removeChecklist(s, id));
+          return;
+        }
+        case 'add-section':
+          return c && store.commit((s) => M.addSection(M.findChecklist(s, c.id)));
+        case 'delete-section':
+          return c && store.commit((s) => M.removeSection(M.findChecklist(s, c.id), sectionId));
+        case 'delete-item':
+          return c && store.commit((s) => M.removeItem(M.findChecklist(s, c.id), sectionId, itemId));
+        case 'reset':
+          if (c && confirm('すべての項目を未完了に戻します。よろしいですか？'))
+            store.commit((s) => M.resetChecklist(M.findChecklist(s, c.id)));
+          return;
+        case 'clear-completed':
+          return c && store.commit((s) => M.clearCompleted(M.findChecklist(s, c.id)));
+        case 'share':
+          return c && openShareDialog(c);
+      }
+    });
+
+    document.addEventListener('change', (e) => {
+      const el = e.target;
+      const c = currentChecklist();
+      if (el.matches('[data-action="toggle"]') && c) {
+        store.commit((s) =>
+          M.toggleItem(M.findChecklist(s, c.id), el.dataset.section, el.dataset.item)
+        );
+      }
+    });
+
+    document.addEventListener('change', (e) => {
+      const el = e.target;
+      const c = currentChecklist();
+      if (!c) return;
+      if (el.matches('[data-action="edit-title"]')) {
+        store.commit((s) => M.renameChecklist(M.findChecklist(s, c.id), el.value));
+      } else if (el.matches('[data-action="edit-section"]')) {
+        store.commit((s) => M.renameSection(M.findChecklist(s, c.id), el.dataset.section, el.value));
+      } else if (el.matches('[data-action="edit-item"]')) {
+        store.commit((s) =>
+          M.editItem(M.findChecklist(s, c.id), el.dataset.section, el.dataset.item, el.value)
+        );
+      }
+    });
+
+    document.addEventListener('submit', (e) => {
+      const form = e.target.closest('[data-action="add-item"]');
+      if (!form) return;
+      e.preventDefault();
+      const c = currentChecklist();
+      if (!c) return;
+      const input = form.querySelector('.add-item-input');
+      const text = input.value;
+      const sectionId = form.dataset.section;
+      if (!text.trim()) return;
+      pendingFocusSection = sectionId;
+      store.commit((s) => M.addItem(M.findChecklist(s, c.id), sectionId, text));
+    });
+
+    let pendingFocusSection = null;
+    function restoreFocus() {
+      if (!pendingFocusSection) return;
+      const input = app.querySelector(
+        `.add-item[data-section="${pendingFocusSection}"] .add-item-input`
+      );
+      pendingFocusSection = null;
+      if (input) input.focus();
+    }
+
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      fileInput.value = '';
+      if (!file) return;
+      try {
+        const data = await readStateFromFile(file);
+        if (confirm('現在のデータを、読み込んだ内容で置き換えます。よろしいですか？')) {
+          store.replaceState(data);
+          goHome();
+        }
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+
+    // ---- 起動 ----
+    store.subscribe(() => {
+      render();
+      restoreFocus();
+    });
+    applyTheme(store.state.settings.theme || 'auto');
+    startRouter(() => {
+      if (maybeImportShare()) return;
+      render();
+    });
+  })();
+  </script>
 </body>
 </html>
