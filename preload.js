@@ -30,4 +30,9 @@ contextBridge.exposeInMainWorld('recorderAPI', {
     ipcRenderer.removeAllListeners('gadget:update');
     ipcRenderer.on('gadget:update', (_e, data) => cb(data));
   },
+  // 失敗・権限拒否などの警告（ガジェットに赤字表示）。
+  onGadgetWarn: (cb) => {
+    ipcRenderer.removeAllListeners('gadget:warn');
+    ipcRenderer.on('gadget:warn', (_e, data) => cb(data));
+  },
 });
