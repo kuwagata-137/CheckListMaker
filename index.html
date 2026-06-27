@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>チェックリストメーカー</title>
+  <title>CheckListMaker</title>
   <link rel="icon"
         href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3E%E2%9C%93%3C/text%3E%3C/svg%3E" />
   <style>
@@ -434,9 +434,29 @@
     cursor: pointer;
   }
   .add-image:hover { background: var(--surface-2); border-color: var(--primary); }
+  /* 手順に組み込んだ画像は手順そのものの説明なので、手順欄の幅いっぱいに大きく見せる。
+     （サムネイルではなく原寸に近い表示。クリックで編集できる点は同じ。） */
+  .item-images.is-large {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .item-images.is-large .thumb-wrap { display: block; width: 100%; }
+  .item-images.is-large .thumb {
+    width: 100%;
+    height: auto;
+    max-width: 100%;
+    max-height: 70vh;
+    object-fit: contain;
+  }
+  .item-images.is-large .thumb-del { top: 4px; right: 4px; }
+  .item-images.is-large .add-image { align-self: flex-start; }
 
   /* ---- 画像ペイントエディタ ---- */
-  .img-editor { max-width: min(960px, 96vw); padding: 16px; }
+  /* 画像編集はできるだけ広い面積で行いたいので、モーダルは画面いっぱい近くまで広げる。
+     基底の .modal が後方で max-width:460px / width:100% を指定するため、
+     同等以上の詳細度（.modal.img-editor）で確実に上書きする。 */
+  .modal.img-editor { max-width: min(1500px, 98vw); width: 98vw; padding: 16px; }
   .ie-toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -445,6 +465,30 @@
     margin-bottom: 12px;
   }
   .ie-tools { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+  /* 編集中だけ対象画像を拡大縮小する表示用ズーム（仕上がり＝保存内容には影響しない）。 */
+  .ie-zoom { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted); }
+  .ie-zoom input[type="range"] { width: 130px; vertical-align: middle; }
+  .ie-zoom .ie-zoom-num {
+    width: 58px;
+    font: inherit;
+    text-align: right;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .ie-zoom .ie-zoom-fit {
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .ie-zoom .ie-zoom-fit:hover { background: var(--surface-2); }
   .ie-tool {
     width: 34px;
     height: 34px;
@@ -460,15 +504,25 @@
   .ie-color input { width: 34px; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: none; cursor: pointer; }
   .ie-size input { vertical-align: middle; }
   .ie-canvas-wrap {
-    max-height: 64vh;
+    /* 編集面を広く。ズーム時は内部でスクロールする。 */
+    max-height: 78vh;
     overflow: auto;
     background: repeating-conic-gradient(#0001 0% 25%, transparent 0% 50%) 50% / 20px 20px;
     border: 1px solid var(--border);
     border-radius: 8px;
-    display: flex;
-    justify-content: center;
+    /* flex+justify-content:center は拡大時に左端がスクロールで届かなくなるため、
+       block + margin:auto にする（収まる時は中央、はみ出す時は左端から見られる）。 */
+    display: block;
+    padding: 10px;
   }
-  .ie-canvas { max-width: 100%; height: auto; touch-action: none; cursor: crosshair; }
+  .ie-canvas {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    height: auto;
+    touch-action: none;
+    cursor: crosshair;
+  }
   .ie-actions { display: flex; gap: 8px; margin-top: 12px; }
   .ie-hint { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
 
@@ -1093,7 +1147,7 @@
     }
     // 項目に添付された画像のサムネイル列 ＋「画像を追加」ボタン。
     // サムネイルのクリックでペイント編集を開く。複数枚に対応。
-    function renderImages(sectionId, item) {
+    function renderImages(sectionId, item, large) {
       const imgs = Array.isArray(item.images) ? item.images : [];
       const thumbs = imgs
         .map(
@@ -1108,7 +1162,7 @@
         )
         .join('');
       return `
-        <div class="item-images" data-section="${sectionId}" data-item="${item.id}">
+        <div class="item-images${large ? ' is-large' : ''}" data-section="${sectionId}" data-item="${item.id}">
           ${thumbs}
           <button class="add-image" data-action="add-image"
                   data-section="${sectionId}" data-item="${item.id}"
@@ -1164,7 +1218,7 @@
             <input class="step-note-input" data-action="edit-note"
                    data-section="${sectionId}" data-item="${item.id}"
                    placeholder="メモ（任意）" value="${escapeHtml(note)}" />
-            ${renderImages(sectionId, item)}
+            ${renderImages(sectionId, item, true)}
           </div>
           <button class="insert-after" data-action="insert-item-after"
                   data-section="${sectionId}" data-item="${item.id}"
@@ -1649,6 +1703,12 @@
             </div>
             <label class="ie-color" title="色"><input type="color" value="#ff3b30" /></label>
             <label class="ie-size" title="線の太さ"><input type="range" min="1" max="40" value="6" /></label>
+            <span class="ie-zoom" title="編集中の表示倍率（拡大縮小しても保存される画像の仕上がりは変わりません）">
+              🔍
+              <input type="range" class="ie-zoom-range" min="10" max="400" step="5" value="100" aria-label="表示倍率" />
+              <input type="number" class="ie-zoom-num" min="10" max="400" step="5" value="100" aria-label="表示倍率（％）" />%
+              <button type="button" class="ie-zoom-fit" title="画面に収まる倍率に合わせる">フィット</button>
+            </span>
             <button class="btn ie-undo" title="元に戻す">↶ 元に戻す</button>
           </div>
           <div class="ie-canvas-wrap"><canvas class="ie-canvas"></canvas></div>
@@ -1661,12 +1721,45 @@
       document.body.appendChild(overlay);
 
       const canvas = overlay.querySelector('.ie-canvas');
+      const canvasWrap = overlay.querySelector('.ie-canvas-wrap');
       const ctx = canvas.getContext('2d');
       const colorInput = overlay.querySelector('.ie-color input');
       const sizeInput = overlay.querySelector('.ie-size input');
       const toolBtns = overlay.querySelectorAll('.ie-tool');
       let tool = 'arrow';
       const undoStack = [];
+
+      // ---- 編集中だけの表示ズーム ----
+      // canvas のピクセル数（＝保存される実体）は一切変えず、CSS の表示サイズだけを
+      // 拡大縮小する。よって「編集のしやすさ（見た目の大きさ）」と「仕上がり（保存内容）」は
+      // 完全に独立している。
+      const zoomRange = overlay.querySelector('.ie-zoom-range');
+      const zoomNum = overlay.querySelector('.ie-zoom-num');
+      const zoomFit = overlay.querySelector('.ie-zoom-fit');
+      const ZOOM_MIN = 10, ZOOM_MAX = 400;
+      let zoom = 100;
+      function applyZoom() {
+        canvas.style.maxWidth = 'none';
+        canvas.style.width = (canvas.width * zoom / 100) + 'px';
+        canvas.style.height = 'auto';
+      }
+      function setZoom(p) {
+        zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(Number(p) || 100)));
+        zoomRange.value = zoom;
+        zoomNum.value = zoom;
+        applyZoom();
+      }
+      function fitZoom() {
+        const avail = canvasWrap.clientWidth - 24; // 余白・スクロールバー分を控える
+        if (canvas.width > 0 && avail > 0) {
+          setZoom(Math.max(ZOOM_MIN, Math.min(100, Math.floor((avail / canvas.width) * 100))));
+        } else {
+          setZoom(100);
+        }
+      }
+      zoomRange.addEventListener('input', () => setZoom(zoomRange.value));
+      zoomNum.addEventListener('change', () => setZoom(zoomNum.value));
+      zoomFit.addEventListener('click', fitZoom);
 
       function selectTool(t) {
         tool = t;
@@ -1680,6 +1773,7 @@
         canvas.width = baseImg.naturalWidth;
         canvas.height = baseImg.naturalHeight;
         ctx.drawImage(baseImg, 0, 0);
+        fitZoom(); // まず画面に収まる倍率にして全体を見せる（以後ユーザーが自由に拡大可）
       };
       baseImg.src = srcUrl;
 
@@ -1693,6 +1787,7 @@
           canvas.width = im.naturalWidth;
           canvas.height = im.naturalHeight;
           ctx.drawImage(im, 0, 0);
+          applyZoom(); // 復元でサイズが変わっても現在の表示倍率を保つ
         };
         im.src = url;
       }
@@ -1835,6 +1930,7 @@
             tmp.getContext('2d').drawImage(canvas, rx, ry, rw, rh, 0, 0, rw, rh);
             canvas.width = rw; canvas.height = rh;
             ctx.drawImage(tmp, 0, 0);
+            applyZoom(); // トリミングでサイズが変わっても表示倍率を保つ
           }
         }
         dragBase = null;

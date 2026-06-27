@@ -1,0 +1,63 @@
+name: Build Windows installer
+
+# Windows 用インストーラ(.exe)をクラウド(windows-latest)でビルドし、
+# 成果物(Artifact)としてダウンロードできるようにする。
+# ローカルにビルド環境を用意しなくても、GitHub 上で .exe を入手できる。
+
+on:
+  # 作業ブランチへの push で自動ビルド
+  push:
+    branches:
+      - claude/recording-button-image-editing-6fbglp
+  # Actions 画面から手動実行も可能
+  workflow_dispatch:
+
+jobs:
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        # package-lock.json を同梱していないため npm ci ではなく npm install を使う
+        run: npm install
+
+      - name: Build Windows installer
+        # electron-builder が electron のダウンロードとネイティブモジュールの
+        # 再ビルド(npmRebuild)まで行う。署名証明書は無いので未署名 exe になる。
+        run: npm run dist
+
+      - name: List build output
+        run: dir dist
+        shell: cmd
+
+      - name: Upload installer artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: CheckListMaker-Windows-installer
+          path: |
+            dist/*.exe
+            dist/*.blockmap
+          if-no-files-found: error
+
+      - name: Write download link to run summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "## CheckListMaker Windows インストーラ";
+            echo "";
+            echo "ビルド済みインストーラ(.exe)のダウンロードページ:";
+            echo "";
+            echo "- 直リンク: ${{ steps.upload.outputs.artifact-url }}";
+            echo "- もしくはこのページ下部の **Artifacts → CheckListMaker-Windows-installer** から取得";
+            echo "";
+            echo "使い方は docs/インストールと使い方ガイド.md を参照してください。";
+          } >> "$GITHUB_STEP_SUMMARY"
