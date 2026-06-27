@@ -14,6 +14,10 @@
 
 const { app, BrowserWindow, ipcMain, screen, nativeImage } = require('electron');
 const path = require('path');
+
+// アプリケーション名（メニュー/Dock/通知などに表示される）。
+// package.json の productName と一致させ、「CheckListMaker」一本に統一する。
+app.setName('CheckListMaker');
 const fs = require('fs');
 const screenshot = require('screenshot-desktop');
 const { uIOhook } = require('uiohook-napi');
@@ -108,6 +112,7 @@ function createMainWindow() {
   mainWin = new BrowserWindow({
     width: 1100,
     height: 800,
+    title: 'CheckListMaker',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

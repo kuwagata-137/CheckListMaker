@@ -1,7 +1,8 @@
 {
   "name": "checklistmaker",
+  "productName": "CheckListMaker",
   "version": "1.0.0",
-  "description": "チェックリスト／手順テンプレート管理アプリ（録画＝クリック連動スクリーンショット対応の Electron 版）",
+  "description": "CheckListMaker — チェックリスト／手順テンプレート管理アプリ（録画＝クリック連動スクリーンショット対応のデスクトップ版）",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
