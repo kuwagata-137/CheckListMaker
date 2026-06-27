@@ -422,12 +422,57 @@
   .warn { color: var(--danger); font-size: 0.85rem; }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
-  /* ---- 印刷 ---- */
+  /* ---- 印刷用ビュー ----
+     画面では隠し、印刷時だけ #app / #topbar と入れ替えて表示する。
+     編集用の <input> は印刷でテキストが折り返せず欠けてしまうため、
+     印刷専用のテキスト表現（span/li）で描き直す。 */
+  #print-root { display: none; }
+  .print-header h1 { margin: 0 0 6px; font-size: 1.5rem; }
+  .print-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    color: #444;
+    font-size: 0.9rem;
+    border-bottom: 2px solid #000;
+    padding-bottom: 8px;
+    margin-bottom: 14px;
+  }
+  .print-section { margin-bottom: 14px; break-inside: avoid; }
+  .print-section-title {
+    font-size: 1.05rem;
+    margin: 0 0 6px;
+    padding-bottom: 3px;
+    border-bottom: 1px solid #999;
+  }
+  .print-section-meta { font-weight: 400; font-size: 0.85rem; color: #555; }
+  .print-items { list-style: none; margin: 0; padding: 0; }
+  .print-item {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 3px 0;
+    break-inside: avoid;
+  }
+  .print-no { min-width: 1.4em; font-weight: 700; color: #555; }
+  .print-box { font-size: 1.05rem; line-height: 1; }
+  .print-text { flex: 1; min-width: 0; word-break: break-word; }
+  .print-item.done .print-text { text-decoration: line-through; color: #666; }
+  .print-step-time { color: #555; font-size: 0.85rem; white-space: nowrap; }
+  .print-note {
+    flex-basis: 100%;
+    margin-left: 1.9em;
+    color: #555;
+    font-size: 0.85rem;
+    word-break: break-word;
+  }
+
   @media print {
-    #topbar, .editor-toolbar, .card-tools, .add-item, .grip,
-    .item .icon, .section-head .icon { display: none !important; }
-    body { background: #fff; }
-    .section, .card { box-shadow: none; }
+    #topbar, #app { display: none !important; }
+    #print-root { display: block !important; }
+    body { background: #fff; color: #000; }
+    @page { margin: 16mm; }
   }
   </style>
 </head>
@@ -850,6 +895,7 @@
                 : `<button class="btn" data-action="clear-completed">完了を削除</button>`
             }
             <button class="btn" data-action="share">🔗 共有リンク</button>
+            <button class="btn" data-action="print">🖨 印刷 / PDF</button>
           </div>
           <div class="sections">${sections}</div>
         </section>`;
@@ -925,6 +971,66 @@
                    placeholder="メモ（任意）" value="${escapeHtml(note)}" />
           </div>
         </li>`;
+    }
+
+    // 印刷（ブラウザの印刷→PDF保存を想定）用の読み取り専用ビューを組み立てる。
+    // 入力欄は印刷でテキストが折り返せないため、span/li のプレーンな表現で描く。
+    function renderPrintView(checklist) {
+      const p = progress(checklist);
+      const isTemplate = checklist.type === MODES.TEMPLATE;
+      const dateStr = new Date().toLocaleDateString('ja-JP');
+      const totalMin = isTemplate
+        ? checklist.sections.reduce((a, s) => a + sumMinutes(s.items), 0)
+        : 0;
+      let stepNo = 0;
+      const sections = checklist.sections
+        .map((s) => {
+          const itemsHtml = s.items
+            .map((it) => {
+              const box = it.done ? '☑' : '☐';
+              if (isTemplate) {
+                stepNo += 1;
+                const time = it.time
+                  ? `<span class="print-step-time">⏱${escapeHtml(String(it.time))}分</span>`
+                  : '';
+                const note = it.note
+                  ? `<div class="print-note">${escapeHtml(it.note)}</div>`
+                  : '';
+                return `<li class="print-item ${it.done ? 'done' : ''}">
+                  <span class="print-no">${stepNo}</span>
+                  <span class="print-box">${box}</span>
+                  <span class="print-text">${escapeHtml(it.text)}</span>
+                  ${time}${note}
+                </li>`;
+              }
+              return `<li class="print-item ${it.done ? 'done' : ''}">
+                <span class="print-box">${box}</span>
+                <span class="print-text">${escapeHtml(it.text)}</span>
+              </li>`;
+            })
+            .join('');
+          const mins = isTemplate ? sumMinutes(s.items) : 0;
+          const meta = mins ? `<span class="print-section-meta">（⏱${mins}分）</span>` : '';
+          const titleText = escapeHtml(s.title);
+          const titleHtml =
+            titleText || meta
+              ? `<h2 class="print-section-title">${titleText}${meta}</h2>`
+              : '';
+          return `<section class="print-section">${titleHtml}<ul class="print-items">${itemsHtml}</ul></section>`;
+        })
+        .join('');
+      return `
+        <div class="print-header">
+          <h1>${escapeHtml(checklist.title)}</h1>
+          <div class="print-meta">
+            <span>${modeLabel(checklist.type)}</span>
+            <span>${p.done} / ${p.total} 完了（${p.percent}%）${
+              totalMin ? ` ・ 総所要 約${totalMin}分` : ''
+            }</span>
+            <span>${dateStr}</span>
+          </div>
+        </div>
+        ${sections}`;
     }
 
     // =========================================================================
@@ -1155,6 +1261,24 @@
       return true;
     }
 
+    // 印刷ビューを差し込んでブラウザの印刷ダイアログを開く。
+    // 印刷後（またはキャンセル後）は中身を空にして画面に残らないようにする。
+    function printChecklist(checklist) {
+      let root = document.getElementById('print-root');
+      if (!root) {
+        root = document.createElement('div');
+        root.id = 'print-root';
+        document.body.appendChild(root);
+      }
+      root.innerHTML = renderPrintView(checklist);
+      const cleanup = () => {
+        root.innerHTML = '';
+        window.removeEventListener('afterprint', cleanup);
+      };
+      window.addEventListener('afterprint', cleanup);
+      window.print();
+    }
+
     function buildModal(innerHtml) {
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
@@ -1224,6 +1348,8 @@
           return c && store.commit((s) => M.clearCompleted(M.findChecklist(s, c.id)));
         case 'share':
           return c && openShareDialog(c);
+        case 'print':
+          return c && printChecklist(c);
       }
     });
 
