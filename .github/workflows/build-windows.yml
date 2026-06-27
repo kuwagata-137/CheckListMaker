@@ -38,6 +38,7 @@ jobs:
         shell: cmd
 
       - name: Upload installer artifact
+        id: upload
         uses: actions/upload-artifact@v4
         with:
           name: CheckListMaker-Windows-installer
@@ -45,3 +46,18 @@ jobs:
             dist/*.exe
             dist/*.blockmap
           if-no-files-found: error
+
+      - name: Write download link to run summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "## CheckListMaker Windows インストーラ";
+            echo "";
+            echo "ビルド済みインストーラ(.exe)のダウンロードページ:";
+            echo "";
+            echo "- 直リンク: ${{ steps.upload.outputs.artifact-url }}";
+            echo "- もしくはこのページ下部の **Artifacts → CheckListMaker-Windows-installer** から取得";
+            echo "";
+            echo "使い方は docs/インストールと使い方ガイド.md を参照してください。";
+          } >> "$GITHUB_STEP_SUMMARY"
