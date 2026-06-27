@@ -108,6 +108,8 @@
   .icon:hover { background: var(--surface-2); color: var(--text); }
   .icon:disabled { opacity: 0.35; cursor: default; }
   .icon.danger:hover { color: var(--danger); }
+  .icon.recording { color: var(--danger); animation: rec-blink 1.4s infinite; }
+  @keyframes rec-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
   /* ---- ホーム ---- */
   .home-head {
@@ -607,6 +609,7 @@
     <span class="topbar-spacer"></span>
     <button class="icon" data-action="undo" title="元に戻す (Undo)">↶</button>
     <button class="icon" data-action="redo" title="やり直す (Redo)">↷</button>
+    <button class="icon" data-action="record" title="録画開始（クリックの度にスクショ保存）">⏺</button>
     <button class="icon" data-action="theme" title="テーマ切替（自動/ライト/ダーク）">🌓</button>
   </div>
 
@@ -1346,6 +1349,37 @@
       applyTheme(next);
     }
 
+    // ---- 録画（クリック連動スクリーンショット） ----
+    // 実体は Electron メインプロセス側（main.js）。preload が公開する
+    // window.recorderAPI が無い＝素のブラウザでは、ボタンは無効表示にする。
+    let isRecording = false;
+    function updateRecordButton() {
+      const btn = document.querySelector('[data-action="record"]');
+      if (!btn) return;
+      if (!window.recorderAPI) {
+        btn.disabled = true;
+        btn.title = '録画はデスクトップ版（Electron）でのみ利用できます';
+        return;
+      }
+      btn.classList.toggle('recording', isRecording);
+      btn.title = isRecording
+        ? '録画停止'
+        : '録画開始（クリックの度にスクショ保存）';
+    }
+    function toggleRecording() {
+      if (!window.recorderAPI) {
+        alert('録画機能はデスクトップ版（Electron）でのみ利用できます。\n「npm start」で起動してください。');
+        return;
+      }
+      if (isRecording) {
+        window.recorderAPI.stopRecording();
+      } else {
+        const c = currentChecklist();
+        const name = c && c.title ? c.title : '記録';
+        window.recorderAPI.startRecording(name);
+      }
+    }
+
     function render() {
       const route = parseHash();
       if (route.name === 'editor') {
@@ -1361,6 +1395,7 @@
     function updateTopbar() {
       document.querySelector('[data-action="undo"]').disabled = !store.canUndo();
       document.querySelector('[data-action="redo"]').disabled = !store.canRedo();
+      updateRecordButton();
     }
     function currentChecklist() {
       const route = parseHash();
@@ -1879,6 +1914,7 @@
       switch (action) {
         case 'undo': return store.undo();
         case 'redo': return store.redo();
+        case 'record': return toggleRecording();
         case 'theme': return cycleTheme();
         case 'home': return goHome();
         case 'new': return openNewDialog();
@@ -1995,6 +2031,14 @@
       restoreFocus();
     });
     applyTheme(store.state.settings.theme || 'auto');
+    // Electron 版なら録画状態の変化を受け取りボタン表示へ反映する。
+    if (window.recorderAPI && window.recorderAPI.onState) {
+      window.recorderAPI.onState((d) => {
+        isRecording = !!(d && d.recording);
+        updateRecordButton();
+      });
+    }
+    updateRecordButton();
     startRouter(() => {
       if (maybeImportShare()) return;
       render();
