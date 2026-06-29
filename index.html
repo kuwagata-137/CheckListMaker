@@ -753,6 +753,44 @@
     .ce-fields { grid-template-columns: 1fr; }
   }
 
+  /* =========================================================================
+     リッチ本文（手順の本文：書式付きテキスト＋表）
+     contenteditable の本文。ツールバーはフォーカス時のみ表示。
+     表の行列コントロールは body:hover 時に近接セルへフローティング表示する(#rb-tctl)。 */
+  .rb { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin: 6px 0 8px; }
+  .rb:focus-within { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 16%, transparent); }
+  .rb-toolbar { display: none; align-items: center; gap: 2px; flex-wrap: wrap; padding: 5px 6px; background: var(--surface-2); border-bottom: 1px solid var(--border); border-radius: 8px 8px 0 0; }
+  .rb:focus-within .rb-toolbar { display: flex; }
+  .rb-btn { min-width: 28px; height: 28px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; font-size: 0.9rem; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; font-family: inherit; }
+  .rb-btn:hover { background: var(--surface); border-color: var(--border); }
+  .rb-sep { width: 1px; height: 18px; background: var(--border); margin: 0 3px; }
+  .rb-swatch { display: inline-block; width: 13px; height: 4px; border-radius: 2px; background: #c0392b; margin-left: 1px; vertical-align: 2px; }
+  .rb-swatch-hl { padding: 0 3px; background: #fff3a3; color: #1f2329; border-radius: 3px; }
+  .rb-ins-table { margin-left: auto; border: 1px solid var(--border); background: var(--surface); font-size: 0.85rem; gap: 4px; }
+  .rb-body { padding: 10px 12px; min-height: 38px; font-size: 0.95rem; outline: none; }
+  .rb-body:empty::before { content: attr(data-placeholder); color: var(--muted); opacity: 0.7; }
+  .rb-body p { margin: 0 0 6px; }
+  .rb-body ul, .rb-body ol { margin: 4px 0 6px 1.4em; padding: 0; }
+  .rb-body table { border-collapse: collapse; margin: 6px 0; font-size: 0.9rem; }
+  .rb-body th, .rb-body td { border: 1px solid #c9ccd2; padding: 5px 9px; text-align: left; vertical-align: top; min-width: 48px; }
+  .rb-body thead th { background: #eef4fb; font-weight: 700; }
+  /* 行列コントロール（フローティング・近接時のみ表示） */
+  #rb-tctl { position: fixed; inset: 0; pointer-events: none; z-index: 60; }
+  #rb-tctl[hidden] { display: none; }
+  .rb-tctl { position: fixed; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border); background: #fff; color: var(--primary); font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,.25); font-size: 0.8rem; line-height: 1; padding: 0; pointer-events: auto; }
+  .rb-tctl.rb-tctl-del { color: var(--muted); }
+  /* 色パレット */
+  .rb-palette { position: fixed; z-index: 70; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.18); padding: 6px; display: flex; gap: 5px; flex-wrap: wrap; width: 150px; }
+  .rb-palette button { width: 22px; height: 22px; border-radius: 4px; border: 1px solid rgba(0,0,0,.15); cursor: pointer; padding: 0; }
+  .rb-palette .rb-pal-none { width: auto; padding: 0 8px; background: var(--surface); color: var(--muted); border-style: dashed; font-size: 0.72rem; }
+  /* 印刷用リッチ本文 */
+  .print-body { flex-basis: 100%; margin: 4px 0 2px 1.9em; font-size: 0.9rem; }
+  .print-body p { margin: 0 0 5px; }
+  .print-body ul, .print-body ol { margin: 3px 0 5px 1.3em; padding: 0; }
+  .print-body table { border-collapse: collapse; margin: 5px 0; font-size: 0.86rem; break-inside: avoid; }
+  .print-body th, .print-body td { border: 1px solid #555; padding: 4px 8px; text-align: left; vertical-align: top; }
+  .print-body thead th { background: #e9eef5; font-weight: 700; }
+
   @media print {
     #topbar, #app { display: none !important; }
     #print-root { display: block !important; }
@@ -794,7 +832,7 @@
     const MODES = { TEMPLATE: 'template', TODO: 'todo' };
 
     function createItem(text = '') {
-      return { id: uid(), text, done: false, note: '', time: '', images: [] };
+      return { id: uid(), text, done: false, note: '', time: '', images: [], body: '' };
     }
     function createSection(title = '') {
       return { id: uid(), title, items: [] };
@@ -1353,6 +1391,7 @@
               <button class="icon danger" title="削除"
                       data-action="delete-item" data-section="${sectionId}" data-item="${item.id}">✕</button>
             </div>
+            ${renderRichBody(sectionId, item)}
             <input class="step-note-input" data-action="edit-note"
                    data-section="${sectionId}" data-item="${item.id}"
                    placeholder="メモ（任意）" value="${escapeHtml(note)}" />
@@ -1362,6 +1401,300 @@
                   data-section="${sectionId}" data-item="${item.id}"
                   title="この下に手順を追加">＋ ここに追加</button>
         </li>`;
+    }
+    // 手順の「リッチ本文」: 書式付きテキスト＋表を編集できる contenteditable 領域。
+    // ツールバーはフォーカス時のみ表示。保存はフォーカスアウト時に sanitize して commit。
+    function renderRichBody(sectionId, item) {
+      const body = sanitizeBodyHtml(item.body || '');
+      return `
+        <div class="rb" draggable="false">
+          <div class="rb-toolbar">
+            <button type="button" class="rb-btn" data-rb-cmd="bold" title="太字"><b>B</b></button>
+            <button type="button" class="rb-btn" data-rb-cmd="italic" title="斜体"><i>I</i></button>
+            <button type="button" class="rb-btn" data-rb-cmd="underline" title="下線"><u>U</u></button>
+            <button type="button" class="rb-btn" data-rb-cmd="strikeThrough" title="取消線"><s>S</s></button>
+            <span class="rb-sep"></span>
+            <button type="button" class="rb-btn" data-rb-cmd="foreColor" title="文字色">A<span class="rb-swatch"></span></button>
+            <button type="button" class="rb-btn" data-rb-cmd="hiliteColor" title="ハイライト（文字）"><span class="rb-swatch-hl">H</span></button>
+            <button type="button" class="rb-btn" data-rb-cmd="cellFill" title="セル塗りつぶし">🪣</button>
+            <span class="rb-sep"></span>
+            <button type="button" class="rb-btn" data-rb-cmd="insertUnorderedList" title="箇条書き">•≡</button>
+            <button type="button" class="rb-btn" data-rb-cmd="insertOrderedList" title="番号付きリスト">1.≡</button>
+            <button type="button" class="rb-btn rb-ins-table" data-rb-cmd="insertTable" title="表を挿入">▦ 表</button>
+          </div>
+          <div class="rb-body" contenteditable="true" data-rb-edit
+               data-section="${sectionId}" data-item="${item.id}"
+               data-placeholder="本文（任意）。書式や表を使えます">${body}</div>
+        </div>`;
+    }
+
+    // =========================================================================
+    // richbody — 手順本文のサニタイズ・表操作・編集ツールバー
+    // =========================================================================
+    const RB_ALLOWED_TAGS = new Set(['P','BR','STRONG','B','EM','I','U','S','STRIKE','SPAN','UL','OL','LI','TABLE','THEAD','TBODY','TR','TH','TD','DIV']);
+    const RB_COLOR_RE = /^(#[0-9a-fA-F]{3,8}|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)|rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(0|1|0?\.\d+)\s*\)|transparent|[a-zA-Z]{3,20})$/;
+    const RB_ALIGN_RE = /^(left|right|center|justify)$/i;
+    const RB_TEXT_COLORS = ['#1f2329', '#c0392b', '#1d6fb8', '#2f8f6b', '#b8860b', '#7a3da6'];
+    const RB_HL_COLORS = ['#fff3a3', '#cdeccd', '#cfe5fb', '#fad4d4', '#e7d8f5'];
+    const RB_CELL_COLORS = ['#fef0c7', '#e3f3e0', '#dbeafe', '#fde2e2', '#ede9fe', '#eef1f4'];
+
+    function rbCleanStyle(srcEl, destEl) {
+      [['color'], ['background-color']].forEach(([p]) => {
+        const v = (srcEl.style.getPropertyValue(p) || '').trim();
+        if (v && RB_COLOR_RE.test(v)) destEl.style.setProperty(p, v);
+      });
+      const ta = (srcEl.style.getPropertyValue('text-align') || '').trim();
+      if (ta && RB_ALIGN_RE.test(ta)) destEl.style.setProperty('text-align', ta);
+    }
+    function rbWalk(src, destParent) {
+      src.childNodes.forEach((node) => {
+        if (node.nodeType === 3) { destParent.appendChild(document.createTextNode(node.nodeValue)); return; }
+        if (node.nodeType !== 1) return;
+        const tag = node.tagName;
+        if (tag === 'SCRIPT' || tag === 'STYLE') return;
+        if (RB_ALLOWED_TAGS.has(tag)) {
+          const clean = document.createElement(tag.toLowerCase());
+          if (node.getAttribute && node.getAttribute('style')) rbCleanStyle(node, clean);
+          if (tag === 'TABLE') clean.className = 'rb-table';
+          rbWalk(node, clean);
+          destParent.appendChild(clean);
+        } else {
+          rbWalk(node, destParent); // 非許可タグはアンラップ（中身は残す）
+        }
+      });
+    }
+    function rbCopyCellStyle(from, to) {
+      const c = document.createElement('span');
+      rbCleanStyle(from, c);
+      if (c.style.cssText) to.style.cssText = c.style.cssText;
+    }
+    // 表を「先頭行＝見出し(thead/th)」に正規化する
+    function rbNormalizeTable(table) {
+      table.classList.add('rb-table');
+      const rows = Array.from(table.querySelectorAll('tr'));
+      if (!rows.length) { table.remove(); return; }
+      let thead = table.querySelector('thead');
+      let tbody = table.querySelector('tbody');
+      if (!thead) { thead = document.createElement('thead'); table.insertBefore(thead, table.firstChild); }
+      if (!tbody) { tbody = document.createElement('tbody'); table.appendChild(tbody); }
+      const head = rows[0];
+      Array.from(head.children).forEach((c) => {
+        if (c.tagName !== 'TH') { const th = document.createElement('th'); th.innerHTML = c.innerHTML; rbCopyCellStyle(c, th); head.replaceChild(th, c); }
+      });
+      thead.appendChild(head);
+      rows.slice(1).forEach((r) => {
+        Array.from(r.children).forEach((c) => {
+          if (c.tagName === 'TH') { const td = document.createElement('td'); td.innerHTML = c.innerHTML; rbCopyCellStyle(c, td); r.replaceChild(td, c); }
+        });
+        tbody.appendChild(r);
+      });
+      table.querySelectorAll('thead').forEach((h) => { if (h !== thead && !h.children.length) h.remove(); });
+      table.querySelectorAll('tbody').forEach((b) => { if (b !== tbody && !b.children.length) b.remove(); });
+    }
+    function sanitizeBodyHtml(html) {
+      if (!html) return '';
+      const tpl = document.createElement('template');
+      tpl.innerHTML = html;
+      const out = document.createElement('div');
+      rbWalk(tpl.content, out);
+      out.querySelectorAll('table').forEach(rbNormalizeTable);
+      return out.innerHTML;
+    }
+
+    // ---- 編集（commit / コマンド / 表操作 / 行列コントロール / 色パレット） ----
+    function rbItemBody(checklistId, sectionId, itemId) {
+      const cc = M.findChecklist(store.state, checklistId);
+      const sec = cc && cc.sections.find((x) => x.id === sectionId);
+      const it = sec && sec.items.find((x) => x.id === itemId);
+      return it ? (it.body || '') : '';
+    }
+    function rbCommitEditor(editor) {
+      const c = currentChecklist();
+      if (!c || !editor) return;
+      const sectionId = editor.dataset.section, itemId = editor.dataset.item;
+      const clean = sanitizeBodyHtml(editor.innerHTML);
+      if (sanitizeBodyHtml(rbItemBody(c.id, sectionId, itemId)) === clean) return; // 変化なしなら何もしない
+      store.commit((s) => M.setItemField(M.findChecklist(s, c.id), sectionId, itemId, 'body', clean));
+    }
+    function rbExec(cmd, editor, btn) {
+      editor.focus();
+      if (cmd === 'insertTable') return rbInsertTable(editor);
+      if (cmd === 'foreColor') return rbOpenPalette(btn, RB_TEXT_COLORS, false, (col) => { document.execCommand('styleWithCSS', false, true); document.execCommand('foreColor', false, col); });
+      if (cmd === 'hiliteColor') return rbOpenPalette(btn, RB_HL_COLORS, true, (col) => { document.execCommand('styleWithCSS', false, true); document.execCommand('hiliteColor', false, col === 'none' ? 'transparent' : col); });
+      if (cmd === 'cellFill') return rbOpenPalette(btn, RB_CELL_COLORS, true, (col) => rbApplyCellFill(editor, col));
+      document.execCommand('styleWithCSS', false, false); // 太字等はタグ(<b>等)で出力させる
+      document.execCommand(cmd, false, null);
+    }
+    function rbInsertTable(editor) {
+      editor.focus();
+      const cell = '<td><br></td>';
+      const html =
+        '<table class="rb-table"><thead><tr><th>項目</th><th>値</th><th>確認</th></tr></thead>' +
+        '<tbody><tr>' + cell + cell + cell + '</tr><tr>' + cell + cell + cell + '</tr></tbody></table><p><br></p>';
+      document.execCommand('insertHTML', false, html);
+      rbCommitEditor(editor);
+    }
+    function rbCurrentCell(editor) {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return null;
+      let n = sel.anchorNode;
+      let el = n && (n.nodeType === 1 ? n : n.parentElement);
+      el = el && el.closest('td, th');
+      return el && editor.contains(el) ? el : null;
+    }
+    function rbApplyCellFill(editor, col) {
+      const cell = rbCurrentCell(editor);
+      if (!cell) return;
+      if (col === 'none') cell.style.backgroundColor = ''; else cell.style.backgroundColor = col;
+      rbCommitEditor(editor);
+    }
+    // 表構造操作
+    function rbAddColumn(table) {
+      table.querySelectorAll('tr').forEach((r) => {
+        const head = r.parentElement && r.parentElement.tagName === 'THEAD';
+        const c = document.createElement(head ? 'th' : 'td'); c.innerHTML = '<br>'; r.appendChild(c);
+      });
+    }
+    function rbAddRow(table) {
+      const cols = table.rows[0] ? table.rows[0].children.length : 1;
+      const tbody = table.tBodies[0] || table.createTBody();
+      const tr = document.createElement('tr');
+      for (let i = 0; i < cols; i++) { const td = document.createElement('td'); td.innerHTML = '<br>'; tr.appendChild(td); }
+      tbody.appendChild(tr);
+    }
+    function rbDelColumn(table, idx) {
+      table.querySelectorAll('tr').forEach((r) => { if (r.children.length > 1 && r.children[idx]) r.children[idx].remove(); });
+    }
+    function rbDelRow(table, tr) { if (table.rows.length > 1 && tr) tr.remove(); }
+
+    // 行列コントロール（フローティング）
+    let rbTctlEl = null;
+    let rbCtx = null;
+    let rbHideTimer = null;
+    function rbEnsureTctl() {
+      if (rbTctlEl) return;
+      rbTctlEl = document.createElement('div');
+      rbTctlEl.id = 'rb-tctl';
+      rbTctlEl.hidden = true;
+      rbTctlEl.innerHTML =
+        '<button type="button" class="rb-tctl rb-tctl-add" data-rb-tctl="add-col" title="列を追加（右端）">＋</button>' +
+        '<button type="button" class="rb-tctl rb-tctl-add" data-rb-tctl="add-row" title="行を追加（下端）">＋</button>' +
+        '<button type="button" class="rb-tctl rb-tctl-del" data-rb-tctl="del-col" title="この列を削除">−</button>' +
+        '<button type="button" class="rb-tctl rb-tctl-del" data-rb-tctl="del-row" title="この行を削除">−</button>';
+      document.body.appendChild(rbTctlEl);
+    }
+    function rbHideTctl() { if (rbTctlEl) rbTctlEl.hidden = true; rbCtx = null; }
+    function rbPositionTctl() {
+      rbEnsureTctl();
+      const t = rbCtx.table.getBoundingClientRect();
+      const c = rbCtx.cell.getBoundingClientRect();
+      const b = rbTctlEl.children;
+      const place = (el, x, y) => { el.style.left = (x - 10) + 'px'; el.style.top = (y - 10) + 'px'; };
+      place(b[0], t.right, t.top);            // 列追加＝右上角
+      place(b[1], t.left, t.bottom);          // 行追加＝左下角
+      place(b[2], c.left + c.width / 2, t.top); // 列削除＝列の中央・上
+      place(b[3], t.left, c.top + c.height / 2); // 行削除＝行の中央・左
+      rbTctlEl.hidden = false;
+    }
+    function rbHandleTctl(action) {
+      if (!rbCtx) return;
+      const { editor, table, cell } = rbCtx;
+      if (!editor || !table || !editor.contains(table)) return;
+      if (action === 'add-col') rbAddColumn(table);
+      else if (action === 'add-row') rbAddRow(table);
+      else if (action === 'del-col') rbDelColumn(table, cell.cellIndex);
+      else if (action === 'del-row') rbDelRow(table, cell.closest('tr'));
+      rbNormalizeTable(table);
+      rbHideTctl();
+      rbCommitEditor(editor);
+    }
+    // 色パレット
+    function rbClosePalette() { const p = document.getElementById('rb-palette'); if (p) p.remove(); }
+    function rbOpenPalette(btn, colors, withNone, onPick) {
+      rbClosePalette();
+      const pal = document.createElement('div');
+      pal.className = 'rb-palette'; pal.id = 'rb-palette';
+      colors.forEach((col) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.style.background = col; b.title = col;
+        b.addEventListener('mousedown', (e) => { e.preventDefault(); onPick(col); rbClosePalette(); });
+        pal.appendChild(b);
+      });
+      if (withNone) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'rb-pal-none'; b.textContent = 'なし';
+        b.addEventListener('mousedown', (e) => { e.preventDefault(); onPick('none'); rbClosePalette(); });
+        pal.appendChild(b);
+      }
+      document.body.appendChild(pal);
+      const r = btn.getBoundingClientRect();
+      pal.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 162)) + 'px';
+      pal.style.top = (r.bottom + 4) + 'px';
+    }
+    // 表/TSV の貼り付けをセルに取り込む
+    function rbTsvToTable(text) {
+      const rows = text.replace(/\r/g, '').replace(/\n+$/, '').split('\n').map((line) => line.split('\t'));
+      if (!rows.length) return '';
+      const cols = Math.max.apply(null, rows.map((r) => r.length));
+      const cell = (tag, v) => `<${tag}>${escapeHtml(v || '')}<br></${tag}>`;
+      const head = '<tr>' + Array.from({ length: cols }, (_, i) => cell('th', rows[0][i])).join('') + '</tr>';
+      const body = rows.slice(1).map((r) => '<tr>' + Array.from({ length: cols }, (_, i) => cell('td', r[i])).join('') + '</tr>').join('');
+      return `<table class="rb-table"><thead>${head}</thead><tbody>${body}</tbody></table><p><br></p>`;
+    }
+    // すべての配線を一度だけ行う
+    function rbInit() {
+      rbEnsureTctl();
+      // ツールバー / 行列コントロール / パレット閉じ
+      document.addEventListener('mousedown', (e) => {
+        const cmdBtn = e.target.closest && e.target.closest('[data-rb-cmd]');
+        const tctlBtn = e.target.closest && e.target.closest('[data-rb-tctl]');
+        const inPalette = e.target.closest && e.target.closest('.rb-palette');
+        if (!cmdBtn && !inPalette) rbClosePalette();
+        if (tctlBtn) { e.preventDefault(); rbHandleTctl(tctlBtn.dataset.rbTctl); return; }
+        if (cmdBtn) {
+          e.preventDefault(); // 選択・フォーカスを本文に残す
+          const rb = cmdBtn.closest('.rb');
+          const editor = rb && rb.querySelector('[data-rb-edit]');
+          if (editor) rbExec(cmdBtn.dataset.rbCmd, editor, cmdBtn);
+        }
+      });
+      // Alt+Enter でセル内/段落内改行
+      document.addEventListener('keydown', (e) => {
+        const ed = e.target.closest && e.target.closest('[data-rb-edit]');
+        if (!ed) return;
+        if (e.altKey && e.key === 'Enter') { e.preventDefault(); document.execCommand('insertHTML', false, '<br>'); }
+      });
+      // 貼り付け（表/TSV を取り込み、それ以外は素のテキスト/サニタイズHTML）
+      document.addEventListener('paste', (e) => {
+        const ed = e.target.closest && e.target.closest('[data-rb-edit]');
+        if (!ed) return;
+        const cd = e.clipboardData; if (!cd) return;
+        const html = cd.getData('text/html');
+        const text = cd.getData('text/plain');
+        if (html && /<table/i.test(html)) { e.preventDefault(); document.execCommand('insertHTML', false, sanitizeBodyHtml(html)); rbCommitEditor(ed); }
+        else if (text && /\t/.test(text) && /\n/.test(text)) { e.preventDefault(); document.execCommand('insertHTML', false, rbTsvToTable(text)); rbCommitEditor(ed); }
+        else if (text) { e.preventDefault(); document.execCommand('insertText', false, text); }
+      }, true);
+      // フォーカスアウトで保存（パレット/コントロールへの移動は除く）
+      document.addEventListener('focusout', (e) => {
+        const ed = e.target.closest && e.target.closest('[data-rb-edit]');
+        if (!ed) return;
+        const to = e.relatedTarget;
+        if (to && to.closest && (to.closest('.rb-palette') || to.closest('#rb-tctl'))) return;
+        rbCommitEditor(ed);
+      });
+      // 表セルへの近接で行列コントロールを表示
+      document.addEventListener('mousemove', (e) => {
+        if (rbTctlEl && e.target.closest && e.target.closest('#rb-tctl')) { clearTimeout(rbHideTimer); return; }
+        const cell = e.target.closest && e.target.closest('.rb-body td, .rb-body th');
+        if (cell) {
+          rbCtx = { editor: cell.closest('[data-rb-edit]'), table: cell.closest('table'), cell };
+          clearTimeout(rbHideTimer); rbPositionTctl();
+        } else {
+          clearTimeout(rbHideTimer); rbHideTimer = setTimeout(rbHideTctl, 160);
+        }
+      });
+      window.addEventListener('scroll', rbHideTctl, true);
     }
 
     // 表紙（カバーページ）の HTML を組み立てる。画面プレビュー・印刷で共用。
@@ -1445,11 +1778,13 @@
                 const note = it.note
                   ? `<div class="print-note">${escapeHtml(it.note)}</div>`
                   : '';
+                const bodyClean = sanitizeBodyHtml(it.body || '');
+                const bodyHtml = bodyClean ? `<div class="print-body">${bodyClean}</div>` : '';
                 return `<li class="print-item ${it.done ? 'done' : ''}">
                   <span class="print-no">${stepNo}</span>
                   <span class="print-box">${box}</span>
                   <span class="print-text">${escapeHtml(it.text)}</span>
-                  ${time}${note}${imgsHtml}
+                  ${time}${bodyHtml}${note}${imgsHtml}
                 </li>`;
               }
               return `<li class="print-item ${it.done ? 'done' : ''}">
@@ -2503,6 +2838,7 @@
       render();
       restoreFocus();
     });
+    rbInit();
     applyTheme(store.state.settings.theme || 'auto');
     // Electron 版なら録画状態の変化を受け取りボタン表示へ反映する。
     if (window.recorderAPI && window.recorderAPI.onState) {
