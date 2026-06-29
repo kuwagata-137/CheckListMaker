@@ -649,11 +649,119 @@
     break-inside: avoid;
   }
 
+  /* =========================================================================
+     表紙（カバーページ） — テンプレート型の任意の先頭ページ
+     .cover は A4 縦・96dpi 換算の固定サイズ(794x1123)。画面表示時は
+     .cover-stage でラップし transform: scale() で縮小（JS が倍率を設定）。
+     印刷時は名前付きページ(coverpage, margin:0)で 1:1 表示する。
+     配色は共通トーン。差し色だけ --cover-accent でプリセット毎に流し込む。 */
+  .cover-stage { position: relative; overflow: hidden; width: 100%;
+    background: #fff; border: 1px solid var(--border); border-radius: 6px; }
+  .cover-stage > .cover { position: absolute; top: 0; left: 0; transform-origin: top left; }
+  .cover { position: relative; width: 794px; height: 1123px; background: #fff; overflow: hidden;
+    color: #1f2329; font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', Meiryo, sans-serif;
+    line-height: 1.5; --cover-accent: #3b6ea5; }
+  .cover .logo { display: inline-flex; align-items: center; justify-content: center; width: 120px; height: 120px; border-radius: 8px; background: color-mix(in srgb, var(--cover-accent) 12%, #fff); border: 1px dashed color-mix(in srgb, var(--cover-accent) 45%, #fff); overflow: hidden; }
+  .cover .logo img { width: 100%; height: 100%; object-fit: contain; }
+  .cover .title { font-size: 44px; font-weight: 800; letter-spacing: .02em; margin: 0; color: #1f2329; }
+  .cover .subtitle { font-size: 20px; color: #6b7280; margin: 0; }
+  .cover .meta { font-size: 16px; color: #1f2329; }
+  .cover .meta-row { display: flex; gap: 8px; } .cover .meta-row b { min-width: 84px; color: #6b7280; font-weight: 600; }
+  .cover .rev { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .cover .rev caption { text-align: left; font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+  .cover .rev th, .cover .rev td { border: 1px solid #e2e4e9; padding: 6px 8px; text-align: left; }
+  .cover .rev th { background: color-mix(in srgb, var(--cover-accent) 8%, #fff); font-weight: 600; }
+  .cover--centered { display: grid; grid-template-rows: 1fr auto auto 1fr; padding: 90px 80px; text-align: center; justify-items: center; gap: 18px; }
+  .cover--centered .logo { margin-bottom: 24px; }
+  .cover--centered .rule { width: 90px; height: 4px; background: var(--cover-accent); border-radius: 2px; margin: 8px 0 4px; }
+  .cover--centered .footer { align-self: end; display: grid; gap: 6px; color: #6b7280; }
+  .cover--left-top { padding: 96px 80px; display: flex; flex-direction: column; gap: 22px; }
+  .cover--left-top .title { font-size: 50px; } .cover--left-top .divider { height: 1px; background: #e2e4e9; margin: 6px 0; }
+  .cover--left-top .meta { display: grid; gap: 10px; max-width: 420px; } .cover--left-top .spacer { flex: 1; }
+  .cover--top-band { padding: 0; } .cover--top-band .band { min-height: 210px; background: var(--cover-accent); color: #fff; padding: 60px 80px; display: flex; align-items: center; }
+  .cover--top-band .band .title { color: #fff; } .cover--top-band .body { padding: 60px 80px; display: grid; gap: 26px; }
+  .cover--side-band { display: grid; grid-template-columns: 140px 1fr; } .cover--side-band .strip { background: var(--cover-accent); }
+  .cover--side-band .body { padding: 110px 70px; display: flex; flex-direction: column; gap: 22px; } .cover--side-band .title { font-size: 46px; } .cover--side-band .spacer { flex: 1; }
+  .cover--framed { padding: 46px; } .cover--framed .inner { height: 100%; border: 3px solid var(--cover-accent); padding: 70px 64px; display: grid; grid-template-rows: auto 1fr auto; text-align: center; justify-items: center; gap: 20px; }
+  .cover--framed .footer { align-self: end; color: #6b7280; display: grid; gap: 6px; }
+  .cover--hero { padding: 80px; display: flex; flex-direction: column; } .cover--hero .title { font-size: 58px; line-height: 1.1; font-weight: 900; margin-top: auto; white-space: nowrap; }
+  .cover--hero .subtitle { font-size: 24px; margin-top: 12px; } .cover--hero .accentbar { width: 160px; height: 8px; background: var(--cover-accent); margin: 28px 0; } .cover--hero .meta { margin-top: auto; display: flex; gap: 40px; }
+  .cover--logo-top { padding: 90px 80px; display: grid; grid-template-rows: auto auto 1fr auto; justify-items: center; text-align: center; gap: 20px; }
+  .cover--logo-top .logo { width: 150px; height: 150px; } .cover--logo-top .title { font-size: 46px; } .cover--logo-top .footer { align-self: end; color: #6b7280; display: grid; gap: 6px; }
+  .cover--split { display: grid; grid-template-rows: 0.9fr 1.1fr; } .cover--split .top { background: color-mix(in srgb, var(--cover-accent) 10%, #fff); padding: 80px; display: flex; flex-direction: column; justify-content: center; gap: 16px; border-bottom: 4px solid var(--cover-accent); }
+  .cover--split .top .title { font-size: 52px; } .cover--split .bottom { padding: 50px 70px; display: grid; gap: 18px; align-content: start; }
+  .cover--minimal { padding: 150px 90px; display: flex; flex-direction: column; gap: 40px; } .cover--minimal .title { font-size: 52px; font-weight: 700; padding-bottom: 22px; border-bottom: 2px solid var(--cover-accent); }
+  .cover--minimal .meta { display: flex; gap: 48px; color: #6b7280; } .cover--minimal .spacer { flex: 1; }
+  .cover--doc-header { padding: 80px; display: flex; flex-direction: column; } .cover--doc-header .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid var(--cover-accent); padding-bottom: 24px; gap: 28px; }
+  .cover--doc-header .head .title { font-size: 34px; max-width: 100%; white-space: nowrap; } .cover--doc-header .infobox { border: 1px solid #e2e4e9; font-size: 13px; width: 210px; flex: none; }
+  .cover--doc-header .infobox div { display: flex; border-bottom: 1px solid #e2e4e9; } .cover--doc-header .infobox div:last-child { border-bottom: 0; }
+  .cover--doc-header .infobox b { width: 90px; background: #fff; color: #6b7280; padding: 6px 8px; border-right: 1px solid #e2e4e9; font-weight: 600; } .cover--doc-header .infobox span { padding: 6px 8px; }
+  .cover--doc-header .subtitle { margin-top: 36px; } .cover--doc-header .rev { margin-top: 30px; }
+
+  /* エディタ先頭の表紙プレビューカード */
+  .cover-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 12px; margin-bottom: 14px; }
+  .cover-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .cover-card-head strong { font-size: 0.95rem; }
+  .cover-stage--card { max-width: 360px; }
+
+  /* 表紙編集モーダル */
+  .modal.cover-editor { max-width: 1040px; width: min(1040px, 98vw); padding: 0; display: flex; flex-direction: column; max-height: 94vh; }
+  .cover-editor .ce-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 10px; }
+  .cover-editor .ce-head h3 { margin: 0; font-size: 1.05rem; }
+  .cover-editor .ce-x { border: none; background: transparent; font-size: 18px; color: var(--muted); cursor: pointer; }
+  .cover-editor .ce-enable { display: flex; align-items: center; gap: 10px; padding: 0 20px 12px; border-bottom: 1px solid var(--border); color: var(--text); }
+  .cover-editor .ce-enable small { color: var(--muted); }
+  .ce-switch { width: 40px; height: 22px; border-radius: 11px; background: var(--border); position: relative; cursor: pointer; flex: none; transition: background .15s; }
+  .ce-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: left .15s; }
+  .ce-switch.on { background: var(--cover-accent, #3b6ea5); } .ce-switch.on::after { left: 20px; }
+  .cover-editor .ce-body { display: grid; grid-template-columns: 1fr 340px; align-items: start; overflow: auto; }
+  .cover-editor .ce-form { padding: 16px 20px; }
+  .cover-editor .ce-preview { border-left: 1px solid var(--border); background: var(--surface-2); padding: 16px; position: sticky; top: 0; display: grid; gap: 8px; }
+  .cover-editor .ce-grp { margin-bottom: 18px; }
+  .cover-editor .ce-grp > .ce-lbl { font-size: 0.8rem; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+  .cover-editor .ce-grp > .ce-lbl .hint { font-weight: 400; color: var(--muted); font-size: 0.75rem; }
+  .ce-preset-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+  .ce-preset { border: 2px solid var(--border); border-radius: 8px; padding: 5px; background: var(--surface); cursor: pointer; min-width: 0; }
+  .ce-preset.sel { border-color: var(--cover-accent, #3b6ea5); box-shadow: 0 0 0 2px color-mix(in srgb, var(--cover-accent, #3b6ea5) 25%, #fff); }
+  .ce-preset .pname { font-size: 0.6rem; text-align: center; margin-top: 4px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ce-preset.sel .pname { color: var(--cover-accent, #3b6ea5); font-weight: 600; }
+  .ce-swatches { display: flex; gap: 10px; align-items: center; }
+  .ce-swatch { width: 28px; height: 28px; border-radius: 50%; cursor: pointer; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--border); }
+  .ce-swatch.sel { box-shadow: 0 0 0 2px var(--text); }
+  .ce-swatch-custom { position: relative; overflow: hidden; background: conic-gradient(red,orange,yellow,green,cyan,blue,magenta,red); }
+  .ce-swatch-custom input { position: absolute; inset: -4px; opacity: 0; cursor: pointer; }
+  .ce-logo-row { display: flex; align-items: center; gap: 12px; }
+  .ce-logo-box { width: 60px; height: 60px; border-radius: 8px; border: 1px dashed color-mix(in srgb, var(--cover-accent, #3b6ea5) 45%, #fff); background: color-mix(in srgb, var(--cover-accent, #3b6ea5) 12%, #fff); display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 11px; color: var(--muted); flex: none; }
+  .ce-logo-box img { width: 100%; height: 100%; object-fit: contain; }
+  .ce-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .ce-field { display: grid; gap: 5px; font-size: 0.75rem; color: var(--muted); }
+  .ce-field.col2 { grid-column: 1 / -1; }
+  .ce-field input { font: inherit; font-size: 0.9rem; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+  table.ce-rev { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+  table.ce-rev th { text-align: left; color: var(--muted); font-weight: 600; padding: 2px 5px; }
+  table.ce-rev td { padding: 3px 4px; vertical-align: middle; }
+  table.ce-rev input { width: 100%; font: inherit; font-size: 0.78rem; padding: 5px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
+  table.ce-rev .ce-rev-del { border: none; background: transparent; color: var(--danger); cursor: pointer; font-size: 14px; }
+  .ce-addrow { margin-top: 8px; border: 1px dashed var(--border); background: var(--surface); border-radius: 8px; padding: 6px 12px; font-size: 0.85rem; color: var(--cover-accent, #3b6ea5); cursor: pointer; width: 100%; }
+  .ce-preview .ce-plbl { font-size: 0.8rem; font-weight: 700; }
+  .ce-preview .ce-note { font-size: 0.72rem; color: var(--muted); }
+  .cover-editor .modal-actions { padding: 12px 20px; border-top: 1px solid var(--border); margin: 0; }
+  @media (max-width: 720px) {
+    .cover-editor .ce-body { grid-template-columns: 1fr; }
+    .cover-editor .ce-preview { border-left: none; border-top: 1px solid var(--border); position: static; }
+    .ce-preset-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .ce-fields { grid-template-columns: 1fr; }
+  }
+
   @media print {
     #topbar, #app { display: none !important; }
     #print-root { display: block !important; }
     body { background: #fff; color: #000; }
     @page { margin: 16mm; }
+    /* 表紙は余白なしの専用ページにして 794x1123 を A4 に 1:1 で載せる */
+    @page coverpage { margin: 0; }
+    .print-cover { page: coverpage; break-after: page; overflow: hidden; }
+    .print-cover .cover { width: 794px; height: 1123px; }
   }
   </style>
 </head>
@@ -690,6 +798,26 @@
     }
     function createSection(title = '') {
       return { id: uid(), title, items: [] };
+    }
+    // 改訂履歴の1行
+    function createRevision(version = '', date = '', author = '', note = '') {
+      return { id: uid(), version, date, author, note };
+    }
+    // テンプレート型の任意の表紙（カバーページ）。初回有効化時に生成する。
+    function createCoverPage() {
+      return {
+        enabled: true,
+        preset: 'centered',
+        accent: '#3b6ea5',
+        title: '',
+        subtitle: '',
+        author: '',
+        date: new Date().toLocaleDateString('ja-JP'),
+        version: '',
+        docNumber: '',
+        logo: '',
+        revisions: [],
+      };
     }
     function createChecklist(type = MODES.TODO, title = '') {
       const now = Date.now();
@@ -862,7 +990,7 @@
 
     // app 側から M.xxx で参照する名前空間
     const M = {
-      MODES, createItem, createSection, createChecklist, createInitialState,
+      MODES, createItem, createSection, createRevision, createCoverPage, createChecklist, createInitialState,
       findChecklist, progress, sumMinutes, addChecklist, removeChecklist, duplicateChecklist,
       renameChecklist, addSection, renameSection, removeSection, addItem, addBlankItem,
       setItemField, editItem, toggleItem, removeItem, resetChecklist, clearCompleted,
@@ -1112,12 +1240,22 @@
             <button class="btn" data-action="add-section">＋ ${isTemplate ? 'フェーズ' : 'セクション'}</button>
             ${
               isTemplate
-                ? `<button class="btn" data-action="reset">↺ 一括リセット</button>`
+                ? `<button class="btn" data-action="reset">↺ 一括リセット</button>
+                   <button class="btn" data-action="cover">🪧 表紙</button>`
                 : `<button class="btn" data-action="clear-completed">完了を削除</button>`
             }
             <button class="btn" data-action="share">🔗 共有リンク</button>
             <button class="btn" data-action="print">🖨 印刷 / PDF</button>
           </div>
+          ${
+            isTemplate && checklist.coverPage && checklist.coverPage.enabled
+              ? `<div class="cover-card">
+                   <div class="cover-card-head"><strong>🪧 表紙</strong>
+                     <button class="btn" data-action="cover">表紙を編集</button></div>
+                   <div class="cover-stage cover-stage--card">${renderCoverHtml(checklist.coverPage, checklist.title)}</div>
+                 </div>`
+              : ''
+          }
           <div class="sections">${sections}</div>
         </section>`;
     }
@@ -1226,6 +1364,60 @@
         </li>`;
     }
 
+    // 表紙（カバーページ）の HTML を組み立てる。画面プレビュー・印刷で共用。
+    // cover: coverPage オブジェクト（または編集中ドラフト）。fallbackTitle: タイトル未入力時の代替。
+    const COVER_PRESETS = ['centered','left-top','top-band','side-band','framed','hero','logo-top','split','minimal','doc-header'];
+    const COVER_PRESET_NAMES = {
+      centered:'1. 中央', 'left-top':'2. 左上', 'top-band':'3. 上帯', 'side-band':'4. 左帯',
+      framed:'5. 枠', hero:'6. 特大', 'logo-top':'7. ロゴ上', split:'8. 分割', minimal:'9. 余白', 'doc-header':'10. 文書',
+    };
+    function renderCoverHtml(cover, fallbackTitle = '') {
+      const c = cover || {};
+      const preset = COVER_PRESETS.includes(c.preset) ? c.preset : 'centered';
+      const accent = /^#[0-9a-fA-F]{3,8}$/.test(c.accent || '') ? c.accent : '#3b6ea5';
+      const t = escapeHtml(c.title || fallbackTitle || '');
+      const author = escapeHtml(c.author || ''), date = escapeHtml(c.date || '');
+      const ver = escapeHtml(c.version || ''), docn = escapeHtml(c.docNumber || '');
+      const title = `<h1 class="title">${t}</h1>`;
+      const subtitle = c.subtitle ? `<p class="subtitle">${escapeHtml(c.subtitle)}</p>` : '';
+      const logo = c.logo ? `<div class="logo"><img src="${c.logo}" alt="" /></div>` : '';
+      const metaInlineParts = [author, date, ver].filter(Boolean);
+      const metaInline = metaInlineParts.length ? `<div class="meta">${metaInlineParts.join('　｜　')}</div>` : '';
+      const metaRows = [['作成者', author], ['日付', date], ['版数', ver]].filter(([, v]) => v);
+      const metaList = metaRows.length
+        ? `<div class="meta" style="display:grid;gap:8px">${metaRows.map(([k, v]) => `<div class="meta-row"><b>${k}</b><span>${v}</span></div>`).join('')}</div>` : '';
+      const revs = (Array.isArray(c.revisions) ? c.revisions : []).filter((r) => r.version || r.date || r.author || r.note);
+      const revTable = revs.length
+        ? `<table class="rev"><caption>改訂履歴</caption><thead><tr><th>版</th><th>日付</th><th>作成者</th><th>内容</th></tr></thead><tbody>${revs.map((r) => `<tr><td>${escapeHtml(r.version || '')}</td><td>${escapeHtml(r.date || '')}</td><td>${escapeHtml(r.author || '')}</td><td>${escapeHtml(r.note || '')}</td></tr>`).join('')}</tbody></table>` : '';
+      const infoRows = [['文書番号', docn], ['版数', ver], ['作成者', author], ['発行日', date]].filter(([, v]) => v);
+      const infobox = infoRows.length
+        ? `<div class="infobox">${infoRows.map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join('')}</div>` : '';
+      const inner = {
+        centered: `${logo}${title}<div class="rule"></div>${subtitle}<div class="footer">${metaInline}</div>`,
+        'left-top': `${logo}${title}${subtitle}<div class="divider"></div>${metaList}<div class="spacer"></div>${revTable}`,
+        'top-band': `<div class="band">${title}</div><div class="body">${subtitle}${metaList}${revTable}</div>`,
+        'side-band': `<div class="strip"></div><div class="body">${logo}${title}${subtitle}<div class="spacer"></div>${metaList}</div>`,
+        framed: `<div class="inner"><div>${logo}</div><div style="align-self:center">${title}${subtitle}</div><div class="footer">${metaInline}</div></div>`,
+        hero: `${logo}<div class="accentbar"></div>${title}${subtitle}${metaInline}`,
+        'logo-top': `${logo}${title}${subtitle}<div class="footer">${metaInline}</div>`,
+        split: `<div class="top">${title}${subtitle}${metaInline}</div><div class="bottom">${revTable}</div>`,
+        minimal: `${title}${subtitle}<div class="spacer"></div>${metaInline}`,
+        'doc-header': `<div class="head">${title}${infobox}</div>${subtitle}${revTable}<div class="spacer"></div>`,
+      }[preset];
+      return `<div class="cover cover--${preset}" style="--cover-accent:${accent}">${inner}</div>`;
+    }
+    // .cover-stage 内の .cover を枠幅にあわせて transform: scale() で縮小表示する。
+    function scaleCoverStages(root) {
+      if (!root) return;
+      root.querySelectorAll('.cover-stage').forEach((st) => {
+        const w = st.clientWidth;
+        if (!w) return;
+        st.style.height = (w * 1123 / 794) + 'px';
+        const cv = st.querySelector('.cover');
+        if (cv) cv.style.transform = 'scale(' + (w / 794) + ')';
+      });
+    }
+
     // 印刷（ブラウザの印刷→PDF保存を想定）用の読み取り専用ビューを組み立てる。
     // 入力欄は印刷でテキストが折り返せないため、span/li のプレーンな表現で描く。
     function renderPrintView(checklist) {
@@ -1277,7 +1469,12 @@
           return `<section class="print-section">${titleHtml}<ul class="print-items">${itemsHtml}</ul></section>`;
         })
         .join('');
+      const coverHtml =
+        isTemplate && checklist.coverPage && checklist.coverPage.enabled
+          ? `<div class="print-cover">${renderCoverHtml(checklist.coverPage, checklist.title)}</div>`
+          : '';
       return `
+        ${coverHtml}
         <div class="print-header">
           <h1>${escapeHtml(checklist.title)}</h1>
           <div class="print-meta">
@@ -1441,6 +1638,7 @@
         if (!checklist) { goHome(); return; }
         app.innerHTML = renderEditor(checklist);
         attachDragAndDrop(app, handleMove);
+        scaleCoverStages(app);
       } else {
         app.innerHTML = renderHome(store.state);
       }
@@ -1583,6 +1781,183 @@
       return overlay;
     }
     function closeModal(overlay) { overlay.remove(); }
+
+    // 表紙編集モーダル。左=設定フォーム / 右=ライブプレビュー。
+    // 変更はドラフトに反映 → プレビュー即時更新、確定（クリック/blur）でストアへ commit。
+    function openCoverDialog(checklistId) {
+      const cl0 = M.findChecklist(store.state, checklistId);
+      if (!cl0) return;
+      // 表紙が無ければ初回作成（有効状態）
+      if (!cl0.coverPage) {
+        store.commit((s) => {
+          const c = M.findChecklist(s, checklistId);
+          c.coverPage = M.createCoverPage();
+          c.updatedAt = Date.now();
+        });
+      }
+      const fallbackTitle = M.findChecklist(store.state, checklistId).title;
+      let draft = JSON.parse(JSON.stringify(M.findChecklist(store.state, checklistId).coverPage));
+      const SWATCHES = [['#3b6ea5', '青'], ['#2f8f6b', '緑'], ['#2b3a67', '紺'], ['#5b6470', 'グレー'], ['#9b3b4a', '臙脂']];
+
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal cover-editor" role="dialog" aria-modal="true">
+          <div class="ce-head"><h3>🪧 表紙を編集</h3><button class="ce-x" data-close title="閉じる">✕</button></div>
+          <div class="ce-enable">
+            <span class="ce-switch" data-ce="toggle"></span>
+            <span>この手順書に表紙を付ける</span>
+            <small>— オフにすると印刷・プレビューに出ません</small>
+          </div>
+          <div class="ce-body">
+            <div class="ce-form">
+              <div class="ce-grp">
+                <div class="ce-lbl">レイアウト <span class="hint">（10種から選択）</span></div>
+                <div class="ce-preset-grid" data-ce="presets"></div>
+              </div>
+              <div class="ce-grp">
+                <div class="ce-lbl">差し色（アクセントカラー）</div>
+                <div class="ce-swatches">
+                  ${SWATCHES.map(([hex, name]) => `<span class="ce-swatch" data-color="${hex}" title="${name}" style="background:${hex}"></span>`).join('')}
+                  <label class="ce-swatch ce-swatch-custom" title="任意の色"><input type="color" data-ce="custom-color" /></label>
+                </div>
+              </div>
+              <div class="ce-grp">
+                <div class="ce-lbl">ロゴ画像 <span class="hint">（任意）</span></div>
+                <div class="ce-logo-row">
+                  <div class="ce-logo-box" data-ce="logo-box"></div>
+                  <button class="btn" data-ce="logo-pick">画像を選択 / 差し替え</button>
+                  <button class="btn" data-ce="logo-del">削除</button>
+                </div>
+              </div>
+              <div class="ce-grp">
+                <div class="ce-lbl">テキスト</div>
+                <div class="ce-fields">
+                  <label class="ce-field col2">タイトル（大見出し）<input data-ce-field="title" /></label>
+                  <label class="ce-field col2">サブタイトル・説明<input data-ce-field="subtitle" /></label>
+                  <label class="ce-field">作成者・組織名<input data-ce-field="author" /></label>
+                  <label class="ce-field">日付<input data-ce-field="date" /></label>
+                  <label class="ce-field">バージョン / 版数<input data-ce-field="version" /></label>
+                  <label class="ce-field">文書番号（任意）<input data-ce-field="docNumber" /></label>
+                </div>
+              </div>
+              <div class="ce-grp">
+                <div class="ce-lbl">改訂履歴 <span class="hint">（行の追加/削除）</span></div>
+                <table class="ce-rev"><thead><tr><th style="width:64px">版</th><th style="width:104px">日付</th><th style="width:80px">作成者</th><th>内容</th><th style="width:26px"></th></tr></thead>
+                  <tbody data-ce="rev-body"></tbody></table>
+                <button class="ce-addrow" data-ce="rev-add">＋ 行を追加</button>
+              </div>
+            </div>
+            <div class="ce-preview">
+              <div class="ce-plbl">プレビュー</div>
+              <div class="cover-stage" data-ce="preview"></div>
+              <div class="ce-note" data-ce="note"></div>
+            </div>
+          </div>
+          <div class="modal-actions"><button class="btn primary" data-close>完了</button></div>
+        </div>`;
+      document.body.appendChild(overlay);
+
+      const $ = (sel) => overlay.querySelector(sel);
+      const presetGrid = $('[data-ce="presets"]');
+      const previewStage = $('[data-ce="preview"]');
+      const revBody = $('[data-ce="rev-body"]');
+
+      function persist() {
+        store.commit((s) => {
+          const c = M.findChecklist(s, checklistId);
+          c.coverPage = JSON.parse(JSON.stringify(draft));
+          c.updatedAt = Date.now();
+        });
+      }
+      function renderRevRows() {
+        revBody.innerHTML = (draft.revisions || []).map((r) => `
+          <tr data-id="${r.id}">
+            <td><input data-rev="version" value="${escapeHtml(r.version || '')}" /></td>
+            <td><input data-rev="date" value="${escapeHtml(r.date || '')}" /></td>
+            <td><input data-rev="author" value="${escapeHtml(r.author || '')}" /></td>
+            <td><input data-rev="note" value="${escapeHtml(r.note || '')}" /></td>
+            <td><button class="ce-rev-del" data-rev-del title="削除">🗑</button></td>
+          </tr>`).join('');
+      }
+      function refresh() {
+        previewStage.innerHTML = renderCoverHtml(draft, fallbackTitle);
+        presetGrid.innerHTML = COVER_PRESETS.map((id) => {
+          const d = Object.assign({}, draft, { preset: id });
+          return `<div class="ce-preset ${id === draft.preset ? 'sel' : ''}" data-preset="${id}">
+            <div class="cover-stage">${renderCoverHtml(d, fallbackTitle)}</div>
+            <div class="pname">${COVER_PRESET_NAMES[id]}</div></div>`;
+        }).join('');
+        overlay.querySelectorAll('.ce-swatch[data-color]').forEach((sw) =>
+          sw.classList.toggle('sel', sw.dataset.color.toLowerCase() === (draft.accent || '').toLowerCase()));
+        $('[data-ce="logo-box"]').innerHTML = draft.logo ? `<img src="${draft.logo}" alt="" />` : 'なし';
+        const tg = $('[data-ce="toggle"]');
+        tg.classList.toggle('on', !!draft.enabled);
+        tg.style.setProperty('--cover-accent', draft.accent || '#3b6ea5');
+        $('[data-ce="note"]').innerHTML = `選択中: <b>${COVER_PRESET_NAMES[draft.preset] || ''}</b><br>印刷/PDF では、この表紙が先頭ページになります。`;
+        scaleCoverStages(overlay);
+      }
+
+      overlay.querySelectorAll('[data-ce-field]').forEach((inp) => { inp.value = draft[inp.dataset.ceField] || ''; });
+      renderRevRows();
+      refresh();
+
+      const onResize = () => scaleCoverStages(overlay);
+      function close() { window.removeEventListener('resize', onResize); closeModal(overlay); }
+
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay || e.target.closest('[data-close]')) return close();
+        const presetEl = e.target.closest('[data-preset]');
+        if (presetEl) { draft.preset = presetEl.dataset.preset; persist(); refresh(); return; }
+        const sw = e.target.closest('.ce-swatch[data-color]');
+        if (sw) { draft.accent = sw.dataset.color; persist(); refresh(); return; }
+        if (e.target.closest('[data-ce="toggle"]')) { draft.enabled = !draft.enabled; persist(); refresh(); return; }
+        if (e.target.closest('[data-ce="logo-pick"]')) { pickCoverLogo(); return; }
+        if (e.target.closest('[data-ce="logo-del"]')) { draft.logo = ''; persist(); refresh(); return; }
+        if (e.target.closest('[data-ce="rev-add"]')) {
+          if (!draft.revisions) draft.revisions = [];
+          draft.revisions.push(M.createRevision());
+          persist(); renderRevRows(); refresh(); return;
+        }
+        const del = e.target.closest('[data-rev-del]');
+        if (del) {
+          const tr = del.closest('tr');
+          draft.revisions = (draft.revisions || []).filter((r) => r.id !== tr.dataset.id);
+          persist(); renderRevRows(); refresh(); return;
+        }
+      });
+      // 入力中はプレビュー即時更新（commit は change で）
+      overlay.addEventListener('input', (e) => {
+        const f = e.target.closest('[data-ce-field]');
+        if (f) { draft[f.dataset.ceField] = e.target.value; refresh(); return; }
+        if (e.target.matches('[data-ce="custom-color"]')) { draft.accent = e.target.value; refresh(); return; }
+        const rev = e.target.closest('[data-rev]');
+        if (rev) {
+          const tr = rev.closest('tr');
+          const r = (draft.revisions || []).find((x) => x.id === tr.dataset.id);
+          if (r) { r[rev.dataset.rev] = e.target.value; refresh(); }
+        }
+      });
+      overlay.addEventListener('change', (e) => {
+        if (e.target.closest('[data-ce-field]') || e.target.matches('[data-ce="custom-color"]') || e.target.closest('[data-rev]')) persist();
+      });
+
+      function pickCoverLogo() {
+        const inp = document.createElement('input');
+        inp.type = 'file'; inp.accept = 'image/*';
+        inp.addEventListener('change', async () => {
+          const f = inp.files && inp.files[0];
+          if (!f) return;
+          try {
+            draft.logo = await compressImage(await blobToDataUrl(f), 400, 0.85);
+            persist(); refresh();
+          } catch (err) { alert(err.message || '画像の追加に失敗しました'); }
+        });
+        inp.click();
+      }
+
+      window.addEventListener('resize', onResize);
+    }
 
     // =========================================================================
     // images — スクリーンショットの貼り付け・圧縮保存・ペイント編集
@@ -2061,6 +2436,8 @@
           return c && openShareDialog(c);
         case 'print':
           return c && printChecklist(c);
+        case 'cover':
+          return c && openCoverDialog(c.id);
       }
     });
 
