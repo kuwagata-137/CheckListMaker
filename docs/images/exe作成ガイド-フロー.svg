@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="760" viewBox="0 0 1040 760" font-family="'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7f9fc"/>
+      <stop offset="1" stop-color="#eef2f8"/>
+    </linearGradient>
+    <linearGradient id="cloud" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4f86f7"/>
+      <stop offset="1" stop-color="#3a6fe0"/>
+    </linearGradient>
+    <linearGradient id="local" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7b8a9c"/>
+      <stop offset="1" stop-color="#5f6e80"/>
+    </linearGradient>
+    <linearGradient id="exe" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2fbf71"/>
+      <stop offset="1" stop-color="#23a95f"/>
+    </linearGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#1b2a4a" flood-opacity="0.16"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="8" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#9aa7b8"/>
+    </marker>
+  </defs>
+
+  <rect width="1040" height="760" fill="url(#bg)"/>
+
+  <!-- Header -->
+  <text x="40" y="56" font-size="30" font-weight="700" fill="#1f2d45">CheckListMaker　.exe を作る 2つの方法</text>
+  <text x="40" y="88" font-size="16" fill="#5a6678">Windows 用インストーラ（.exe）を作るには、クラウドか自分のPCのどちらかを選びます。急ぎでなければ「方法A」がおすすめ。</text>
+
+  <!-- ===== 方法A : Cloud ===== -->
+  <rect x="40" y="120" width="460" height="500" rx="18" fill="#ffffff" filter="url(#sh)"/>
+  <rect x="40" y="120" width="460" height="64" rx="18" fill="url(#cloud)"/>
+  <rect x="40" y="150" width="460" height="34" fill="url(#cloud)"/>
+  <text x="70" y="162" font-size="22" font-weight="700" fill="#ffffff">☁  方法A：クラウドで作る</text>
+  <text x="70" y="206" font-size="14" font-weight="700" fill="#3a6fe0">おすすめ ／ PCに開発環境は不要・ボタンを押して待つだけ</text>
+
+  <!-- A steps -->
+  <g font-size="15" fill="#26344c">
+    <circle cx="78" cy="246" r="15" fill="#e7efff"/><text x="78" y="251" font-size="14" font-weight="700" fill="#3a6fe0" text-anchor="middle">1</text>
+    <text x="106" y="251">GitHub の「Actions」タブを開く</text>
+
+    <circle cx="78" cy="296" r="15" fill="#e7efff"/><text x="78" y="301" font-size="14" font-weight="700" fill="#3a6fe0" text-anchor="middle">2</text>
+    <text x="106" y="301">「Build Windows installer」を選ぶ</text>
+
+    <circle cx="78" cy="346" r="15" fill="#e7efff"/><text x="78" y="351" font-size="14" font-weight="700" fill="#3a6fe0" text-anchor="middle">3</text>
+    <text x="106" y="351">「Run workflow」ボタンを押す</text>
+
+    <circle cx="78" cy="396" r="15" fill="#e7efff"/><text x="78" y="401" font-size="14" font-weight="700" fill="#3a6fe0" text-anchor="middle">4</text>
+    <text x="106" y="401">数分待つ → ✅ 緑チェックで成功</text>
+
+    <circle cx="78" cy="446" r="15" fill="#e7efff"/><text x="78" y="451" font-size="14" font-weight="700" fill="#3a6fe0" text-anchor="middle">5</text>
+    <text x="106" y="451">「Artifacts」から zip をダウンロード</text>
+  </g>
+
+  <!-- mock: Run workflow button -->
+  <rect x="70" y="480" width="400" height="110" rx="10" fill="#f4f7fc" stroke="#dbe4f0"/>
+  <text x="88" y="506" font-size="12" fill="#8a97a8">GitHub Actions（イメージ）</text>
+  <rect x="88" y="518" width="170" height="34" rx="6" fill="#2fbf71"/>
+  <text x="173" y="540" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">▶ Run workflow</text>
+  <rect x="270" y="518" width="182" height="34" rx="6" fill="#ffffff" stroke="#cfdae8"/>
+  <text x="282" y="540" font-size="12" fill="#5a6678">✅ Build Windows installer</text>
+  <text x="88" y="576" font-size="12.5" fill="#5a6678">解凍すると  CheckListMaker Setup 1.0.0.exe</text>
+
+  <!-- ===== 方法B : Local ===== -->
+  <rect x="540" y="120" width="460" height="500" rx="18" fill="#ffffff" filter="url(#sh)"/>
+  <rect x="540" y="120" width="460" height="64" rx="18" fill="url(#local)"/>
+  <rect x="540" y="150" width="460" height="34" fill="url(#local)"/>
+  <text x="570" y="162" font-size="22" font-weight="700" fill="#ffffff">💻  方法B：自分のPCで作る</text>
+  <text x="570" y="206" font-size="14" font-weight="700" fill="#5f6e80">Windows + Node.js が必要 ／ 手元で何度も作り直す人向け</text>
+
+  <g font-size="15" fill="#26344c">
+    <circle cx="578" cy="246" r="15" fill="#eceff3"/><text x="578" y="251" font-size="14" font-weight="700" fill="#5f6e80" text-anchor="middle">1</text>
+    <text x="606" y="251">Node.js を入れて、リポジトリを取得</text>
+
+    <circle cx="578" cy="296" r="15" fill="#eceff3"/><text x="578" y="301" font-size="14" font-weight="700" fill="#5f6e80" text-anchor="middle">2</text>
+    <text x="606" y="301">ターミナルで下のコマンドを実行</text>
+
+    <circle cx="578" cy="346" r="15" fill="#eceff3"/><text x="578" y="351" font-size="14" font-weight="700" fill="#5f6e80" text-anchor="middle">3</text>
+    <text x="606" y="351">dist/ フォルダに .exe ができる</text>
+  </g>
+
+  <!-- mock: terminal -->
+  <rect x="570" y="378" width="400" height="150" rx="10" fill="#1e2733"/>
+  <circle cx="588" cy="396" r="5" fill="#ff5f56"/><circle cx="606" cy="396" r="5" fill="#ffbd2e"/><circle cx="624" cy="396" r="5" fill="#27c93f"/>
+  <text x="588" y="430" font-size="13.5" font-family="monospace" fill="#8be9a0">$ npm install</text>
+  <text x="588" y="456" font-size="13.5" font-family="monospace" fill="#8be9a0">$ npm run dist</text>
+  <text x="588" y="490" font-size="12.5" font-family="monospace" fill="#9fb0c3">→ dist/CheckListMaker Setup 1.0.0.exe</text>
+  <text x="588" y="512" font-size="11.5" font-family="monospace" fill="#6b7c91"># 失敗時は先に  npm run rebuild</text>
+  <text x="570" y="566" font-size="12.5" fill="#8a97a8">⚠ 環境により Visual Studio Build Tools / Python が必要なことがあります</text>
+
+  <!-- arrows down to result -->
+  <path d="M270,620 L270,660 L520,660 L520,684" fill="none" stroke="#9aa7b8" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M770,620 L770,660 L520,660 L520,684" fill="none" stroke="#9aa7b8" stroke-width="2.5"/>
+
+  <!-- result .exe -->
+  <rect x="330" y="688" width="380" height="52" rx="14" fill="url(#exe)" filter="url(#sh)"/>
+  <text x="520" y="720" font-size="19" font-weight="700" fill="#ffffff" text-anchor="middle">✅ 完成：CheckListMaker Setup 1.0.0.exe</text>
+</svg>
