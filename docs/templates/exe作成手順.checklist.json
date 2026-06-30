@@ -1,0 +1,235 @@
+{
+  "checklists": [
+    {
+      "id": "gen-q-r4wfpc",
+      "title": "Windows用 .exe（インストーラ）の作り方【初心者向け】",
+      "type": "template",
+      "sections": [
+        {
+          "id": "gen-7-lvyny4",
+          "title": "① 準備：Node.js（無料）を入れる",
+          "items": [
+            {
+              "id": "gen-0-jzlvae",
+              "text": "ブラウザで nodejs.org を開く",
+              "done": false,
+              "note": "アドレス欄に「nodejs.org」と入力して開きます。",
+              "time": "",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "gen-1-ucy2q9",
+              "text": "緑の「LTS」ボタンを押してダウンロード",
+              "done": false,
+              "note": "緑のボタンが2つ。左の「LTS（推奨版）」を押します。右の「Current」は選びません。",
+              "time": "",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "gen-2-65lp0f",
+              "text": "ダウンロードした .msi をダブルクリック",
+              "done": false,
+              "note": "画面下、または「ダウンロード」フォルダの node-v○○-x64.msi を開きます。",
+              "time": "",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "gen-3-r0t1fc",
+              "text": "「Next」を押して進める",
+              "done": false,
+              "note": "ライセンス同意にチェック→Next。インストール先などはそのままでOKです。",
+              "time": "",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "gen-4-zf2bt6",
+              "text": "「Tools for Native Modules」にチェックを入れる",
+              "done": false,
+              "note": "この画面が出たら「Automatically install the necessary tools…」に必ずチェック。後のビルド失敗を防ぎます。",
+              "time": "",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "gen-5-os6etx",
+              "text": "「Install」を押し、完了まで待つ",
+              "done": false,
+              "note": "「変更を許可しますか？」は「はい」。黒い画面が出たら、閉じるまで数分待ち、最後に Finish。",
+              "time": "",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "gen-6-wgznvr",
+              "text": "（任意）入ったか確認する",
+              "done": false,
+              "note": "スタート→「PowerShell」を開き、node -v と npm -v を実行。バージョン番号が出れば成功です。",
+              "time": "",
+              "images": [],
+              "body": ""
+            }
+          ]
+        },
+        {
+          "id": "gen-d-dw71dw",
+          "title": "② 準備：CheckListMaker のファイルを取得",
+          "items": [
+            {
+              "id": "gen-8-tncsiq",
+              "text": "GitHub のリポジトリのページを開く",
+              "done": false,
+              "note": "CheckListMaker のページをブラウザで開きます。",
+              "time": "",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "gen-9-8xpd4y",
+              "text": "緑の「<> Code」ボタンを押す",
+              "done": false,
+              "note": "ページ右上あたりにある緑のボタンです。",
+              "time": "",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "gen-a-7ebf1x",
+              "text": "「Download ZIP」を選ぶ",
+              "done": false,
+              "note": "メニュー一番下。ZIP が「ダウンロード」フォルダに入ります。",
+              "time": "",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "gen-b-lu41sn",
+              "text": "ZIP を解凍する",
+              "done": false,
+              "note": "ZIP を右クリック→「すべて展開」。展開先はデスクトップにすると分かりやすいです。",
+              "time": "",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "gen-c-ucjaon",
+              "text": "作業フォルダを開く",
+              "done": false,
+              "note": "解凍したフォルダを開き、「package.json」が直接見える場所が作業フォルダです。",
+              "time": "",
+              "images": [],
+              "body": ""
+            }
+          ]
+        },
+        {
+          "id": "gen-h-xktjgu",
+          "title": "③ ビルド：.exe を作る",
+          "items": [
+            {
+              "id": "gen-e-b0se6z",
+              "text": "作業フォルダで PowerShell を開く",
+              "done": false,
+              "note": "フォルダ上部のアドレスバーをクリックし、文字を消して「powershell」と入力→Enter。左端にそのフォルダのパスが出ればOK。",
+              "time": "",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "gen-f-g0j6t2",
+              "text": "「npm install」を実行する",
+              "done": false,
+              "note": "「npm install」と入力→Enter。数分かかります。黄色い警告は無視。入力待ちに戻れば完了です。",
+              "time": "",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "gen-g-4e985i",
+              "text": "「npm run dist」を実行する",
+              "done": false,
+              "note": "続けて「npm run dist」と入力→Enter。数分でインストーラ(.exe)が作られます。",
+              "time": "",
+              "images": [],
+              "body": ""
+            }
+          ]
+        },
+        {
+          "id": "gen-l-5whsa9",
+          "title": "④ 確認・仕上げ",
+          "items": [
+            {
+              "id": "gen-i-a8wkds",
+              "text": "「dist」フォルダを開く",
+              "done": false,
+              "note": "作業フォルダの中に、新しく「dist」フォルダができています。",
+              "time": "",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "gen-j-1jte4g",
+              "text": "「CheckListMaker Setup 1.0.0.exe」を確認する",
+              "done": false,
+              "note": "これが完成品です🎉　配るのはこの1ファイルだけでOK。",
+              "time": "",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "gen-k-9hsgek",
+              "text": "（任意）動作確認する",
+              "done": false,
+              "note": "ダブルクリックでインストール。SmartScreen警告が出たら「詳細情報→実行」。管理者権限は不要です。",
+              "time": "",
+              "images": [],
+              "body": ""
+            }
+          ]
+        },
+        {
+          "id": "gen-p-epxo2b",
+          "title": "⑤ うまくいかない時（メモ）",
+          "items": [
+            {
+              "id": "gen-m-7aovga",
+              "text": "npm が「スクリプトの実行が無効」で止まる",
+              "done": false,
+              "note": "PowerShell の代わりに「コマンドプロンプト(cmd)」で同じコマンドを実行。または PowerShell で「Set-ExecutionPolicy -Scope CurrentUser RemoteSigned」を1回実行してからやり直す。",
+              "time": "",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "gen-n-9kkz5r",
+              "text": "赤いエラー(build error)で止まる",
+              "done": false,
+              "note": "まず「npm run rebuild」を実行してから、もう一度「npm run dist」。直らなければ Node.js を「Tools for Native Modules」にチェックを入れて入れ直す。",
+              "time": "",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "gen-o-3vddlw",
+              "text": "それでも難しい → クラウドで作る（方法A）",
+              "done": false,
+              "note": "GitHubの「Actions」→「Build Windows installer」→「Run workflow」を押すだけ。PC準備不要。✅後に「Artifacts」からZIPを取得→解凍で同じ .exe が手に入ります。",
+              "time": "",
+              "images": [],
+              "body": ""
+            }
+          ]
+        }
+      ],
+      "createdAt": 1782784183055,
+      "updatedAt": 1782784183055
+    }
+  ],
+  "settings": {
+    "theme": "auto"
+  }
+}
