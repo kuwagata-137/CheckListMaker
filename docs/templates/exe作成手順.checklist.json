@@ -1,16 +1,16 @@
 {
   "checklists": [
     {
-      "id": "gen-q-izogua",
+      "id": "gen-q-5kmimv",
       "title": "Windows用 .exe（インストーラ）の作り方【初心者向け】",
       "type": "template",
       "sections": [
         {
-          "id": "gen-7-hu6fn2",
+          "id": "gen-7-3rpg9j",
           "title": "① 準備：Node.js（無料）を入れる",
           "items": [
             {
-              "id": "gen-0-g0u6ot",
+              "id": "gen-0-8zi4q9",
               "text": "ブラウザで nodejs.org を開く",
               "done": false,
               "note": "アドレス欄に「nodejs.org」と入力して Enter。　※Node.js＝.exe を組み立てて動かすための無料の土台ソフト。",
@@ -21,7 +21,7 @@
               "body": ""
             },
             {
-              "id": "gen-1-448m4w",
+              "id": "gen-1-5tuzar",
               "text": "緑の「LTS」ボタンを押してダウンロード",
               "done": false,
               "note": "緑のボタンが2つ。左の「LTS（推奨版）」を押す。右の「Current」は選ばない。",
@@ -32,7 +32,7 @@
               "body": ""
             },
             {
-              "id": "gen-2-el84jn",
+              "id": "gen-2-um05lc",
               "text": "ダウンロードした .msi をダブルクリック",
               "done": false,
               "note": "「ダウンロード」フォルダの node-v○○-x64.msi を開く。　※.msi＝Windows のインストール用ファイル。",
@@ -43,7 +43,7 @@
               "body": ""
             },
             {
-              "id": "gen-3-eyzvvo",
+              "id": "gen-3-xm8pgw",
               "text": "「Next」を押して進める",
               "done": false,
               "note": "ライセンス同意にチェック→Next。インストール先などはそのままでOK。",
@@ -54,7 +54,7 @@
               "body": ""
             },
             {
-              "id": "gen-4-cmvus7",
+              "id": "gen-4-kd88wt",
               "text": "「Tools for Native Modules」にチェックを入れる",
               "done": false,
               "note": "この画面が出たら「Automatically install the necessary tools…」に必ずチェック。後のビルド失敗を防ぐ。",
@@ -65,7 +65,7 @@
               "body": ""
             },
             {
-              "id": "gen-5-crl7h5",
+              "id": "gen-5-d7g9eo",
               "text": "「Install」を押し、完了まで待つ",
               "done": false,
               "note": "「変更を許可しますか？」は「はい」。黒い画面が出たら閉じるまで数分待ち、最後に Finish。",
@@ -76,7 +76,7 @@
               "body": ""
             },
             {
-              "id": "gen-6-w3fhaz",
+              "id": "gen-6-82i40z",
               "text": "（任意）入ったか確認する",
               "done": false,
               "note": "スタート→「PowerShell」を開き、node -v と npm -v を実行。バージョン番号が出れば成功。",
@@ -89,11 +89,11 @@
           ]
         },
         {
-          "id": "gen-d-5yh5c5",
+          "id": "gen-d-v1b84s",
           "title": "② 準備：CheckListMaker のファイルを取得",
           "items": [
             {
-              "id": "gen-8-zd0gob",
+              "id": "gen-8-rbzsb3",
               "text": "GitHub のリポジトリのページを開く",
               "done": false,
               "note": "CheckListMaker のページをブラウザで開く。　※リポジトリ＝プログラム一式の保管ページ。",
@@ -104,7 +104,7 @@
               "body": ""
             },
             {
-              "id": "gen-9-b946c4",
+              "id": "gen-9-qrpvkp",
               "text": "緑の「<> Code」ボタンを押す",
               "done": false,
               "note": "ファイル一覧の右上にある緑のボタン。",
@@ -115,7 +115,7 @@
               "body": ""
             },
             {
-              "id": "gen-a-f793ov",
+              "id": "gen-a-dyxfrp",
               "text": "「Download ZIP」を選ぶ",
               "done": false,
               "note": "メニュー一番下。ZIP が「ダウンロード」フォルダに入る。",
@@ -126,7 +126,7 @@
               "body": ""
             },
             {
-              "id": "gen-b-9ion0e",
+              "id": "gen-b-ezjgsz",
               "text": "ZIP を解凍（すべて展開）する",
               "done": false,
               "note": "ZIP を右クリック→「すべて展開」。展開先はデスクトップが分かりやすい。　※ZIP＝圧縮された書庫。解凍＝中身を取り出すこと。",
@@ -137,7 +137,7 @@
               "body": ""
             },
             {
-              "id": "gen-c-b04ear",
+              "id": "gen-c-2uk8qo",
               "text": "作業フォルダを開く",
               "done": false,
               "note": "解凍したフォルダを開き、「package.json」が直接見える場所が作業フォルダ。",
@@ -150,11 +150,11 @@
           ]
         },
         {
-          "id": "gen-h-t5kpt5",
+          "id": "gen-h-e36o8m",
           "title": "③ ビルド：.exe を作る",
           "items": [
             {
-              "id": "gen-e-cwahx1",
+              "id": "gen-e-jxw37s",
               "text": "作業フォルダで PowerShell を開く",
               "done": false,
               "note": "アドレスバーをクリックし、文字を消して「powershell」と入力→Enter。左端にそのフォルダのパスが出ればOK。　※PowerShell＝命令を打ち込む Windows 標準の画面。",
@@ -165,7 +165,7 @@
               "body": ""
             },
             {
-              "id": "gen-f-afzlu9",
+              "id": "gen-f-oefetj",
               "text": "「npm install」を実行する",
               "done": false,
               "note": "「npm install」と入力→Enter。数分かかる。黄色い警告は無視。入力待ちに戻れば完了。　※npm＝Node.js に付く部品管理ツール／コマンド＝PCへの命令文。",
@@ -176,7 +176,7 @@
               "body": ""
             },
             {
-              "id": "gen-g-l72rx0",
+              "id": "gen-g-l2bgzx",
               "text": "「npm run dist」を実行する",
               "done": false,
               "note": "続けて「npm run dist」と入力→Enter。数分でインストーラ(.exe)が作られる。　※ビルド＝材料から完成品(.exe)を組み立てること。",
@@ -189,11 +189,11 @@
           ]
         },
         {
-          "id": "gen-l-k6w3k3",
+          "id": "gen-l-5w0xez",
           "title": "④ 確認・仕上げ",
           "items": [
             {
-              "id": "gen-i-a0jiu7",
+              "id": "gen-i-q6gror",
               "text": "「dist」フォルダを開く",
               "done": false,
               "note": "作業フォルダの中に、新しく「dist」フォルダができている。",
@@ -204,7 +204,7 @@
               "body": ""
             },
             {
-              "id": "gen-j-6co4dr",
+              "id": "gen-j-pjlb2s",
               "text": "「CheckListMaker Setup 1.0.0.exe」を確認する",
               "done": false,
               "note": "これが完成品🎉　配るのはこの1ファイルだけでOK。",
@@ -215,7 +215,7 @@
               "body": ""
             },
             {
-              "id": "gen-k-khrqm7",
+              "id": "gen-k-wuidhl",
               "text": "（任意）動作確認する",
               "done": false,
               "note": "ダブルクリックでインストール。管理者権限は不要。　※SmartScreen＝未署名アプリに出る Windows の確認画面。「詳細情報→実行」でOK（問題なし）。",
@@ -228,11 +228,11 @@
           ]
         },
         {
-          "id": "gen-p-bwcm5d",
+          "id": "gen-p-dg3spj",
           "title": "⑤ うまくいかない時（メモ）",
           "items": [
             {
-              "id": "gen-m-aamc0i",
+              "id": "gen-m-b1ihro",
               "text": "npm が「スクリプトの実行が無効」で止まる",
               "done": false,
               "note": "PowerShell の代わりに「コマンドプロンプト(cmd)」で同じコマンドを実行。または PowerShell で「Set-ExecutionPolicy -Scope CurrentUser RemoteSigned」を1回実行してからやり直す。",
@@ -243,7 +243,7 @@
               "body": ""
             },
             {
-              "id": "gen-n-zt1eo2",
+              "id": "gen-n-n1fwrt",
               "text": "赤いエラー(build error)で止まる",
               "done": false,
               "note": "まず「npm run rebuild」を実行してから、もう一度「npm run dist」。直らなければ Node.js を「Tools for Native Modules」にチェックを入れて入れ直す。",
@@ -254,7 +254,7 @@
               "body": ""
             },
             {
-              "id": "gen-o-qhx4zc",
+              "id": "gen-o-lh804s",
               "text": "それでも難しい → クラウドで作る（方法A）",
               "done": false,
               "note": "GitHubの「Actions」→「Build Windows installer」→「Run workflow」を押すだけ。PC準備不要。✅後に「Artifacts」からZIPを取得→解凍で同じ .exe が手に入る。",
@@ -267,8 +267,8 @@
           ]
         }
       ],
-      "createdAt": 1782858870705,
-      "updatedAt": 1782858870705
+      "createdAt": 1782872010271,
+      "updatedAt": 1782872010271
     }
   ],
   "settings": {
