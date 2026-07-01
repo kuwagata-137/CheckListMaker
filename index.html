@@ -108,7 +108,9 @@
   .icon:hover { background: var(--surface-2); color: var(--text); }
   .icon:disabled { opacity: 0.35; cursor: default; }
   .icon.danger:hover { color: var(--danger); }
-  .icon.recording { color: var(--danger); animation: rec-blink 1.4s infinite; }
+  /* 録画ボタン: 黒い四角の中心に赤い丸のアイコン（一般的な録画マーク）。 */
+  .icon .rec-ico { display: block; }
+  .icon.recording { animation: rec-blink 1.4s infinite; }
   @keyframes rec-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
   /* ---- ホーム ---- */
@@ -809,7 +811,12 @@
     <span class="topbar-spacer"></span>
     <button class="icon" data-action="undo" title="元に戻す (Undo)">↶</button>
     <button class="icon" data-action="redo" title="やり直す (Redo)">↷</button>
-    <button class="icon" data-action="record" title="録画開始（クリックの度にスクショ保存）">⏺</button>
+    <button class="icon" data-action="record" title="録画開始（クリックの度にスクショ保存）">
+      <svg class="rec-ico" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="1" y="1" width="14" height="14" rx="3" fill="#111827" />
+        <circle cx="8" cy="8" r="4" fill="#ef4444" />
+      </svg>
+    </button>
     <button class="icon" data-action="theme" title="テーマ切替（自動/ライト/ダーク）">🌓</button>
   </div>
 

@@ -3,7 +3,8 @@
 //  - メインウィンドウ（index.html）の生成
 //  - 「録画」開始/停止の制御
 //  - 録画中はグローバルなマウスクリックを監視し、左/右クリックの度に
-//    「クリックしたモニタ」をキャプチャして「00_スクリーンショット」へ保存
+//    「クリックしたモニタ」をキャプチャして、ユーザーの「ピクチャ」内の
+//    「CheckListMaker」フォルダへ保存
 //  - クリック位置に赤い中抜きリングのマーカーを合成
 //  - スクリーンショットに写らないオーバーレイ「ガジェット」窓の表示
 //  - 失敗（権限拒否・フック開始失敗・キャプチャ失敗）はガジェットへ警告通知
@@ -12,7 +13,7 @@
 // 確定仕様の詳細は docs/録画機能-仕様.md「実装前に確定した詳細仕様」を参照。
 'use strict';
 
-const { app, BrowserWindow, ipcMain, screen, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, nativeImage, shell } = require('electron');
 const path = require('path');
 
 // アプリケーション名（メニュー/Dock/通知などに表示される）。
@@ -59,14 +60,21 @@ let pendingDown = null; // { button, x, y }
 let lastShot = { x: 0, y: 0, t: 0 };
 
 // ── パス・名前ユーティリティ ─────────────────────────────────
-// 保存ベースディレクトリ = 「アプリのあるディレクトリ」。
+// フォールバック用のベースディレクトリ = 「アプリのあるディレクトリ」。
 //  - 配布(パッケージ)時: 実行ファイルのあるフォルダ
 //  - 開発時: このプロジェクトのフォルダ
 function baseDir() {
   return app.isPackaged ? path.dirname(app.getPath('exe')) : __dirname;
 }
+// 保存先はユーザーの「ピクチャ」直下の「CheckListMaker」フォルダ。
+// （Windows なら %USERPROFILE%\Pictures\CheckListMaker）
 function screenshotDir() {
-  return path.join(baseDir(), '00_スクリーンショット');
+  try {
+    return path.join(app.getPath('pictures'), 'CheckListMaker');
+  } catch (_) {
+    // ピクチャを取得できない環境では、アプリのあるディレクトリ直下へフォールバック。
+    return path.join(baseDir(), 'CheckListMaker');
+  }
 }
 // Windows/macOS/Linux で使えないファイル名文字を除去する。
 function sanitizeName(s) {
@@ -208,6 +216,15 @@ function stopRecording() {
     w.close();
   }
   notifyState();
+  // 録画終了後は保存先フォルダをエクスプローラー（OS のファイルマネージャ）で開き、
+  // 撮ったスクリーンショットをすぐ確認できるようにする。
+  try {
+    const dir = screenshotDir();
+    fs.mkdirSync(dir, { recursive: true });
+    shell.openPath(dir);
+  } catch (err) {
+    console.error('保存フォルダを開けませんでした:', err);
+  }
   return { ok: true };
 }
 
@@ -243,7 +260,15 @@ function isOnOwnWindow(physX, physY) {
     const b = win.getBounds();
     return pt.x >= b.x && pt.x <= b.x + b.width && pt.y >= b.y && pt.y <= b.y + b.height;
   };
-  return inBounds(gadgetWin) || inBounds(mainWin);
+  // ガジェットは常に最前面（alwaysOnTop）なので、座標が重なれば必ず自アプリ扱い。
+  if (inBounds(gadgetWin)) return true;
+  // メイン窓は「実際に前面（フォーカス）にあるとき」だけ除外する。
+  // Electron の isVisible() は他アプリの背後に隠れていても true を返すため、
+  // 座標だけで判定すると、Excel 等を最大化して録画したときにメイン窓と座標が
+  // 重なるクリックが誤って除外され「他アプリのクリックが撮れない」原因になる。
+  // フォーカス条件を加えることで、背後に隠れているメイン窓は除外しない。
+  if (mainWin && !mainWin.isDestroyed() && mainWin.isFocused() && inBounds(mainWin)) return true;
+  return false;
 }
 
 // クリックした物理座標から、撮影対象のディスプレイ情報を求める。
