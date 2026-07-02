@@ -36,3 +36,11 @@ contextBridge.exposeInMainWorld('recorderAPI', {
     ipcRenderer.on('gadget:warn', (_e, data) => cb(data));
   },
 });
+
+// .docx 出力（Electron 版のみ）。レンダラーから静的HTMLを受け取り、メインプロセスで
+// .docx に変換・ネイティブ保存ダイアログで書き出す。素のブラウザでは window.docxAPI は undefined。
+contextBridge.exposeInMainWorld('docxAPI', {
+  available: true,
+  // payload = { title, html }。戻り値 = { saved:boolean, canceled?:boolean } / { error:string }。
+  save: (payload) => ipcRenderer.invoke('docx:save', payload),
+});

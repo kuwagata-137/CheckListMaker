@@ -13,7 +13,7 @@
 // 確定仕様の詳細は docs/録画機能-仕様.md「実装前に確定した詳細仕様」を参照。
 'use strict';
 
-const { app, BrowserWindow, ipcMain, screen, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, nativeImage, shell, dialog } = require('electron');
 const path = require('path');
 
 // アプリケーション名（メニュー/Dock/通知などに表示される）。
@@ -402,6 +402,40 @@ function onMouseUp(e) {
   });
 }
 
+// ── .docx 出力 ──────────────────────────────────────────────
+// レンダラー(index.html)から受け取った静的HTMLを .docx に変換し、
+// ネイティブ保存ダイアログで書き出す。html-to-docx はネイティブ依存なしの純JS。
+async function saveDocx(event, payload) {
+  const { title, html } = payload || {};
+  if (!html) return { error: 'HTML が空です。' };
+  let HTMLtoDOCX;
+  try {
+    HTMLtoDOCX = require('html-to-docx');
+  } catch (e) {
+    return { error: 'html-to-docx が見つかりません。プロジェクトで npm install を実行してください。' };
+  }
+  const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+  const safe =
+    String(title || 'checklist')
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .slice(0, 120) || 'checklist';
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: 'Word (.docx) として保存',
+    defaultPath: safe + '.docx',
+    filters: [{ name: 'Word 文書', extensions: ['docx'] }],
+  });
+  if (canceled || !filePath) return { saved: false, canceled: true };
+  try {
+    const buffer = await HTMLtoDOCX(html, null, {
+      table: { row: { cantSplit: true } },
+    });
+    fs.writeFileSync(filePath, buffer);
+    return { saved: true, filePath };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
 // ── アプリ起動 ──────────────────────────────────────────────
 app.whenReady().then(() => {
   // ハンドラは一度だけ登録し、内部の recording フラグで制御する。
@@ -410,6 +444,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('rec:start', (_e, name) => startRecording(name));
   ipcMain.handle('rec:stop', () => stopRecording());
+  ipcMain.handle('docx:save', (e, payload) => saveDocx(e, payload));
 
   createMainWindow();
 
