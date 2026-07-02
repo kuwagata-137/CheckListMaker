@@ -803,6 +803,8 @@
     .print-cover { page: coverpage; break-after: page; overflow: hidden; }
     .print-cover .cover { width: 794px; height: 1123px; }
   }
+  /* 単体文書モード（出力した .html を単体で開いたとき）は一覧へ戻る導線を隠す */
+  .clm-standalone [data-action="home"] { display: none; }
   </style>
 </head>
 <body>
@@ -822,12 +824,16 @@
 
   <main id="app"></main>
 
-  <input id="file-input" type="file" accept="application/json" hidden />
+  <input id="file-input" type="file" accept="application/json,.json,text/html,.html" hidden />
 
   <!-- アプリ全体を1ファイルに内包（ES Modules不使用 → file:// のダブルクリックで動作） -->
   <script>
   (function () {
     'use strict';
+
+    // アプリ自身の <script> 要素を同期実行中に捕捉しておく。
+    // HTML 出力（自己クローン方式）で、このスクリプト本文をそのまま再パッケージするのに使う。
+    const __selfScript = document.currentScript;
 
     // =========================================================================
     // model — データモデルと純粋な操作関数（副作用なし。永続化やDOMには触れない）
@@ -1074,6 +1080,21 @@
       }
     }
 
+    // 単体文書モード（出力した .html を単体で開いたとき）用のアダプタ。
+    // localStorage を汚さず、永続化は「保存＝新しい .html を再ダウンロード」に一本化する。
+    // load は埋め込みデータで初期化した seed を返し、save は何もしない（成功扱い）。
+    class MemoryAdapter {
+      constructor(seed) {
+        this.seed = seed || null;
+      }
+      load() {
+        return this.seed;
+      }
+      save() {
+        return true;
+      }
+    }
+
     const clone = (obj) => JSON.parse(JSON.stringify(obj));
 
     class Store {
@@ -1150,24 +1171,120 @@
       a.remove();
       URL.revokeObjectURL(url);
     }
-    function readStateFromFile(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          try {
-            const data = JSON.parse(reader.result);
-            if (!data || !Array.isArray(data.checklists)) {
-              throw new Error('checklists 配列が見つかりません');
-            }
-            resolve(data);
-          } catch (e) {
-            reject(new Error('JSONの読み込みに失敗しました: ' + e.message));
-          }
-        };
-        reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました'));
-        reader.readAsText(file);
-      });
+
+    // ---- HTML 出力（自己完結・フル編集可能）／HTML 取り込み ----
+    // 実行中アプリの <style> と <script> をそのまま再パッケージし、単一チェックリストの
+    // データを埋め込んだ独立 HTML を作る。開くと単体文書モード（window.__CLM_STANDALONE__）で
+    // 起動し、本アプリと同じフル編集が使える。保存は「新しい .html を再ダウンロード」。
+    function buildStandaloneHtml(checklist) {
+      const state = {
+        checklists: [clone(checklist)],
+        settings: clone(store.state.settings || { theme: 'auto' }),
+      };
+      // 埋め込みJSON内の "</" を退避し、スクリプト要素が途中で閉じないようにする。
+      const dataJson = JSON.stringify(state).replace(/<\//g, '<\\/');
+      const styleCss = (document.querySelector('style') || {}).textContent || '';
+      const appJs = (__selfScript && __selfScript.textContent) || '';
+      const title = checklist.title || 'チェックリスト';
+      return (
+        '<!DOCTYPE html>\n' +
+        '<html lang="ja">\n' +
+        '<head>\n' +
+        '  <meta charset="UTF-8" />\n' +
+        '  <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n' +
+        '  <title>' + escapeHtml(title) + '</title>\n' +
+        '  <style>' + styleCss + '</style>\n' +
+        '</head>\n' +
+        '<body>\n' +
+        '  <div id="topbar">\n' +
+        '    <span class="topbar-brand">✓ チェックリスト</span>\n' +
+        '    <span class="topbar-spacer"></span>\n' +
+        '    <button class="icon" data-action="undo" title="元に戻す (Undo)">↶</button>\n' +
+        '    <button class="icon" data-action="redo" title="やり直す (Redo)">↷</button>\n' +
+        '    <button class="icon" data-action="theme" title="テーマ切替（自動/ライト/ダーク）">🌓</button>\n' +
+        '  </div>\n' +
+        '  <main id="app"></main>\n' +
+        '  <input id="file-input" type="file" accept="application/json,.json,text/html,.html" hidden />\n' +
+        '  <script>window.__CLM_STANDALONE__ = true;<\/script>\n' +
+        '  <script type="application/json" id="clm-data">' + dataJson + '<\/script>\n' +
+        '  <script>' + appJs + '<\/script>\n' +
+        '</body>\n' +
+        '</html>\n'
+      );
     }
+    function sanitizeFilename(name) {
+      return (String(name || 'checklist').trim() || 'checklist')
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .slice(0, 120);
+    }
+    function downloadHtml(filename, html) {
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = /\.html?$/i.test(filename) ? filename : filename + '.html';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+    function saveAsHtml(checklist) {
+      const def = sanitizeFilename(checklist.title || 'checklist');
+      const input = prompt('ファイル名（.html）', def);
+      if (input == null) return; // キャンセル
+      downloadHtml(sanitizeFilename(input), buildStandaloneHtml(checklist));
+    }
+    // 本アプリが出力した HTML から、埋め込みチェックリストを取り出す。
+    function parseChecklistFromHtml(text) {
+      const doc = new DOMParser().parseFromString(text, 'text/html');
+      const node = doc.getElementById('clm-data');
+      if (!node) {
+        throw new Error('このHTMLには CheckListMaker の埋め込みデータが見つかりません。');
+      }
+      let data;
+      try {
+        data = JSON.parse(node.textContent);
+      } catch (e) {
+        throw new Error('埋め込みデータの解析に失敗しました: ' + e.message);
+      }
+      const checklist =
+        data && Array.isArray(data.checklists) ? data.checklists[0] : data;
+      if (!checklist || !Array.isArray(checklist.sections)) {
+        throw new Error('チェックリストの形式が不正です。');
+      }
+      return checklist;
+    }
+
+    // ---- .docx 出力（Electron 版のみ）----
+    // 既存の印刷ビュー(renderPrintView)をアプリの <style> でラップした静的HTMLを作り、
+    // メインプロセス(main.js)の docx:save 経由で .docx に変換・保存する。素のブラウザでは
+    // window.docxAPI が無いためボタン自体を出さない（下の renderEditor 参照）。
+    function buildStaticHtmlForDocx(checklist) {
+      const styleCss = (document.querySelector('style') || {}).textContent || '';
+      const body = renderPrintView(checklist);
+      return (
+        '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8" />' +
+        '<title>' + escapeHtml(checklist.title || '') + '</title>' +
+        '<style>' + styleCss + '</style></head><body>' + body + '</body></html>'
+      );
+    }
+    async function saveDocxViaElectron(checklist) {
+      if (!window.docxAPI || !window.docxAPI.save) {
+        alert('.docx 出力はデスクトップ版（Electron）でのみ利用できます。');
+        return;
+      }
+      try {
+        const html = buildStaticHtmlForDocx(checklist);
+        const res = await window.docxAPI.save({
+          title: sanitizeFilename(checklist.title || 'checklist'),
+          html,
+        });
+        if (res && res.error) alert('.docx の出力に失敗しました: ' + res.error);
+      } catch (e) {
+        alert('.docx の出力に失敗しました: ' + e.message);
+      }
+    }
+
     function utf8ToBase64(str) {
       return btoa(unescape(encodeURIComponent(str)));
     }
@@ -1291,6 +1408,8 @@
             }
             <button class="btn" data-action="share">🔗 共有リンク</button>
             <button class="btn" data-action="print">🖨 印刷 / PDF</button>
+            <button class="btn" data-action="save-html">💾 ${IS_STANDALONE ? '保存（HTML）' : '名前を付けて保存 (HTML)'}</button>
+            ${window.docxAPI ? '<button class="btn" data-action="save-docx">📄 Word (.docx)</button>' : ''}
           </div>
           ${
             isTemplate && checklist.coverPage && checklist.coverPage.enabled
@@ -1926,7 +2045,23 @@
     // =========================================================================
     // app — ストア・ルーター・描画・イベントの結線（エントリポイント）
     // =========================================================================
-    const store = new Store(new LocalStorageAdapter());
+    // 単体文書モード: 出力した .html を単体で開いたとき。埋め込み #clm-data を種にした
+    // MemoryAdapter でストアを作り（localStorage を汚さない）、その1件の editor を表示する。
+    const IS_STANDALONE = !!window.__CLM_STANDALONE__;
+    function readEmbeddedState() {
+      const node = document.getElementById('clm-data');
+      if (!node) return null;
+      try {
+        const data = JSON.parse(node.textContent);
+        if (data && Array.isArray(data.checklists)) return data;
+      } catch (e) {
+        console.warn('埋め込みデータの解析に失敗しました:', e);
+      }
+      return null;
+    }
+    const store = IS_STANDALONE
+      ? new Store(new MemoryAdapter(readEmbeddedState()))
+      : new Store(new LocalStorageAdapter());
     const app = document.getElementById('app');
     const fileInput = document.getElementById('file-input');
 
@@ -2780,6 +2915,10 @@
           return c && printChecklist(c);
         case 'cover':
           return c && openCoverDialog(c.id);
+        case 'save-html':
+          return c && saveAsHtml(c);
+        case 'save-docx':
+          return c && saveDocxViaElectron(c);
       }
     });
 
@@ -2825,12 +2964,44 @@
       if (input) input.focus();
     }
 
+    function readFileText(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました'));
+        reader.readAsText(file);
+      });
+    }
+
     fileInput.addEventListener('change', async () => {
       const file = fileInput.files[0];
       fileInput.value = '';
       if (!file) return;
       try {
-        const data = await readStateFromFile(file);
+        const text = await readFileText(file);
+        const isHtml = /\.html?$/i.test(file.name) || /id=["']clm-data["']/.test(text);
+        if (isHtml) {
+          // 本アプリ出力の HTML を取り込む。同一IDなら更新、無ければ新規追加。
+          const checklist = parseChecklistFromHtml(text);
+          const existing = M.findChecklist(store.state, checklist.id);
+          store.commit((s) => {
+            const idx = s.checklists.findIndex((c) => c.id === checklist.id);
+            if (idx >= 0) s.checklists[idx] = checklist;
+            else s.checklists.push(checklist);
+          });
+          alert(
+            existing
+              ? `「${checklist.title}」を更新しました。`
+              : `「${checklist.title}」を追加しました。`
+          );
+          goEditor(checklist.id);
+          return;
+        }
+        // JSON: 従来どおり全state置換。
+        const data = JSON.parse(text);
+        if (!data || !Array.isArray(data.checklists)) {
+          throw new Error('JSON に checklists 配列が見つかりません');
+        }
         if (confirm('現在のデータを、読み込んだ内容で置き換えます。よろしいですか？')) {
           store.replaceState(data);
           goHome();
@@ -2855,6 +3026,12 @@
       });
     }
     updateRecordButton();
+    if (IS_STANDALONE) {
+      // 単体文書モード: 一覧を隠し、埋め込み1件の editor を直接開く。
+      document.body.classList.add('clm-standalone');
+      const only = store.state.checklists[0];
+      if (only) location.hash = '#/c/' + only.id;
+    }
     startRouter(() => {
       if (maybeImportShare()) return;
       render();

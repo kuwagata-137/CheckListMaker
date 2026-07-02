@@ -13,6 +13,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "html-to-docx": "^1.8.0",
     "screenshot-desktop": "^1.15.0",
     "uiohook-napi": "^1.5.4"
   },
