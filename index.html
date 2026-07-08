@@ -546,6 +546,7 @@
   .ie-size input { vertical-align: middle; }
   .ie-canvas-wrap {
     /* 編集面を広く。ズーム時は内部でスクロールする。 */
+    position: relative; /* テキスト入力オーバーレイの絶対配置基準 */
     max-height: 78vh;
     overflow: auto;
     background: repeating-conic-gradient(#0001 0% 25%, transparent 0% 50%) 50% / 20px 20px;
@@ -564,6 +565,26 @@
     touch-action: none;
     cursor: crosshair;
   }
+  .ie-canvas.tool-hand { cursor: grab; }
+  .ie-canvas.tool-hand.panning { cursor: grabbing; }
+  .ie-canvas.tool-crop { cursor: default; }
+  /* 画像内テキストのその場入力欄（Electron は prompt 不可のため自前 UI） */
+  .ie-text-input {
+    position: absolute;
+    z-index: 5;
+    margin: 0;
+    padding: 1px 3px;
+    border: 1px dashed var(--primary);
+    background: rgba(255, 255, 255, 0.92);
+    line-height: 1.2;
+    white-space: pre;
+    resize: none;
+    overflow: hidden;
+    min-width: 40px;
+    box-sizing: content-box;
+  }
+  .ie-crop-actions { display: inline-flex; gap: 6px; }
+  .ie-crop-actions .btn { padding: 6px 10px; }
   .ie-actions { display: flex; gap: 8px; margin-top: 12px; }
   .ie-hint { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
 
@@ -2576,6 +2597,44 @@
       addImageFromBlob(c, host.dataset.section, host.dataset.item, blob, true);
     });
 
+    // エクスプローラ等からの画像ドラッグ＆ドロップ。ドロップ先の手順（.item）へ添付する。
+    // 外部ファイル（dataTransfer.files 有り）のときだけ扱い、アイテム並び替えの内部 DnD とは干渉しない。
+    function dropTargetItem(e) {
+      const el = e.target && e.target.closest ? e.target.closest('.item') : null;
+      return el && el.dataset && el.dataset.section && el.dataset.item ? el : null;
+    }
+    function hasFiles(dt) {
+      if (!dt) return false;
+      if (dt.types && Array.prototype.indexOf.call(dt.types, 'Files') !== -1) return true;
+      return !!(dt.files && dt.files.length);
+    }
+    let dropHi = null; // ドロップ先ハイライト中の要素
+    function clearDropHi() { if (dropHi) { dropHi.classList.remove('drop-target'); dropHi = null; } }
+    document.addEventListener('dragover', (e) => {
+      if (!currentChecklist() || !hasFiles(e.dataTransfer)) return;
+      const host = dropTargetItem(e);
+      if (!host) { clearDropHi(); return; }
+      e.preventDefault(); // ドロップを許可
+      try { e.dataTransfer.dropEffect = 'copy'; } catch (_) {}
+      if (dropHi !== host) { clearDropHi(); dropHi = host; host.classList.add('drop-target'); }
+    });
+    document.addEventListener('dragleave', (e) => {
+      // ウィンドウ外/対象外へ抜けたらハイライト解除。
+      if (!e.relatedTarget) clearDropHi();
+    });
+    document.addEventListener('drop', (e) => {
+      const c = currentChecklist();
+      if (!c || !hasFiles(e.dataTransfer)) return;
+      const host = dropTargetItem(e);
+      clearDropHi();
+      if (!host) return;
+      const files = Array.from(e.dataTransfer.files || []).filter((f) => f.type && f.type.startsWith('image/'));
+      if (!files.length) return;
+      e.preventDefault();
+      // 1 枚なら編集モーダルを開く（paste と同挙動）。複数は順に挿入のみ。
+      files.forEach((f, i) => addImageFromBlob(c, host.dataset.section, host.dataset.item, f, files.length === 1 && i === 0));
+    });
+
     // ペイント編集モーダル。矢印/四角/丸・ペン・ハイライト・テキスト・モザイク・
     // トリミングに対応。Undo は標準搭載。保存時に JPEG 圧縮して item に書き戻す。
     function openImageEditor(c, sectionId, itemId, index) {
@@ -2589,15 +2648,22 @@
         <div class="modal img-editor" role="dialog" aria-modal="true">
           <div class="ie-toolbar">
             <div class="ie-tools">
+              <button class="ie-tool" data-tool="hand" title="ハンド（画像を移動）">✋</button>
               <button class="ie-tool" data-tool="arrow" title="矢印">↗</button>
               <button class="ie-tool" data-tool="rect" title="四角">▢</button>
               <button class="ie-tool" data-tool="ellipse" title="丸">◯</button>
+              <button class="ie-tool" data-tool="callout" title="吹き出し（コメント）">💬</button>
               <button class="ie-tool" data-tool="pen" title="フリーハンドペン">✏</button>
               <button class="ie-tool" data-tool="marker" title="ハイライト">🖍</button>
+              <button class="ie-tool" data-tool="eraser" title="消しゴム（描いた注釈だけ消す）">⌫</button>
               <button class="ie-tool" data-tool="text" title="テキスト">T</button>
               <button class="ie-tool" data-tool="mosaic" title="モザイク/ぼかし">▦</button>
               <button class="ie-tool" data-tool="crop" title="トリミング">⛶</button>
             </div>
+            <span class="ie-crop-actions" hidden>
+              <button type="button" class="btn primary ie-crop-apply">トリミング適用</button>
+              <button type="button" class="btn ie-crop-cancel">取消</button>
+            </span>
             <label class="ie-color" title="色"><input type="color" value="#ff3b30" /></label>
             <label class="ie-size" title="線の太さ"><input type="range" min="1" max="40" value="6" /></label>
             <span class="ie-zoom" title="編集中の表示倍率（拡大縮小しても保存される画像の仕上がりは変わりません）">
@@ -2609,7 +2675,7 @@
             <button class="btn ie-undo" title="元に戻す">↶ 元に戻す</button>
           </div>
           <div class="ie-canvas-wrap"><canvas class="ie-canvas"></canvas></div>
-          <p class="ie-hint">ドラッグで描画。テキストはクリック位置に入力。モザイク/トリミングは範囲を選んで離すと確定。</p>
+          <p class="ie-hint">ドラッグで描画。テキストはクリック位置に入力（Enterで確定）。消しゴムは描いた注釈だけを消します（スクショは残る）。トリミングは四隅・各辺のハンドルで範囲を決めて「トリミング適用」。ハンドで画像を移動できます。</p>
           <div class="ie-actions">
             <button class="btn primary ie-save">保存</button>
             <button class="btn ie-cancel">キャンセル</button>
@@ -2658,37 +2724,76 @@
       zoomNum.addEventListener('change', () => setZoom(zoomNum.value));
       zoomFit.addEventListener('click', fitZoom);
 
+      // ---- 2レイヤー構成（非破壊の注釈） ----
+      // base = スクショ本体（モザイク・トリミングはこちらに適用）。
+      // anno = 透明の注釈層（矢印/図形/ペン/マーカー/テキスト/吹き出し）。消しゴムは anno だけ消す。
+      // 表示用 canvas は base→anno を合成（recomposite）して見せ、保存も合成結果を書き出す。
+      const baseCanvas = document.createElement('canvas');
+      const annoCanvas = document.createElement('canvas');
+      const baseCtx = baseCanvas.getContext('2d');
+      const annoCtx = annoCanvas.getContext('2d');
+      function setLayerSize(w, h) {
+        canvas.width = w; canvas.height = h;
+        baseCanvas.width = w; baseCanvas.height = h;
+        annoCanvas.width = w; annoCanvas.height = h;
+      }
+      // 表示 canvas に base→anno を重ね描き。crop 中は選択オーバーレイも重ねる。
+      function recomposite() {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(baseCanvas, 0, 0);
+        ctx.drawImage(annoCanvas, 0, 0);
+        if (cropMode && cropRect) drawCropOverlay();
+      }
+      // 表示 px / canvas px の比率（ハンドルや点線を画面上一定サイズに保つのに使う）。
+      function dispScale() { return canvas.offsetWidth ? canvas.width / canvas.offsetWidth : 1; }
+
       function selectTool(t) {
+        if (t !== 'crop') exitCropMode(); // crop 以外へ移ると選択枠を破棄
         tool = t;
         toolBtns.forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
+        canvas.classList.toggle('tool-hand', t === 'hand');
+        canvas.classList.toggle('tool-crop', t === 'crop');
+        if (t === 'crop') enterCropMode();
       }
       toolBtns.forEach((b) => b.addEventListener('click', () => selectTool(b.dataset.tool)));
-      selectTool('arrow');
 
       const baseImg = new Image();
       baseImg.onload = () => {
-        canvas.width = baseImg.naturalWidth;
-        canvas.height = baseImg.naturalHeight;
-        ctx.drawImage(baseImg, 0, 0);
+        setLayerSize(baseImg.naturalWidth, baseImg.naturalHeight);
+        baseCtx.drawImage(baseImg, 0, 0);
+        recomposite();
         fitZoom(); // まず画面に収まる倍率にして全体を見せる（以後ユーザーが自由に拡大可）
       };
       baseImg.src = srcUrl;
 
+      // ---- Undo（base+anno を両方スナップショット） ----
       function pushUndo() {
-        try { undoStack.push(canvas.toDataURL('image/png')); } catch (_) {}
-        if (undoStack.length > 25) undoStack.shift();
+        try {
+          undoStack.push({
+            w: canvas.width, h: canvas.height,
+            base: baseCanvas.toDataURL('image/png'),
+            anno: annoCanvas.toDataURL('image/png'),
+          });
+        } catch (_) {}
+        if (undoStack.length > 20) undoStack.shift();
       }
-      function restore(url) {
-        const im = new Image();
-        im.onload = () => {
-          canvas.width = im.naturalWidth;
-          canvas.height = im.naturalHeight;
-          ctx.drawImage(im, 0, 0);
-          applyZoom(); // 復元でサイズが変わっても現在の表示倍率を保つ
-        };
-        im.src = url;
+      function restore(snap) {
+        let pending = 2;
+        const done = () => { if (--pending === 0) { applyZoom(); recomposite(); } };
+        setLayerSize(snap.w, snap.h);
+        const bi = new Image();
+        bi.onload = () => { baseCtx.clearRect(0, 0, snap.w, snap.h); baseCtx.drawImage(bi, 0, 0); done(); };
+        bi.onerror = done;
+        bi.src = snap.base;
+        const ai = new Image();
+        ai.onload = () => { annoCtx.clearRect(0, 0, snap.w, snap.h); annoCtx.drawImage(ai, 0, 0); done(); };
+        ai.onerror = done;
+        ai.src = snap.anno;
       }
       overlay.querySelector('.ie-undo').addEventListener('click', () => {
+        exitCropMode();
         if (undoStack.length) restore(undoStack.pop());
       });
 
@@ -2699,141 +2804,346 @@
           y: (e.clientY - r.top) * (canvas.height / r.height),
         };
       }
-      function setupStroke(alpha) {
-        ctx.strokeStyle = colorInput.value;
-        ctx.fillStyle = colorInput.value;
-        ctx.lineWidth = Number(sizeInput.value);
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.globalAlpha = alpha;
+      // 指定 ctx（プレビュー時は表示 ctx、確定時は annoCtx）へ描く。
+      function setupStroke(g, alpha) {
+        g.strokeStyle = colorInput.value;
+        g.fillStyle = colorInput.value;
+        g.lineWidth = Number(sizeInput.value);
+        g.lineCap = 'round';
+        g.lineJoin = 'round';
+        g.globalAlpha = alpha;
       }
-      function drawArrow(x1, y1, x2, y2) {
+      // 矢印：三角を大きめにし、線は矢先まで引かず三角の底辺で止める（太線の丸端が
+      // 矢先からはみ出さない）。三角の頂点は (x2,y2)。
+      function drawArrow(g, x1, y1, x2, y2) {
         const w = Number(sizeInput.value);
-        setupStroke(1);
-        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
         const ang = Math.atan2(y2 - y1, x2 - x1);
-        const head = Math.max(12, w * 3);
-        ctx.beginPath();
-        ctx.moveTo(x2, y2);
-        ctx.lineTo(x2 - head * Math.cos(ang - Math.PI / 6), y2 - head * Math.sin(ang - Math.PI / 6));
-        ctx.lineTo(x2 - head * Math.cos(ang + Math.PI / 6), y2 - head * Math.sin(ang + Math.PI / 6));
-        ctx.closePath(); ctx.fill();
+        const head = Math.max(18, w * 4);
+        const bx = x2 - head * Math.cos(ang); // 三角の底辺中央（＝線の終点）
+        const by = y2 - head * Math.sin(ang);
+        g.save();
+        setupStroke(g, 1);
+        g.lineCap = 'butt';
+        g.beginPath(); g.moveTo(x1, y1); g.lineTo(bx, by); g.stroke();
+        g.beginPath();
+        g.moveTo(x2, y2);
+        g.lineTo(x2 - head * Math.cos(ang - Math.PI / 7), y2 - head * Math.sin(ang - Math.PI / 7));
+        g.lineTo(x2 - head * Math.cos(ang + Math.PI / 7), y2 - head * Math.sin(ang + Math.PI / 7));
+        g.closePath(); g.fill();
+        g.restore();
       }
-      function applyMosaic(rx, ry, rw, rh) {
+      function drawRect(g, a, b) {
+        g.save(); setupStroke(g, 1);
+        g.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+        g.restore();
+      }
+      function drawEllipse(g, a, b) {
+        g.save(); setupStroke(g, 1);
+        g.beginPath();
+        g.ellipse((a.x + b.x) / 2, (a.y + b.y) / 2, Math.abs(b.x - a.x) / 2, Math.abs(b.y - a.y) / 2, 0, 0, Math.PI * 2);
+        g.stroke(); g.restore();
+      }
+      // 吹き出し：角丸の本体＋左下に三角テール。可読性のため半透明白で塗り、現在色で縁取り。
+      function drawCallout(g, a, b) {
+        const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+        const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
+        if (w < 6 || h < 6) return;
+        const r = Math.min(16, w / 2, h / 2);
+        const tailW = Math.min(26, w * 0.4);
+        const tailH = Math.min(30, h * 0.8);
+        const tx = x + Math.min(w * 0.25, 36); // テール基点（左下寄り）
+        g.save();
+        g.strokeStyle = colorInput.value;
+        g.fillStyle = 'rgba(255,255,255,0.85)';
+        g.lineWidth = Math.max(2, Number(sizeInput.value));
+        g.lineJoin = 'round';
+        g.globalAlpha = 1;
+        g.beginPath();
+        g.moveTo(x + r, y);
+        g.lineTo(x + w - r, y);
+        g.arcTo(x + w, y, x + w, y + r, r);
+        g.lineTo(x + w, y + h - r);
+        g.arcTo(x + w, y + h, x + w - r, y + h, r);
+        g.lineTo(tx + tailW, y + h);           // 下辺右側
+        g.lineTo(tx + tailW * 0.15, y + h + tailH); // テール先端
+        g.lineTo(tx, y + h);                    // 下辺左側へ戻る
+        g.lineTo(x + r, y + h);
+        g.arcTo(x, y + h, x, y + h - r, r);
+        g.lineTo(x, y + r);
+        g.arcTo(x, y, x + r, y, r);
+        g.closePath();
+        g.fill(); g.stroke();
+        g.restore();
+      }
+      // モザイク：base 層（スクショ）を対象にブロック平均で塗り潰す。
+      function applyMosaic(g, rx, ry, rw, rh) {
         rx = Math.max(0, Math.round(rx)); ry = Math.max(0, Math.round(ry));
         rw = Math.min(canvas.width - rx, Math.round(rw));
         rh = Math.min(canvas.height - ry, Math.round(rh));
         if (rw <= 0 || rh <= 0) return;
         const block = Math.max(8, Number(sizeInput.value) * 2);
-        const data = ctx.getImageData(rx, ry, rw, rh).data;
-        ctx.globalAlpha = 1;
+        const data = g.getImageData(rx, ry, rw, rh).data;
+        g.globalAlpha = 1;
         for (let by = 0; by < rh; by += block) {
           for (let bx = 0; bx < rw; bx += block) {
             const xmax = Math.min(bx + block, rw), ymax = Math.min(by + block, rh);
-            let r = 0, g = 0, b = 0, n = 0;
+            let r = 0, gg = 0, b = 0, n = 0;
             for (let y = by; y < ymax; y++) for (let x = bx; x < xmax; x++) {
               const i = (y * rw + x) * 4;
-              r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+              r += data[i]; gg += data[i + 1]; b += data[i + 2]; n++;
             }
-            ctx.fillStyle = `rgb(${(r / n) | 0},${(g / n) | 0},${(b / n) | 0})`;
-            ctx.fillRect(rx + bx, ry + by, xmax - bx, ymax - by);
+            g.fillStyle = `rgb(${(r / n) | 0},${(gg / n) | 0},${(b / n) | 0})`;
+            g.fillRect(rx + bx, ry + by, xmax - bx, ymax - by);
           }
         }
       }
 
+      // ---- テキスト（Electron の prompt 不可対策：その場編集の入力欄を出す）----
+      function beginText(p) {
+        const scale = canvas.offsetWidth ? canvas.offsetWidth / canvas.width : 1;
+        const fs = Math.max(16, Number(sizeInput.value) * 4); // canvas px でのフォントサイズ
+        const ta = document.createElement('textarea');
+        ta.className = 'ie-text-input';
+        ta.rows = 1;
+        ta.style.left = (canvas.offsetLeft + p.x * scale) + 'px';
+        ta.style.top = (canvas.offsetTop + p.y * scale) + 'px';
+        ta.style.color = colorInput.value;
+        ta.style.font = `bold ${fs * scale}px sans-serif`;
+        canvasWrap.appendChild(ta);
+        ta.focus();
+        let done = false;
+        const commit = () => {
+          if (done) return; done = true;
+          const text = ta.value;
+          ta.remove();
+          if (text.trim() === '') { recomposite(); return; }
+          pushUndo();
+          annoCtx.save();
+          annoCtx.globalAlpha = 1;
+          annoCtx.fillStyle = colorInput.value;
+          annoCtx.font = `bold ${fs}px sans-serif`;
+          annoCtx.textBaseline = 'top';
+          const lh = fs * 1.2;
+          text.split('\n').forEach((line, i) => annoCtx.fillText(line, p.x, p.y + i * lh));
+          annoCtx.restore();
+          recomposite();
+        };
+        const cancel = () => { if (done) return; done = true; ta.remove(); recomposite(); };
+        ta.addEventListener('keydown', (ev) => {
+          ev.stopPropagation(); // 編集中は全体の Esc 閉じや他ショートカットを止める
+          if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); commit(); }
+          else if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
+        });
+        ta.addEventListener('blur', commit);
+        ta.addEventListener('input', () => {
+          ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px';
+          ta.style.width = 'auto';
+          ta.style.width = Math.min(ta.scrollWidth + 24, canvas.offsetWidth) + 'px';
+        });
+      }
+
+      // ---- ハンドツール（パン） ----
+      let panning = null;
+      function startPan(e) {
+        panning = { x: e.clientX, y: e.clientY, sl: canvasWrap.scrollLeft, st: canvasWrap.scrollTop };
+        canvas.classList.add('panning');
+        canvas.setPointerCapture(e.pointerId);
+      }
+      function doPan(e) {
+        if (!panning) return;
+        canvasWrap.scrollLeft = panning.sl - (e.clientX - panning.x);
+        canvasWrap.scrollTop = panning.st - (e.clientY - panning.y);
+      }
+      function endPan() { panning = null; canvas.classList.remove('panning'); }
+
+      // ---- トリミング（Excel 式：8ハンドルで領域を調整→適用） ----
+      let cropMode = false;
+      let cropRect = null;  // {x,y,w,h} canvas px
+      let cropDrag = null;  // {mode, sx, sy, rect}
+      const cropActions = overlay.querySelector('.ie-crop-actions');
+      function enterCropMode() {
+        if (canvas.width < 10 || canvas.height < 10) return;
+        cropMode = true;
+        const m = Math.round(Math.min(canvas.width, canvas.height) * 0.1);
+        cropRect = { x: m, y: m, w: canvas.width - m * 2, h: canvas.height - m * 2 };
+        if (cropRect.w < 10 || cropRect.h < 10) cropRect = { x: 0, y: 0, w: canvas.width, h: canvas.height };
+        if (cropActions) cropActions.hidden = false;
+        recomposite();
+      }
+      function exitCropMode() {
+        if (!cropMode) return;
+        cropMode = false; cropRect = null; cropDrag = null;
+        if (cropActions) cropActions.hidden = true;
+        recomposite();
+      }
+      function handlePoints() {
+        const { x, y, w, h } = cropRect;
+        return {
+          nw: [x, y], n: [x + w / 2, y], ne: [x + w, y],
+          e: [x + w, y + h / 2], se: [x + w, y + h], s: [x + w / 2, y + h],
+          sw: [x, y + h], w: [x, y + h / 2],
+        };
+      }
+      function hitHandle(p) {
+        const tol = 11 * dispScale();
+        const pts = handlePoints();
+        for (const k in pts) {
+          if (Math.abs(p.x - pts[k][0]) <= tol && Math.abs(p.y - pts[k][1]) <= tol) return k;
+        }
+        if (p.x > cropRect.x && p.x < cropRect.x + cropRect.w &&
+            p.y > cropRect.y && p.y < cropRect.y + cropRect.h) return 'move';
+        return null;
+      }
+      function drawCropOverlay() {
+        const g = ctx, s = dispScale();
+        g.save();
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.globalAlpha = 1;
+        g.fillStyle = 'rgba(0,0,0,0.45)'; // 選択外を暗く（evenodd で内側を抜く）
+        g.beginPath();
+        g.rect(0, 0, canvas.width, canvas.height);
+        g.rect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+        g.fill('evenodd');
+        g.strokeStyle = '#1a73e8';
+        g.setLineDash([]);
+        g.lineWidth = 2 * s;
+        g.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+        const hs = 9 * s;
+        g.fillStyle = '#1a73e8';
+        const pts = handlePoints();
+        for (const k in pts) g.fillRect(pts[k][0] - hs / 2, pts[k][1] - hs / 2, hs, hs);
+        g.restore();
+      }
+      function updateCrop(p) {
+        const d = cropDrag, r = { ...d.rect };
+        const dx = p.x - d.sx, dy = p.y - d.sy, MIN = 10;
+        if (d.mode === 'move') {
+          r.x = Math.max(0, Math.min(canvas.width - r.w, r.x + dx));
+          r.y = Math.max(0, Math.min(canvas.height - r.h, r.y + dy));
+        } else {
+          let x1 = r.x, y1 = r.y, x2 = r.x + r.w, y2 = r.y + r.h;
+          if (d.mode.includes('w')) x1 = Math.max(0, Math.min(x2 - MIN, x1 + dx));
+          if (d.mode.includes('e')) x2 = Math.min(canvas.width, Math.max(x1 + MIN, x2 + dx));
+          if (d.mode.includes('n')) y1 = Math.max(0, Math.min(y2 - MIN, y1 + dy));
+          if (d.mode.includes('s')) y2 = Math.min(canvas.height, Math.max(y1 + MIN, y2 + dy));
+          r.x = x1; r.y = y1; r.w = x2 - x1; r.h = y2 - y1;
+        }
+        cropRect = r;
+        recomposite();
+      }
+      function applyCrop() {
+        if (!cropRect) return;
+        const rx = Math.round(cropRect.x), ry = Math.round(cropRect.y);
+        const rw = Math.round(cropRect.w), rh = Math.round(cropRect.h);
+        if (rw < 4 || rh < 4) return;
+        pushUndo();
+        const tb = document.createElement('canvas'); tb.width = rw; tb.height = rh;
+        tb.getContext('2d').drawImage(baseCanvas, rx, ry, rw, rh, 0, 0, rw, rh);
+        const tak = document.createElement('canvas'); tak.width = rw; tak.height = rh;
+        tak.getContext('2d').drawImage(annoCanvas, rx, ry, rw, rh, 0, 0, rw, rh);
+        setLayerSize(rw, rh);
+        baseCtx.drawImage(tb, 0, 0);
+        annoCtx.drawImage(tak, 0, 0);
+        cropMode = false; cropRect = null; cropDrag = null;
+        if (cropActions) cropActions.hidden = true;
+        selectTool('arrow');
+        applyZoom();
+        recomposite();
+      }
+      if (cropActions) {
+        overlay.querySelector('.ie-crop-apply').addEventListener('click', applyCrop);
+        overlay.querySelector('.ie-crop-cancel').addEventListener('click', () => selectTool('arrow'));
+      }
+      selectTool('arrow'); // 初期ツール（crop 系関数の定義後に呼ぶ）
+
+      // ---- ポインタ操作 ----
       let drawing = false;
       let start = null;
-      let dragBase = null;
 
       canvas.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         const p = xy(e);
-        if (tool === 'text') {
-          const t = prompt('画像に追加するテキスト');
-          if (t) {
-            pushUndo();
-            ctx.globalAlpha = 1;
-            ctx.fillStyle = colorInput.value;
-            const fs = Math.max(16, Number(sizeInput.value) * 4);
-            ctx.font = `bold ${fs}px sans-serif`;
-            ctx.textBaseline = 'top';
-            ctx.fillText(t, p.x, p.y);
-          }
+        if (tool === 'hand') { startPan(e); return; }
+        if (tool === 'crop') {
+          if (!cropRect) return;
+          const h = hitHandle(p);
+          if (h) { cropDrag = { mode: h, sx: p.x, sy: p.y, rect: { ...cropRect } }; canvas.setPointerCapture(e.pointerId); }
           return;
         }
+        if (tool === 'text') { beginText(p); return; }
         drawing = true;
         start = p;
-        pushUndo();
-        dragBase = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        if (tool === 'pen' || tool === 'marker') {
-          setupStroke(tool === 'marker' ? 0.35 : 1);
-          if (tool === 'marker') ctx.lineWidth = Number(sizeInput.value) * 3;
-          ctx.beginPath();
-          ctx.moveTo(p.x, p.y);
+        if (tool === 'pen' || tool === 'marker' || tool === 'eraser') {
+          pushUndo();
+          annoCtx.save();
+          if (tool === 'eraser') {
+            annoCtx.globalCompositeOperation = 'destination-out';
+            annoCtx.globalAlpha = 1;
+            annoCtx.lineWidth = Math.max(4, Number(sizeInput.value) * 2);
+          } else {
+            setupStroke(annoCtx, tool === 'marker' ? 0.35 : 1);
+            if (tool === 'marker') annoCtx.lineWidth = Number(sizeInput.value) * 3;
+          }
+          annoCtx.lineCap = 'round'; annoCtx.lineJoin = 'round';
+          annoCtx.beginPath(); annoCtx.moveTo(p.x, p.y);
+          annoCtx.lineTo(p.x + 0.01, p.y + 0.01); annoCtx.stroke(); // 点クリックでも痕を残す
+          recomposite();
         }
         canvas.setPointerCapture(e.pointerId);
       });
 
       canvas.addEventListener('pointermove', (e) => {
+        if (tool === 'hand') { doPan(e); return; }
+        if (tool === 'crop') { if (cropDrag) updateCrop(xy(e)); return; }
         if (!drawing) return;
         const p = xy(e);
-        if (tool === 'pen' || tool === 'marker') {
-          ctx.lineTo(p.x, p.y);
-          ctx.stroke();
-          return;
+        if (tool === 'pen' || tool === 'marker' || tool === 'eraser') {
+          annoCtx.lineTo(p.x, p.y); annoCtx.stroke(); recomposite(); return;
         }
-        ctx.putImageData(dragBase, 0, 0); // 開始時へ戻してプレビュー描画
-        ctx.globalAlpha = 1;
-        if (tool === 'arrow') {
-          drawArrow(start.x, start.y, p.x, p.y);
-        } else if (tool === 'rect') {
-          setupStroke(1);
-          ctx.strokeRect(start.x, start.y, p.x - start.x, p.y - start.y);
-        } else if (tool === 'ellipse') {
-          setupStroke(1);
-          ctx.beginPath();
-          ctx.ellipse((start.x + p.x) / 2, (start.y + p.y) / 2,
-            Math.abs(p.x - start.x) / 2, Math.abs(p.y - start.y) / 2, 0, 0, Math.PI * 2);
-          ctx.stroke();
-        } else if (tool === 'mosaic' || tool === 'crop') {
+        // 図形はプレビューを表示 ctx に上描き（annoCanvas は確定時のみ更新）。
+        recomposite();
+        if (tool === 'arrow') drawArrow(ctx, start.x, start.y, p.x, p.y);
+        else if (tool === 'rect') drawRect(ctx, start, p);
+        else if (tool === 'ellipse') drawEllipse(ctx, start, p);
+        else if (tool === 'callout') drawCallout(ctx, start, p);
+        else if (tool === 'mosaic') {
           ctx.save();
           ctx.globalAlpha = 1;
           ctx.strokeStyle = '#1a73e8';
           ctx.setLineDash([6, 4]);
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 2 * dispScale();
           ctx.strokeRect(start.x, start.y, p.x - start.x, p.y - start.y);
           ctx.restore();
         }
       });
 
       function finish(e) {
+        if (tool === 'hand') { endPan(); return; }
+        if (tool === 'crop') { cropDrag = null; return; }
         if (!drawing) return;
         drawing = false;
         const p = xy(e);
-        ctx.globalAlpha = 1;
-        if (tool === 'mosaic') {
-          ctx.putImageData(dragBase, 0, 0);
-          applyMosaic(Math.min(start.x, p.x), Math.min(start.y, p.y),
-            Math.abs(p.x - start.x), Math.abs(p.y - start.y));
-        } else if (tool === 'crop') {
-          ctx.putImageData(dragBase, 0, 0);
-          const rx = Math.max(0, Math.min(start.x, p.x));
-          const ry = Math.max(0, Math.min(start.y, p.y));
-          const rw = Math.min(canvas.width - rx, Math.abs(p.x - start.x));
-          const rh = Math.min(canvas.height - ry, Math.abs(p.y - start.y));
-          if (rw > 4 && rh > 4) {
-            const tmp = document.createElement('canvas');
-            tmp.width = rw; tmp.height = rh;
-            tmp.getContext('2d').drawImage(canvas, rx, ry, rw, rh, 0, 0, rw, rh);
-            canvas.width = rw; canvas.height = rh;
-            ctx.drawImage(tmp, 0, 0);
-            applyZoom(); // トリミングでサイズが変わっても表示倍率を保つ
-          }
+        if (tool === 'pen' || tool === 'marker' || tool === 'eraser') {
+          try { annoCtx.restore(); } catch (_) {}
+          recomposite();
+          return;
         }
-        dragBase = null;
+        pushUndo();
+        if (tool === 'arrow') drawArrow(annoCtx, start.x, start.y, p.x, p.y);
+        else if (tool === 'rect') drawRect(annoCtx, start, p);
+        else if (tool === 'ellipse') drawEllipse(annoCtx, start, p);
+        else if (tool === 'callout') drawCallout(annoCtx, start, p);
+        else if (tool === 'mosaic') {
+          applyMosaic(baseCtx, Math.min(start.x, p.x), Math.min(start.y, p.y),
+            Math.abs(p.x - start.x), Math.abs(p.y - start.y));
+        }
+        recomposite();
       }
       canvas.addEventListener('pointerup', finish);
-      canvas.addEventListener('pointercancel', () => { drawing = false; dragBase = null; });
+      canvas.addEventListener('pointercancel', () => {
+        if (tool === 'pen' || tool === 'marker' || tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
+        drawing = false; cropDrag = null; endPan(); recomposite();
+      });
 
       function close() {
         document.removeEventListener('keydown', onKey);
@@ -2843,9 +3153,16 @@
       document.addEventListener('keydown', onKey);
       overlay.querySelector('.ie-cancel').addEventListener('click', close);
       overlay.querySelector('.ie-save').addEventListener('click', () => {
-        const out = canvas.toDataURL('image/jpeg', IMG_QUALITY);
+        exitCropMode();
+        // 合成結果（crop オーバーレイ無し）を別 canvas に作って書き出す。
+        const out = document.createElement('canvas');
+        out.width = canvas.width; out.height = canvas.height;
+        const og = out.getContext('2d');
+        og.drawImage(baseCanvas, 0, 0);
+        og.drawImage(annoCanvas, 0, 0);
+        const data = out.toDataURL('image/jpeg', IMG_QUALITY);
         const ok = commitImage((s) =>
-          M.replaceItemImage(M.findChecklist(s, c.id), sectionId, itemId, index, out)
+          M.replaceItemImage(M.findChecklist(s, c.id), sectionId, itemId, index, data)
         );
         if (ok) close();
       });
