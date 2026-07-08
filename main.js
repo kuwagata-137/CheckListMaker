@@ -129,6 +129,10 @@ function createMainWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // 録画中はメイン窓を最小化する（撮影対象から退ける）。最小化＝非表示中でも
+      // マーカー合成用の executeJavaScript が滞らないよう、レンダラーの
+      // バックグラウンドスロットリングを止めておく。
+      backgroundThrottling: false,
     },
   });
   mainWin.loadFile('index.html');
@@ -318,10 +322,17 @@ async function drawMarker(pngBuffer, relX, relY, scaleFactor) {
   const radius = MARKER_RADIUS * scaleFactor;
   const lineWidth = MARKER_LINE_WIDTH * scaleFactor;
   const b64 = pngBuffer.toString('base64');
+  // 録画中はメイン窓が最小化（document が hidden）されている。hidden 状態では
+  // img.decode() の Promise が解決されず executeJavaScript がハングし、保存・枚数
+  // カウント・プレビュー更新が全て止まる（＝直列キューごと詰まる）。そのため
+  // 可視状態に依存しない onload 待ち＋同期 drawImage で合成する。
   const script = `(async () => {
     const img = new Image();
-    img.src = 'data:image/png;base64,${b64}';
-    await img.decode();
+    await new Promise((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('image load failed'));
+      img.src = 'data:image/png;base64,${b64}';
+    });
     const c = document.createElement('canvas');
     c.width = img.naturalWidth; c.height = img.naturalHeight;
     const ctx = c.getContext('2d');
@@ -334,7 +345,13 @@ async function drawMarker(pngBuffer, relX, relY, scaleFactor) {
     return c.toDataURL('image/png');
   })()`;
   try {
-    const dataUrl = await mainWin.webContents.executeJavaScript(script, true);
+    // 万一レンダラーが応答しなくても保存処理（枚数カウント・プレビュー更新）を
+    // 止めないよう、合成にはタイムアウトを設ける。時間切れ時は素の画像で続行する。
+    const exec = mainWin.webContents.executeJavaScript(script, true);
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('drawMarker timeout')), 4000)
+    );
+    const dataUrl = await Promise.race([exec, timeout]);
     const base64 = String(dataUrl).split(',')[1];
     if (base64) return Buffer.from(base64, 'base64');
   } catch (err) {
