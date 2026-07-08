@@ -50,13 +50,17 @@ const MARKER_COLOR = '#ef4444';
 
 // ── 録画状態 ────────────────────────────────────────────────
 let recording = false;
-let capturing = false; // キャプチャ多重実行の防止
 let sessionShots = 0; // この録画セッションでの撮影枚数（ガジェット表示用）
 let recordName = ''; // ファイル名の接頭辞（チェックリスト名をサニタイズしたもの）
 let startTime = 0; // 録画開始時刻(ms)
 
 // マウス押下情報（ドラッグ判定用）と直近撮影（デバウンス用）。
 let pendingDown = null; // { button, x, y }
+// 「クリック反応の直前」を捉えるため、押下(mousedown)の瞬間に撮影を開始し、
+// 離上(mouseup)で保存可否を確定する。pendingCapture はその撮影 Promise。
+let pendingCapture = null; // Promise<{raw,disp,physX,physY}|null> | null
+// 保存処理を直列化するためのチェーン（nextSequence 採番と書き込みの競合を防ぐ）。
+let persistChain = Promise.resolve();
 let lastShot = { x: 0, y: 0, t: 0 };
 
 // ── パス・名前ユーティリティ ─────────────────────────────────
@@ -181,6 +185,7 @@ function startRecording(rawName) {
   recording = true;
   sessionShots = 0;
   pendingDown = null;
+  pendingCapture = null;
   lastShot = { x: 0, y: 0, t: 0 };
   startTime = Date.now();
   recordName = sanitizeName(rawName);
@@ -190,6 +195,12 @@ function startRecording(rawName) {
     console.error('保存フォルダの作成に失敗しました:', err);
   }
   createGadget();
+  // 録画中はアプリ本体を最小化して撮影対象から退ける。最小化中は
+  // mainWin.isVisible()===false となり、isOnOwnWindow のメイン窓分岐が
+  // 自然に無効化されるため、本体に重なる他アプリのクリックも撮影できる。
+  if (mainWin && !mainWin.isDestroyed()) {
+    try { mainWin.minimize(); } catch (_) { /* noop */ }
+  }
   try {
     uIOhook.start();
   } catch (err) {
@@ -205,6 +216,7 @@ function stopRecording() {
   if (!recording) return { ok: true };
   recording = false;
   pendingDown = null;
+  pendingCapture = null;
   try {
     uIOhook.stop();
   } catch (err) {
@@ -214,6 +226,14 @@ function stopRecording() {
     const w = gadgetWin;
     gadgetWin = null; // closed ハンドラから再帰停止しないよう先に外す
     w.close();
+  }
+  // 録画開始時に最小化した本体を元に戻して前面へ。
+  if (mainWin && !mainWin.isDestroyed()) {
+    try {
+      if (mainWin.isMinimized()) mainWin.restore();
+      mainWin.show();
+      mainWin.focus();
+    } catch (_) { /* noop */ }
   }
   notifyState();
   // 録画終了後は保存先フォルダをエクスプローラー（OS のファイルマネージャ）で開き、
@@ -323,50 +343,68 @@ async function drawMarker(pngBuffer, relX, relY, scaleFactor) {
   return pngBuffer;
 }
 
-// 1クリック=1枚を撮影して保存する。physX/physY はクリックの物理座標。
-async function captureAndSave(physX, physY) {
+// 【撮影】押下(mousedown)の瞬間に呼ぶ。クリック反応が起きる直前の画面を撮り、
+// 生バッファ・対象ディスプレイ・押下座標を返す（保存はまだしない）。
+// これにより「クリックすると消えるメニュー等」も消える前に写る。
+async function captureShot(physX, physY) {
   const { disp, shotId } = await resolveTargetDisplay(physX, physY);
 
   // Linux で setContentProtection が効かない前提のため、撮影中はガジェットを隠す。
   const hideForShot = IS_LINUX && gadgetWin && !gadgetWin.isDestroyed() && gadgetWin.isVisible();
   try {
     if (hideForShot) gadgetWin.hide();
-
     const opts = { format: 'png' };
     if (shotId != null) opts.screen = shotId;
     const raw = await screenshot(opts);
-
-    // クリックの物理相対座標（撮影したモニタの左上原点）。
-    const relX = physX - disp.bounds.x * disp.scaleFactor;
-    const relY = physY - disp.bounds.y * disp.scaleFactor;
-    const buf = await drawMarker(raw, relX, relY, disp.scaleFactor);
-
-    const stamp = dateStamp();
-    const seq = nextSequence(recordName, stamp);
-    const fileName = `${recordName}_${stamp}_${seq}.png`;
-    const filePath = path.join(screenshotDir(), fileName);
-    fs.writeFileSync(filePath, buf);
-    sessionShots += 1;
-
-    let preview = '';
-    try {
-      preview = nativeImage.createFromBuffer(buf).resize({ width: 220 }).toDataURL();
-    } catch (_) {
-      /* サムネイル生成失敗は無視 */
-    }
-    if (gadgetWin && !gadgetWin.isDestroyed()) {
-      gadgetWin.webContents.send('gadget:update', {
-        count: sessionShots,
-        preview,
-        file: fileName,
-      });
-    }
-  } catch (err) {
-    console.error('スクリーンショットの保存に失敗しました:', err);
-    warnGadget('スクリーンショットを保存できません。画面収録の許可や保存先を確認してください。');
+    return { raw, disp, physX, physY };
   } finally {
     if (hideForShot && gadgetWin && !gadgetWin.isDestroyed()) gadgetWin.show();
   }
+}
+
+// 【保存】離上(mouseup)で保存確定と判定したら呼ぶ。撮影済みバッファにクリック位置の
+// マーカーを合成してファイルへ書き出し、ガジェットを更新する。
+async function persistShot(shot) {
+  const { raw, disp, physX, physY } = shot;
+  // クリックの物理相対座標（撮影したモニタの左上原点）。
+  const relX = physX - disp.bounds.x * disp.scaleFactor;
+  const relY = physY - disp.bounds.y * disp.scaleFactor;
+  const buf = await drawMarker(raw, relX, relY, disp.scaleFactor);
+
+  const stamp = dateStamp();
+  const seq = nextSequence(recordName, stamp);
+  const fileName = `${recordName}_${stamp}_${seq}.png`;
+  const filePath = path.join(screenshotDir(), fileName);
+  fs.writeFileSync(filePath, buf);
+  sessionShots += 1;
+
+  let preview = '';
+  try {
+    preview = nativeImage.createFromBuffer(buf).resize({ width: 220 }).toDataURL();
+  } catch (_) {
+    /* サムネイル生成失敗は無視 */
+  }
+  if (gadgetWin && !gadgetWin.isDestroyed()) {
+    gadgetWin.webContents.send('gadget:update', {
+      count: sessionShots,
+      preview,
+      file: fileName,
+    });
+  }
+}
+
+// 撮影済み Promise を直列キューに積む。採番(nextSequence)と書き込みが重ならないよう
+// persistChain で1件ずつ順に保存する（撮影自体は押下時に並行で走ってよい）。
+function enqueuePersist(capPromise) {
+  persistChain = persistChain
+    .then(async () => {
+      const shot = await capPromise;
+      if (shot) await persistShot(shot);
+    })
+    .catch((err) => {
+      console.error('スクリーンショットの保存に失敗しました:', err);
+      warnGadget('スクリーンショットを保存できません。画面収録の許可や保存先を確認してください。');
+    });
 }
 
 // 直近撮影からの時間＋近接でデバウンス（ダブルクリック/連打を1枚に集約）。
@@ -379,27 +417,39 @@ function shouldDebounce(physX, physY) {
 
 // ── マウス監視ハンドラ ──────────────────────────────────────
 // 押下位置を覚えておき、離した位置との移動量でドラッグ/クリックを判別する。
+// 撮影は押下(mousedown)の瞬間に開始し、離上(mouseup)で保存可否を確定する。
 function onMouseDown(e) {
   if (!recording) return;
   pendingDown = { button: e.button, x: e.x, y: e.y };
+  pendingCapture = null; // 直前に未消費の撮影があれば破棄（連続 down 等）
+  // 撮影対象になり得るクリックだけ、押下の瞬間に「寸前の画面」を撮っておく。
+  if (!isShootableButton(e.button)) return; // 左/右以外は撮らない
+  if (isOnOwnWindow(e.x, e.y)) { console.log('[rec] skip(down): own-window'); return; }
+  if (shouldDebounce(e.x, e.y)) { console.log('[rec] skip(down): debounce'); return; }
+  pendingCapture = captureShot(e.x, e.y).catch((err) => {
+    console.error('スクリーンショットの撮影に失敗しました:', err);
+    warnGadget('スクリーンショットを撮影できません。画面収録の許可や保存先を確認してください。');
+    return null;
+  });
 }
 
 function onMouseUp(e) {
-  if (!recording || capturing) return;
+  if (!recording) return;
   const down = pendingDown;
+  const cap = pendingCapture;
   pendingDown = null;
-  if (!down || down.button !== e.button) return; // 押下情報と不整合
-  if (!isShootableButton(e.button)) return; // 左/右以外（中・サイド）は撮らない
+  pendingCapture = null;
+  if (!cap) return; // 押下時に撮影対象外だった（＝撮っていない）ので何もしない
+  // 撮影済みバッファを保存するか、破棄するかを判定する。破棄時は cap を捨てるだけ。
+  if (!down || down.button !== e.button) { console.log('[rec] skip(up): button-mismatch'); return; }
+  if (!isShootableButton(e.button)) { console.log('[rec] skip(up): not-shootable'); return; }
   // 押下→離上が大きく動いた＝ドラッグは撮らない。
-  if (Math.hypot(e.x - down.x, e.y - down.y) > DRAG_THRESHOLD) return;
-  if (isOnOwnWindow(e.x, e.y)) return; // 自アプリ（メイン窓・ガジェット）は撮らない
-  if (shouldDebounce(e.x, e.y)) return; // ダブルクリック/連打の2枚目以降は撮らない
+  if (Math.hypot(e.x - down.x, e.y - down.y) > DRAG_THRESHOLD) { console.log('[rec] skip(up): drag'); return; }
+  if (isOnOwnWindow(e.x, e.y)) { console.log('[rec] skip(up): own-window'); return; }
+  if (shouldDebounce(e.x, e.y)) { console.log('[rec] skip(up): debounce'); return; }
 
   lastShot = { x: e.x, y: e.y, t: Date.now() };
-  capturing = true;
-  captureAndSave(e.x, e.y).finally(() => {
-    capturing = false;
-  });
+  enqueuePersist(cap);
 }
 
 // ── .docx 出力 ──────────────────────────────────────────────
