@@ -9,6 +9,8 @@ on:
   push:
     branches:
       - claude/recording-button-image-editing-6fbglp
+  # Pull Request でも自動ビルド（PR ごとに .exe を生成して検証できる）
+  pull_request:
   # Actions 画面から手動実行も可能
   workflow_dispatch:
 
