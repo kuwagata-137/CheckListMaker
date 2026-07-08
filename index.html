@@ -497,7 +497,17 @@
   /* 画像編集はできるだけ広い面積で行いたいので、モーダルは画面いっぱい近くまで広げる。
      基底の .modal が後方で max-width:460px / width:100% を指定するため、
      同等以上の詳細度（.modal.img-editor）で確実に上書きする。 */
-  .modal.img-editor { max-width: min(1500px, 98vw); width: 98vw; padding: 16px; }
+  /* ウインドウは固定サイズ（高さ 92vh）。ズームで大きさは変わらない。幅はビューポートの
+     余白（modal-overlay の padding 16px×2）を差し引いてはみ出さないようにする。
+     全体を flex 縦積みにして、ツールバー/操作列は自然な高さ、キャンバス枠が残りを埋める。 */
+  .modal.img-editor {
+    max-width: min(1500px, calc(100vw - 32px));
+    width: 100%;
+    height: 92vh;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+  }
   .ie-toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -545,9 +555,11 @@
   .ie-color input { width: 34px; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: none; cursor: pointer; }
   .ie-size input { vertical-align: middle; }
   .ie-canvas-wrap {
-    /* 編集面を広く。ズーム時は内部でスクロールする。 */
+    /* ウインドウ固定のもと、ここが残り高さを埋めて内部スクロールする。
+       100% では画像全体がちょうど収まり（fitScale）、スクロール不要。 */
     position: relative; /* テキスト入力オーバーレイの絶対配置基準 */
-    max-height: 78vh;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow: auto;
     background: repeating-conic-gradient(#0001 0% 25%, transparent 0% 50%) 50% / 20px 20px;
     border: 1px solid var(--border);
@@ -582,6 +594,22 @@
     overflow: hidden;
     min-width: 40px;
     box-sizing: content-box;
+  }
+  /* 吹き出しの本文入力（透明背景で吹き出し本体の上に重ねる）。 */
+  .ie-callout-input {
+    position: absolute;
+    z-index: 5;
+    margin: 0;
+    padding: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    line-height: 1.3;
+    white-space: pre;
+    resize: none;
+    overflow: hidden;
+    box-sizing: content-box;
+    text-align: left;
   }
   .ie-crop-actions { display: inline-flex; gap: 6px; }
   .ie-crop-actions .btn { padding: 6px 10px; }
@@ -2675,7 +2703,7 @@
             <button class="btn ie-undo" title="元に戻す">↶ 元に戻す</button>
           </div>
           <div class="ie-canvas-wrap"><canvas class="ie-canvas"></canvas></div>
-          <p class="ie-hint">ドラッグで描画。テキストはクリック位置に入力（Enterで確定）。消しゴムは描いた注釈だけを消します（スクショは残る）。トリミングは四隅・各辺のハンドルで範囲を決めて「トリミング適用」。ハンドで画像を移動できます。</p>
+          <p class="ie-hint">ドラッグで描画。テキストはクリック位置に入力（Enterで確定）。吹き出しはクリックで挿入（既定文「ここをクリック」）→文字数で自動リサイズ、尻尾の先に近づくと出るハンドルで向きを変えられます。消しゴムは描いた注釈だけを消します（スクショは残る）。トリミングは四隅・各辺のハンドルで範囲を決めて「トリミング適用」。ハンドで画像を移動できます。</p>
           <div class="ie-actions">
             <button class="btn primary ie-save">保存</button>
             <button class="btn ie-cancel">キャンセル</button>
@@ -2701,9 +2729,20 @@
       const zoomFit = overlay.querySelector('.ie-zoom-fit');
       const ZOOM_MIN = 10, ZOOM_MAX = 400;
       let zoom = 100;
+      // 100% ＝ ウインドウ（キャンバス枠）にちょうど収まる倍率（フィット）と定義する。
+      // これにより 100% では画像全体が見えてスクロール不要。100% を超えたときだけ
+      // 内部スクロールが出る。ウインドウ自体の大きさはズームで変わらない（CSSで固定）。
+      function fitScale() {
+        const availW = Math.max(20, canvasWrap.clientWidth - 24);
+        const availH = Math.max(20, canvasWrap.clientHeight - 24);
+        if (!canvas.width || !canvas.height) return 1;
+        // 小さい画像を拡大しすぎないよう上限は等倍（1.0）。大きい画像は枠に合わせて縮小。
+        return Math.min(availW / canvas.width, availH / canvas.height, 1);
+      }
       function applyZoom() {
         canvas.style.maxWidth = 'none';
-        canvas.style.width = (canvas.width * zoom / 100) + 'px';
+        const scale = fitScale() * (zoom / 100);
+        canvas.style.width = (canvas.width * scale) + 'px';
         canvas.style.height = 'auto';
       }
       function setZoom(p) {
@@ -2712,17 +2751,14 @@
         zoomNum.value = zoom;
         applyZoom();
       }
-      function fitZoom() {
-        const avail = canvasWrap.clientWidth - 24; // 余白・スクロールバー分を控える
-        if (canvas.width > 0 && avail > 0) {
-          setZoom(Math.max(ZOOM_MIN, Math.min(100, Math.floor((avail / canvas.width) * 100))));
-        } else {
-          setZoom(100);
-        }
-      }
+      // 「フィット」＝全体表示＝100%。
+      function fitZoom() { setZoom(100); }
       zoomRange.addEventListener('input', () => setZoom(zoomRange.value));
       zoomNum.addEventListener('change', () => setZoom(zoomNum.value));
       zoomFit.addEventListener('click', fitZoom);
+      // ウインドウのリサイズでフィット基準が変わるため、開いている間は追従させる。
+      const onResize = () => applyZoom();
+      window.addEventListener('resize', onResize);
 
       // ---- 2レイヤー構成（非破壊の注釈） ----
       // base = スクショ本体（モザイク・トリミングはこちらに適用）。
@@ -2750,6 +2786,7 @@
       function dispScale() { return canvas.offsetWidth ? canvas.width / canvas.offsetWidth : 1; }
 
       function selectTool(t) {
+        commitCallout(); // 別ツールへ移るときは編集中の吹き出しを確定
         if (t !== 'crop') exitCropMode(); // crop 以外へ移ると選択枠を破棄
         tool = t;
         toolBtns.forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
@@ -2764,7 +2801,8 @@
         setLayerSize(baseImg.naturalWidth, baseImg.naturalHeight);
         baseCtx.drawImage(baseImg, 0, 0);
         recomposite();
-        fitZoom(); // まず画面に収まる倍率にして全体を見せる（以後ユーザーが自由に拡大可）
+        // 枠のレイアウト確定後にフィット（=100%=全体表示）。以後ユーザーが自由に拡大可。
+        requestAnimationFrame(fitZoom);
       };
       baseImg.src = srcUrl;
 
@@ -2819,8 +2857,12 @@
         const w = Number(sizeInput.value);
         const ang = Math.atan2(y2 - y1, x2 - x1);
         const head = Math.max(18, w * 4);
-        const bx = x2 - head * Math.cos(ang); // 三角の底辺中央（＝線の終点）
-        const by = y2 - head * Math.sin(ang);
+        // 線の終点は三角の「底辺」まで伸ばして三角と密着させる。底辺の2角は頂点から
+        // 距離 head・角度 ±π/7 にあり、その軸方向への投影＝ head*cos(π/7) が底辺の位置。
+        // head をそのまま使うと底辺より奥で線が止まり隙間になるため、cos(π/7) を掛ける。
+        const backset = head * Math.cos(Math.PI / 7);
+        const bx = x2 - backset * Math.cos(ang); // 三角の底辺中央（＝線の終点）
+        const by = y2 - backset * Math.sin(ang);
         g.save();
         setupStroke(g, 1);
         g.lineCap = 'butt';
@@ -2843,36 +2885,65 @@
         g.ellipse((a.x + b.x) / 2, (a.y + b.y) / 2, Math.abs(b.x - a.x) / 2, Math.abs(b.y - a.y) / 2, 0, 0, Math.PI * 2);
         g.stroke(); g.restore();
       }
-      // 吹き出し：角丸の本体＋左下に三角テール。可読性のため半透明白で塗り、現在色で縁取り。
-      function drawCallout(g, a, b) {
-        const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
-        const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
-        if (w < 6 || h < 6) return;
-        const r = Math.min(16, w / 2, h / 2);
-        const tailW = Math.min(26, w * 0.4);
-        const tailH = Math.min(30, h * 0.8);
-        const tx = x + Math.min(w * 0.25, 36); // テール基点（左下寄り）
-        g.save();
-        g.strokeStyle = colorInput.value;
-        g.fillStyle = 'rgba(255,255,255,0.85)';
-        g.lineWidth = Math.max(2, Number(sizeInput.value));
-        g.lineJoin = 'round';
-        g.globalAlpha = 1;
+      // ── 吹き出し（クリック挿入・文字で自動リサイズ・尻尾を好きな向きへ）──────
+      // calloutBox: 文字から本体（尻尾を除く）の寸法を測る。
+      function calloutBox(text, fs) {
+        annoCtx.save();
+        annoCtx.font = `bold ${fs}px sans-serif`;
+        const lines = (text.length ? text : ' ').split('\n');
+        const lh = Math.round(fs * 1.3);
+        let tw = 0;
+        for (const l of lines) tw = Math.max(tw, annoCtx.measureText(l.length ? l : ' ').width);
+        annoCtx.restore();
+        const P = Math.round(fs * 0.55);
+        return { lines, lh, P, w: Math.ceil(tw) + P * 2, h: lines.length * lh + P * 2 };
+      }
+      // calloutPath: 角丸本体＋「tip（先端）が向く辺」に尻尾を差し込んだ一筆書きパス。
+      // 本体中心から tip への方向で上下左右いずれの辺から尻尾を出すか決めるので、
+      // tip をどこへ動かしても（360°）自然に向く。
+      function calloutPath(g, x, y, w, h, r, tip, tW) {
+        const cx = x + w / 2, cy = y + h / 2;
+        const dx = tip.x - cx, dy = tip.y - cy;
+        let edge;
+        if (Math.abs(dy) / h >= Math.abs(dx) / w) edge = dy < 0 ? 'top' : 'bottom';
+        else edge = dx < 0 ? 'left' : 'right';
+        const cl = (v, a, b) => Math.max(a, Math.min(b, v));
+        const tWx = Math.max(4, Math.min(tW, (w - 2 * r) / 2 - 1));
+        const tWy = Math.max(4, Math.min(tW, (h - 2 * r) / 2 - 1));
         g.beginPath();
         g.moveTo(x + r, y);
+        if (edge === 'top') { const bc = cl(tip.x, x + r + tWx, x + w - r - tWx); g.lineTo(bc - tWx, y); g.lineTo(tip.x, tip.y); g.lineTo(bc + tWx, y); }
         g.lineTo(x + w - r, y);
         g.arcTo(x + w, y, x + w, y + r, r);
+        if (edge === 'right') { const bc = cl(tip.y, y + r + tWy, y + h - r - tWy); g.lineTo(x + w, bc - tWy); g.lineTo(tip.x, tip.y); g.lineTo(x + w, bc + tWy); }
         g.lineTo(x + w, y + h - r);
         g.arcTo(x + w, y + h, x + w - r, y + h, r);
-        g.lineTo(tx + tailW, y + h);           // 下辺右側
-        g.lineTo(tx + tailW * 0.15, y + h + tailH); // テール先端
-        g.lineTo(tx, y + h);                    // 下辺左側へ戻る
+        if (edge === 'bottom') { const bc = cl(tip.x, x + r + tWx, x + w - r - tWx); g.lineTo(bc + tWx, y + h); g.lineTo(tip.x, tip.y); g.lineTo(bc - tWx, y + h); }
         g.lineTo(x + r, y + h);
         g.arcTo(x, y + h, x, y + h - r, r);
+        if (edge === 'left') { const bc = cl(tip.y, y + r + tWy, y + h - r - tWy); g.lineTo(x, bc + tWy); g.lineTo(tip.x, tip.y); g.lineTo(x, bc - tWy); }
         g.lineTo(x, y + r);
         g.arcTo(x, y, x + r, y, r);
         g.closePath();
+      }
+      // 本体＋尻尾を描く（drawText=false は文字を描かない＝編集中プレビュー用）。
+      function drawCalloutShape(g, x, y, box, tip, drawText, fs) {
+        const r = Math.min(16, box.w / 2, box.h / 2);
+        const tW = Math.max(10, Math.round(fs * 0.6));
+        g.save();
+        calloutPath(g, x, y, box.w, box.h, r, tip, tW);
+        g.strokeStyle = colorInput.value;
+        g.fillStyle = 'rgba(255,255,255,0.92)';
+        g.lineWidth = Math.max(2, Number(sizeInput.value));
+        g.lineJoin = 'round';
+        g.globalAlpha = 1;
         g.fill(); g.stroke();
+        if (drawText) {
+          g.fillStyle = colorInput.value;
+          g.font = `bold ${fs}px sans-serif`;
+          g.textBaseline = 'top';
+          box.lines.forEach((l, i) => g.fillText(l, x + box.P, y + box.P + i * box.lh));
+        }
         g.restore();
       }
       // モザイク：base 層（スクショ）を対象にブロック平均で塗り潰す。
@@ -2940,6 +3011,94 @@
           ta.style.width = 'auto';
           ta.style.width = Math.min(ta.scrollWidth + 24, canvas.offsetWidth) + 'px';
         });
+      }
+
+      // ---- 吹き出し（クリックで挿入 → その場編集。未確定の間だけ尻尾の向きを調整）----
+      // activeCallout がある間、canvas のポインタ操作は「尻尾先端ハンドル」に使う。
+      // ハンドルは通常非表示で、先端付近にカーソルを近づけた時だけ表示する。
+      let activeCallout = null; // { x, y, tip, fs, ta, done, dragTip, hoverTip, render }
+      const CALLOUT_HIT = 14;   // 尻尾先端の掴み判定（画面px相当）
+      function nearCalloutTip(p) {
+        if (!activeCallout || !activeCallout.tip) return false;
+        const t = activeCallout.tip;
+        return Math.hypot(p.x - t.x, p.y - t.y) <= CALLOUT_HIT * dispScale();
+      }
+      function beginCallout(p) {
+        commitCallout(); // 直前の未確定があれば確定してから
+        const fs = Math.max(16, Number(sizeInput.value) * 4);
+        const ta = document.createElement('textarea');
+        ta.className = 'ie-callout-input';
+        ta.value = 'ここをクリック';
+        ta.rows = 1;
+        canvasWrap.appendChild(ta);
+        const box0 = calloutBox(ta.value, fs);
+        const ac = {
+          x: p.x, y: p.y, fs, ta, done: false, dragTip: false, hoverTip: false,
+          // 初期の尻尾先端＝本体の下・少し左（下向き）。以後ドラッグで自由に。
+          tip: { x: p.x + Math.min(box0.w * 0.25, 40), y: p.y + box0.h + Math.round(fs * 1.6) },
+        };
+        activeCallout = ac;
+
+        ac.render = () => {
+          if (activeCallout !== ac) return;
+          const box = calloutBox(ta.value, fs);
+          recomposite();
+          drawCalloutShape(ctx, ac.x, ac.y, box, ac.tip, false, fs); // 本体だけ（文字は textarea 側）
+          if (ac.dragTip || ac.hoverTip) {
+            ctx.save();
+            ctx.fillStyle = colorInput.value; ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2 * dispScale();
+            ctx.beginPath(); ctx.arc(ac.tip.x, ac.tip.y, 7 * dispScale(), 0, Math.PI * 2);
+            ctx.fill(); ctx.stroke();
+            ctx.restore();
+          }
+          // textarea を本文位置へ重ねる（透明背景）。
+          const s = canvas.offsetWidth ? canvas.offsetWidth / canvas.width : 1;
+          ta.style.left = (canvas.offsetLeft + (ac.x + box.P) * s) + 'px';
+          ta.style.top = (canvas.offsetTop + (ac.y + box.P) * s) + 'px';
+          // 右側の内側パディング分を余白として使い、キャレットが隠れないようにする。
+          ta.style.width = ((box.w - box.P) * s) + 'px';
+          ta.style.height = ((box.h - box.P * 2) * s) + 'px';
+          ta.style.font = `bold ${fs * s}px sans-serif`;
+          ta.style.lineHeight = (box.lh * s) + 'px';
+          ta.style.color = colorInput.value;
+        };
+
+        ta.addEventListener('keydown', (ev) => {
+          ev.stopPropagation();
+          if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); commitCallout(); }
+          else if (ev.key === 'Escape') { ev.preventDefault(); cancelCallout(); }
+        });
+        ta.addEventListener('input', ac.render);
+        // フォーカスが離れたら確定。ただし尻尾ドラッグ中は確定しない。
+        ta.addEventListener('blur', () => {
+          setTimeout(() => { if (activeCallout === ac && !ac.dragTip) commitCallout(); }, 0);
+        });
+
+        ac.render();
+        ta.focus();
+        ta.select();
+      }
+      function commitCallout() {
+        const ac = activeCallout;
+        if (!ac || ac.done) return;
+        ac.done = true;
+        activeCallout = null;
+        const text = ac.ta.value;
+        ac.ta.remove();
+        if (text.trim() === '') { recomposite(); return; }
+        pushUndo();
+        const box = calloutBox(text, ac.fs);
+        drawCalloutShape(annoCtx, ac.x, ac.y, box, ac.tip, true, ac.fs);
+        recomposite();
+      }
+      function cancelCallout() {
+        const ac = activeCallout;
+        if (!ac || ac.done) return;
+        ac.done = true;
+        activeCallout = null;
+        ac.ta.remove();
+        recomposite();
       }
 
       // ---- ハンドツール（パン） ----
@@ -3063,6 +3222,16 @@
       canvas.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         const p = xy(e);
+        // 吹き出し編集中：先端付近を掴めば尻尾ドラッグ、それ以外を押したら確定して続行。
+        if (activeCallout) {
+          if (nearCalloutTip(p)) {
+            activeCallout.dragTip = true;
+            canvas.setPointerCapture(e.pointerId);
+            activeCallout.render();
+            return;
+          }
+          commitCallout();
+        }
         if (tool === 'hand') { startPan(e); return; }
         if (tool === 'crop') {
           if (!cropRect) return;
@@ -3071,6 +3240,7 @@
           return;
         }
         if (tool === 'text') { beginText(p); return; }
+        if (tool === 'callout') { beginCallout(p); return; }
         drawing = true;
         start = p;
         if (tool === 'pen' || tool === 'marker' || tool === 'eraser') {
@@ -3093,6 +3263,15 @@
       });
 
       canvas.addEventListener('pointermove', (e) => {
+        // 吹き出し編集中：尻尾ドラッグ、または先端付近ホバーでハンドルを表示。
+        if (activeCallout) {
+          const p = xy(e);
+          if (activeCallout.dragTip) { activeCallout.tip = p; activeCallout.render(); return; }
+          const hov = nearCalloutTip(p);
+          if (hov !== activeCallout.hoverTip) { activeCallout.hoverTip = hov; activeCallout.render(); }
+          canvas.style.cursor = hov ? 'grab' : (tool === 'callout' ? 'crosshair' : '');
+          return;
+        }
         if (tool === 'hand') { doPan(e); return; }
         if (tool === 'crop') { if (cropDrag) updateCrop(xy(e)); return; }
         if (!drawing) return;
@@ -3105,7 +3284,6 @@
         if (tool === 'arrow') drawArrow(ctx, start.x, start.y, p.x, p.y);
         else if (tool === 'rect') drawRect(ctx, start, p);
         else if (tool === 'ellipse') drawEllipse(ctx, start, p);
-        else if (tool === 'callout') drawCallout(ctx, start, p);
         else if (tool === 'mosaic') {
           ctx.save();
           ctx.globalAlpha = 1;
@@ -3118,6 +3296,15 @@
       });
 
       function finish(e) {
+        // 吹き出しの尻尾ドラッグ終了（編集は継続。本文入力へ戻せるよう再フォーカス）。
+        if (activeCallout) {
+          if (activeCallout.dragTip) {
+            activeCallout.dragTip = false;
+            activeCallout.render();
+            try { activeCallout.ta.focus(); } catch (_) {}
+          }
+          return;
+        }
         if (tool === 'hand') { endPan(); return; }
         if (tool === 'crop') { cropDrag = null; return; }
         if (!drawing) return;
@@ -3132,7 +3319,6 @@
         if (tool === 'arrow') drawArrow(annoCtx, start.x, start.y, p.x, p.y);
         else if (tool === 'rect') drawRect(annoCtx, start, p);
         else if (tool === 'ellipse') drawEllipse(annoCtx, start, p);
-        else if (tool === 'callout') drawCallout(annoCtx, start, p);
         else if (tool === 'mosaic') {
           applyMosaic(baseCtx, Math.min(start.x, p.x), Math.min(start.y, p.y),
             Math.abs(p.x - start.x), Math.abs(p.y - start.y));
@@ -3141,11 +3327,14 @@
       }
       canvas.addEventListener('pointerup', finish);
       canvas.addEventListener('pointercancel', () => {
+        if (activeCallout && activeCallout.dragTip) { activeCallout.dragTip = false; activeCallout.render(); return; }
         if (tool === 'pen' || tool === 'marker' || tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
         drawing = false; cropDrag = null; endPan(); recomposite();
       });
 
       function close() {
+        cancelCallout(); // 編集中の吹き出しは破棄
+        window.removeEventListener('resize', onResize);
         document.removeEventListener('keydown', onKey);
         overlay.remove();
       }
@@ -3153,6 +3342,7 @@
       document.addEventListener('keydown', onKey);
       overlay.querySelector('.ie-cancel').addEventListener('click', close);
       overlay.querySelector('.ie-save').addEventListener('click', () => {
+        commitCallout(); // 未確定の吹き出しを確定してから書き出す
         exitCropMode();
         // 合成結果（crop オーバーレイ無し）を別 canvas に作って書き出す。
         const out = document.createElement('canvas');
