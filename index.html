@@ -1772,7 +1772,9 @@
       const sectionId = editor.dataset.section, itemId = editor.dataset.item;
       const clean = sanitizeBodyHtml(editor.innerHTML);
       if (sanitizeBodyHtml(rbItemBody(c.id, sectionId, itemId)) === clean) return; // 変化なしなら何もしない
-      store.commit((s) => M.setItemField(M.findChecklist(s, c.id), sectionId, itemId, 'body', clean));
+      // 編集中の contenteditable を DOM ごと作り直さないよう、再描画なしで保存する
+      //（再描画すると書式ボタンを押すたびにフォーカスと編集セッションが失われる）
+      commitInPlace((s) => M.setItemField(M.findChecklist(s, c.id), sectionId, itemId, 'body', clean));
     }
     function rbExec(cmd, editor, btn) {
       editor.focus();
@@ -2347,6 +2349,15 @@
     const app = document.getElementById('app');
     const fileInput = document.getElementById('file-input');
 
+    // 入力欄の編集内容を保存するとき、画面全体を再描画しない（DOM は既に最新のため）。
+    // 全再描画すると、blur→change→commit の途中で「次にクリックした入力欄やボタン」が
+    // DOM ごと作り直されてフォーカス移動が空振りし、文字が入力できなくなる。
+    let suppressRender = false;
+    function commitInPlace(mutator) {
+      suppressRender = true;
+      try { store.commit(mutator); } finally { suppressRender = false; }
+    }
+
     // ---- 録画（クリック連動スクリーンショット） ----
     // 実体は Electron メインプロセス側（main.js）。preload が公開する
     // window.recorderAPI が無い＝素のブラウザでは、ボタンは無効表示にする。
@@ -2395,6 +2406,26 @@
       document.querySelector('[data-action="undo"]').disabled = !store.canUndo();
       document.querySelector('[data-action="redo"]').disabled = !store.canRedo();
       updateRecordButton();
+    }
+    // 所要時間の表示（ヘッダの総所要・セクション別の⏱分）だけを部分更新する。
+    // 時間入力の保存は commitInPlace（再描画なし）のため、派生表示はここで追随させる。
+    function refreshTimeLabels() {
+      const c = currentChecklist();
+      if (!c || c.type !== MODES.TEMPLATE) return;
+      const p = progress(c);
+      const totalMin = c.sections.reduce((a, s) => a + sumMinutes(s.items), 0);
+      const head = app.querySelector('.editor-progress small');
+      if (head) {
+        head.textContent =
+          `${p.done} / ${p.total} 完了（${p.percent}%）${totalMin ? ` ・ 総所要 約${totalMin}分` : ''}`;
+      }
+      c.sections.forEach((s, idx) => {
+        const el = app.querySelector(`.section[data-section="${s.id}"] .section-progress`);
+        if (!el) return;
+        const prog = p.sections[idx];
+        const mins = sumMinutes(s.items);
+        el.textContent = `${prog.done}/${prog.total}${mins ? ` ・⏱${mins}分` : ''}`;
+      });
     }
     function currentChecklist() {
       const route = parseHash();
@@ -4159,22 +4190,25 @@
       const el = e.target;
       const c = currentChecklist();
       if (!c) return;
+      // 入力欄の DOM は既に編集後の値なので、保存は commitInPlace（再描画なし）で行う。
+      // ここで全再描画すると、次にクリックした入力欄が消えてフォーカスが失われる。
       if (el.matches('[data-action="edit-title"]')) {
-        store.commit((s) => M.renameChecklist(M.findChecklist(s, c.id), el.value));
+        commitInPlace((s) => M.renameChecklist(M.findChecklist(s, c.id), el.value));
       } else if (el.matches('[data-action="edit-section"]')) {
-        store.commit((s) => M.renameSection(M.findChecklist(s, c.id), el.dataset.section, el.value));
+        commitInPlace((s) => M.renameSection(M.findChecklist(s, c.id), el.dataset.section, el.value));
       } else if (el.matches('[data-action="edit-item"]')) {
-        store.commit((s) =>
+        commitInPlace((s) =>
           M.editItem(M.findChecklist(s, c.id), el.dataset.section, el.dataset.item, el.value)
         );
       } else if (el.matches('[data-action="edit-note"]')) {
-        store.commit((s) =>
+        commitInPlace((s) =>
           M.setItemField(M.findChecklist(s, c.id), el.dataset.section, el.dataset.item, 'note', el.value)
         );
       } else if (el.matches('[data-action="edit-time"]')) {
-        store.commit((s) =>
+        commitInPlace((s) =>
           M.setItemField(M.findChecklist(s, c.id), el.dataset.section, el.dataset.item, 'time', el.value)
         );
+        refreshTimeLabels(); // 合計（総所要・⏱分）表示だけ追随
       }
     });
 
@@ -4236,6 +4270,7 @@
 
     // ---- 起動 ----
     store.subscribe(() => {
+      if (suppressRender) { updateTopbar(); return; } // 入力内容の保存時は再描画しない
       render();
       restoreFocus();
     });
