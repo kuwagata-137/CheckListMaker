@@ -2863,6 +2863,23 @@
       // ウインドウのリサイズでフィット基準が変わるため、開いている間は追従させる。
       const onResize = () => applyZoom();
       window.addEventListener('resize', onResize);
+      // ホイールズーム: ハンドツール中は素のホイールで、他ツールでは Ctrl+ホイールで
+      // ズームする（素のホイールは通常スクロールのまま）。トラックパッドのピンチは
+      // ctrlKey 付き wheel として届くため、どのツールでもピンチズームが効く。
+      canvasWrap.addEventListener('wheel', (e) => {
+        if (!(tool === 'hand' || e.ctrlKey)) return; // それ以外は既定のスクロール
+        e.preventDefault();
+        // カーソル直下の canvas 座標を保持したままズームする（カーソル中心ズーム）
+        const r = canvas.getBoundingClientRect();
+        const px = (e.clientX - r.left) * (canvas.width / r.width);
+        const py = (e.clientY - r.top) * (canvas.height / r.height);
+        setZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+        // setZoom がクランプ・丸めするため、適用後の実スケールから再アンカーする
+        const wrapR = canvasWrap.getBoundingClientRect();
+        const scale = canvas.offsetWidth / canvas.width;
+        canvasWrap.scrollLeft = canvas.offsetLeft + px * scale - (e.clientX - wrapR.left);
+        canvasWrap.scrollTop = canvas.offsetTop + py * scale - (e.clientY - wrapR.top);
+      }, { passive: false });
 
       // ---- 2レイヤー構成（非破壊の注釈） ----
       // base = スクショ本体（モザイク・トリミングはこちらに適用）。
