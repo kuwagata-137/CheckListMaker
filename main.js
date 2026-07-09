@@ -53,6 +53,25 @@ let recording = false;
 let sessionShots = 0; // この録画セッションでの撮影枚数（ガジェット表示用）
 let recordName = ''; // ファイル名の接頭辞（チェックリスト名をサニタイズしたもの）
 let startTime = 0; // 録画開始時刻(ms)
+let clickMarkerOn = true; // クリック位置の赤丸を合成するか（ガジェットのトグル。セッション単位）
+
+// ── 事前キャプチャ（クリック「直前」のフレームバッファ） ─────────
+// mousedown を合図に撮影を始めても、ディスプレイ列挙＋撮影プロセス起動のぶん
+// 実際のピクセル取得は遅れ、「クリックで消えるウインドウ」が写らないことがある。
+// そこで録画中はカーソルのあるディスプレイをバックグラウンドで定期撮影して
+// 最新フレームを保持し、mousedown 時は「その直前のフレーム」を保存する。
+// ★ PRECAPTURE_INTERVAL_MS = 0 にするとポーリングは完全に無効化され、
+//   従来どおり mousedown 時のオンデマンド撮影のみになる（CPU負荷が過大な
+//   環境での退避先。挙動はこの定数1つで切り替わる）。
+const PRECAPTURE_INTERVAL_MS = 500;
+const PRECAPTURE_MAX_AGE_MS = 1500; // これより古いバッファは使わない
+const DISPLAY_LIST_TTL_MS = 10000; // screenshot.listDisplays() キャッシュの寿命
+
+let lastCursor = { x: 0, y: 0 }; // uiohook mousemove の物理px座標
+let preFrame = null; // { raw, disp, ts } 最新の事前キャプチャ1枚
+let preTimer = null;
+let captureBusy = false; // ポーリングとクリック撮影の多重実行を抑止
+let displayListCache = null; // { list, ts }
 
 // マウス押下情報（ドラッグ判定用）と直近撮影（デバウンス用）。
 let pendingDown = null; // { button, x, y }
@@ -146,9 +165,9 @@ function createGadget() {
   const display = screen.getPrimaryDisplay();
   const { width } = display.workAreaSize;
   gadgetWin = new BrowserWindow({
-    width: 300,
-    height: 188,
-    x: width - 320,
+    width: 320,
+    height: 312,
+    x: width - 340,
     y: 24,
     frame: false,
     transparent: true,
@@ -173,25 +192,39 @@ function createGadget() {
   gadgetWin.loadFile('gadget.html');
   gadgetWin.webContents.on('did-finish-load', () => {
     if (gadgetWin && !gadgetWin.isDestroyed()) {
-      gadgetWin.webContents.send('gadget:init', { startTime, name: recordName });
+      gadgetWin.webContents.send('gadget:init', {
+        mode: recording ? 'recording' : 'ready',
+        startTime,
+        name: recordName,
+        markerOn: clickMarkerOn,
+      });
     }
   });
   gadgetWin.on('closed', () => {
-    // ガジェットを直接閉じられたら録画も止める。
     gadgetWin = null;
-    if (recording) stopRecording();
+    // 録画中に閉じられたら停止（保存フォルダも開く）。ready で閉じられたら
+    // 何も撮っていないので、最小化した本体を戻すだけ。
+    if (recording) { stopRecording(); return; }
+    restoreMainWindow();
+    notifyState();
   });
 }
 
 // ── 録画制御 ────────────────────────────────────────────────
-function startRecording(rawName) {
+// 状態遷移: idle → openGadget（ready: ガジェット表示・フック停止・タイマー停止）
+//          → startCapture（recording: フック開始・撮影有効）
+//          → stopRecording（idle へ。録画していた場合のみ保存フォルダを開く）
+// ready = ガジェットが開いているが recording === false。
+
+// 【ready】ガジェットを開くだけ。撮影は「録画開始」ボタン（rec:begin）まで始めない。
+function openGadget(rawName) {
   if (recording) return { ok: true };
-  recording = true;
+  if (gadgetWin && !gadgetWin.isDestroyed()) {
+    gadgetWin.focus(); // ready で既に開いていれば前面へ出すだけ
+    return { ok: true };
+  }
   sessionShots = 0;
-  pendingDown = null;
-  pendingCapture = null;
-  lastShot = { x: 0, y: 0, t: 0 };
-  startTime = Date.now();
+  clickMarkerOn = true; // セッションごとに既定の ON へ戻す
   recordName = sanitizeName(rawName);
   try {
     fs.mkdirSync(screenshotDir(), { recursive: true });
@@ -199,12 +232,24 @@ function startRecording(rawName) {
     console.error('保存フォルダの作成に失敗しました:', err);
   }
   createGadget();
-  // 録画中はアプリ本体を最小化して撮影対象から退ける。最小化中は
+  // 準備段階からアプリ本体を最小化して撮影対象から退ける。最小化中は
   // mainWin.isVisible()===false となり、isOnOwnWindow のメイン窓分岐が
   // 自然に無効化されるため、本体に重なる他アプリのクリックも撮影できる。
   if (mainWin && !mainWin.isDestroyed()) {
     try { mainWin.minimize(); } catch (_) { /* noop */ }
   }
+  return { ok: true };
+}
+
+// 【recording】ガジェットの「録画開始」で呼ばれる。ここで初めてフックを起こす。
+function startCapture() {
+  if (recording) return { ok: true, startTime };
+  if (!gadgetWin || gadgetWin.isDestroyed()) return { ok: false };
+  recording = true;
+  pendingDown = null;
+  pendingCapture = null;
+  lastShot = { x: 0, y: 0, t: 0 };
+  startTime = Date.now();
   try {
     uIOhook.start();
   } catch (err) {
@@ -212,26 +257,48 @@ function startRecording(rawName) {
     // macOS の「アクセシビリティ」未許可などで失敗し得る。ユーザーに気づかせる。
     warnGadget('入力監視を開始できません。OSの許可（アクセシビリティ）を確認してください。');
   }
+  startPrecapture(); // クリック「直前」フレームの定期取得を開始
   notifyState();
-  return { ok: true };
+  return { ok: true, startTime };
 }
 
 function stopRecording() {
-  if (!recording) return { ok: true };
+  const wasRecording = recording;
   recording = false;
+  stopPrecapture();
   pendingDown = null;
   pendingCapture = null;
-  try {
-    uIOhook.stop();
-  } catch (err) {
-    console.error('グローバルマウスフックの停止に失敗しました:', err);
+  if (wasRecording) {
+    try {
+      uIOhook.stop();
+    } catch (err) {
+      console.error('グローバルマウスフックの停止に失敗しました:', err);
+    }
   }
   if (gadgetWin && !gadgetWin.isDestroyed()) {
     const w = gadgetWin;
     gadgetWin = null; // closed ハンドラから再帰停止しないよう先に外す
     w.close();
   }
-  // 録画開始時に最小化した本体を元に戻して前面へ。
+  // 開始時に最小化した本体を元に戻して前面へ。
+  restoreMainWindow();
+  notifyState();
+  // 録画していた場合のみ、保存先フォルダをエクスプローラー（OS のファイル
+  // マネージャ）で開き、撮ったスクリーンショットをすぐ確認できるようにする。
+  // ready のまま閉じたときは何も撮っていないので開かない。
+  if (wasRecording) {
+    try {
+      const dir = screenshotDir();
+      fs.mkdirSync(dir, { recursive: true });
+      shell.openPath(dir);
+    } catch (err) {
+      console.error('保存フォルダを開けませんでした:', err);
+    }
+  }
+  return { ok: true };
+}
+
+function restoreMainWindow() {
   if (mainWin && !mainWin.isDestroyed()) {
     try {
       if (mainWin.isMinimized()) mainWin.restore();
@@ -239,17 +306,6 @@ function stopRecording() {
       mainWin.focus();
     } catch (_) { /* noop */ }
   }
-  notifyState();
-  // 録画終了後は保存先フォルダをエクスプローラー（OS のファイルマネージャ）で開き、
-  // 撮ったスクリーンショットをすぐ確認できるようにする。
-  try {
-    const dir = screenshotDir();
-    fs.mkdirSync(dir, { recursive: true });
-    shell.openPath(dir);
-  } catch (err) {
-    console.error('保存フォルダを開けませんでした:', err);
-  }
-  return { ok: true };
 }
 
 function notifyState() {
@@ -297,6 +353,17 @@ function isOnOwnWindow(physX, physY) {
 
 // クリックした物理座標から、撮影対象のディスプレイ情報を求める。
 // 返り値: { disp(Electron Display), shotId(screenshot-desktop の screen 指定/該当なしは null) }
+// screenshot.listDisplays() は毎回プロセス起動を伴い遅いので TTL キャッシュする。
+// ディスプレイ構成変更イベントで無効化（whenReady で配線）。
+async function getShotDisplayList() {
+  if (displayListCache && Date.now() - displayListCache.ts < DISPLAY_LIST_TTL_MS) {
+    return displayListCache.list;
+  }
+  const list = await screenshot.listDisplays();
+  displayListCache = { list, ts: Date.now() };
+  return list;
+}
+
 async function resolveTargetDisplay(physX, physY) {
   const dip = toDip(physX, physY);
   const disp = screen.getDisplayNearestPoint(dip);
@@ -304,7 +371,7 @@ async function resolveTargetDisplay(physX, physY) {
   try {
     // ※ screenshot-desktop の列挙順/ID と Electron display.id は一致保証がない。
     //   ここでは getAllDisplays の並び順 index で対応付ける。実機で要検証（docs 参照）。
-    const list = await screenshot.listDisplays();
+    const list = await getShotDisplayList();
     const all = screen.getAllDisplays();
     const idx = all.findIndex((d) => d.id === disp.id);
     if (idx >= 0 && list[idx]) shotId = list[idx].id;
@@ -312,6 +379,40 @@ async function resolveTargetDisplay(physX, physY) {
     /* 列挙失敗時はフル/プライマリ撮影へフォールバック */
   }
   return { disp, shotId };
+}
+
+// ── 事前キャプチャの制御 ─────────────────────────────────────
+function startPrecapture() {
+  if (PRECAPTURE_INTERVAL_MS <= 0) return; // 無効化スイッチ（従来方式のみ）
+  stopPrecapture();
+  preTimer = setInterval(pollPreFrame, PRECAPTURE_INTERVAL_MS);
+}
+function stopPrecapture() {
+  if (preTimer) { clearInterval(preTimer); preTimer = null; }
+  preFrame = null; // バッファ解放
+}
+async function pollPreFrame() {
+  if (!recording || captureBusy) return; // クリック撮影中はスキップ（直列化）
+  captureBusy = true;
+  try {
+    const shot = await captureShot(lastCursor.x, lastCursor.y);
+    preFrame = { raw: shot.raw, disp: shot.disp, ts: Date.now() };
+  } catch (_) {
+    /* 失敗は無視。クリック時のオンデマンド撮影へ自然フォールバック */
+  } finally {
+    captureBusy = false;
+  }
+}
+// mousedown 時に使える事前キャプチャがあれば取り出す（消費したら破棄）。
+// 古い・別ディスプレイのフレームは使わず null（＝オンデマンド撮影へ）。
+function takeFreshPreFrame(physX, physY) {
+  if (!preFrame) return null;
+  if (Date.now() - preFrame.ts > PRECAPTURE_MAX_AGE_MS) return null;
+  const disp = screen.getDisplayNearestPoint(toDip(physX, physY));
+  if (disp.id !== preFrame.disp.id) return null;
+  const f = preFrame;
+  preFrame = null; // 同じフレームを連続クリックで使い回さない
+  return f;
 }
 
 // 撮影画像（物理px）にクリック位置の赤い中抜きリングを合成する。
@@ -386,7 +487,7 @@ async function persistShot(shot) {
   // クリックの物理相対座標（撮影したモニタの左上原点）。
   const relX = physX - disp.bounds.x * disp.scaleFactor;
   const relY = physY - disp.bounds.y * disp.scaleFactor;
-  const buf = await drawMarker(raw, relX, relY, disp.scaleFactor);
+  const buf = clickMarkerOn ? await drawMarker(raw, relX, relY, disp.scaleFactor) : raw;
 
   const stamp = dateStamp();
   const seq = nextSequence(recordName, stamp);
@@ -439,15 +540,25 @@ function onMouseDown(e) {
   if (!recording) return;
   pendingDown = { button: e.button, x: e.x, y: e.y };
   pendingCapture = null; // 直前に未消費の撮影があれば破棄（連続 down 等）
-  // 撮影対象になり得るクリックだけ、押下の瞬間に「寸前の画面」を撮っておく。
+  // 撮影対象になり得るクリックだけ、押下の瞬間に「寸前の画面」を確保する。
   if (!isShootableButton(e.button)) return; // 左/右以外は撮らない
   if (isOnOwnWindow(e.x, e.y)) { console.log('[rec] skip(down): own-window'); return; }
   if (shouldDebounce(e.x, e.y)) { console.log('[rec] skip(down): debounce'); return; }
-  pendingCapture = captureShot(e.x, e.y).catch((err) => {
-    console.error('スクリーンショットの撮影に失敗しました:', err);
-    warnGadget('スクリーンショットを撮影できません。画面収録の許可や保存先を確認してください。');
-    return null;
-  });
+  // 事前キャプチャがあればそれを使う（＝クリックより前の画面。クリックで
+  // 消えるウインドウも写っている）。無ければ従来どおりこの場で撮影開始。
+  const pre = takeFreshPreFrame(e.x, e.y);
+  if (pre) {
+    pendingCapture = Promise.resolve({ raw: pre.raw, disp: pre.disp, physX: e.x, physY: e.y });
+    return;
+  }
+  captureBusy = true; // ポーリングと衝突させない
+  pendingCapture = captureShot(e.x, e.y)
+    .catch((err) => {
+      console.error('スクリーンショットの撮影に失敗しました:', err);
+      warnGadget('スクリーンショットを撮影できません。画面収録の許可や保存先を確認してください。');
+      return null;
+    })
+    .finally(() => { captureBusy = false; });
 }
 
 function onMouseUp(e) {
@@ -508,9 +619,31 @@ app.whenReady().then(() => {
   // ハンドラは一度だけ登録し、内部の recording フラグで制御する。
   uIOhook.on('mousedown', onMouseDown);
   uIOhook.on('mouseup', onMouseUp);
+  // 事前キャプチャが「カーソルのあるディスプレイ」を撮れるよう追跡する
+  //（フック自体は録画中しか動かないので待機中のコストは無い）。
+  uIOhook.on('mousemove', (e) => { lastCursor.x = e.x; lastCursor.y = e.y; });
+  // ディスプレイ構成が変わったら列挙キャッシュを捨てる。
+  ['display-added', 'display-removed', 'display-metrics-changed'].forEach((ev) => {
+    screen.on(ev, () => { displayListCache = null; });
+  });
 
-  ipcMain.handle('rec:start', (_e, name) => startRecording(name));
+  ipcMain.handle('rec:start', (_e, name) => openGadget(name));
+  ipcMain.handle('rec:begin', () => startCapture());
   ipcMain.handle('rec:stop', () => stopRecording());
+  ipcMain.handle('rec:setMarker', (_e, on) => { clickMarkerOn = !!on; return { ok: true }; });
+  ipcMain.handle('rec:openDir', () => {
+    // ガジェットのプレビュークリックから、スクショ保存フォルダを OS の
+    // ファイルマネージャ（エクスプローラー）で開く。
+    try {
+      const dir = screenshotDir();
+      fs.mkdirSync(dir, { recursive: true });
+      shell.openPath(dir);
+      return { ok: true };
+    } catch (err) {
+      console.error('保存フォルダを開けませんでした:', err);
+      return { ok: false };
+    }
+  });
   ipcMain.handle('docx:save', (e, payload) => saveDocx(e, payload));
 
   createMainWindow();
