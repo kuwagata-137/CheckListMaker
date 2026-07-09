@@ -9,10 +9,19 @@ contextBridge.exposeInMainWorld('recorderAPI', {
   available: true,
 
   // ── メインアプリ（index.html）用 ──────────────────────────────
-  // 録画開始。name は現在開いているチェックリスト名（ファイル名の接頭辞に使う）。
+  // 録画ガジェットを開く（ready 状態。撮影はまだ始まらない）。
+  // name は現在開いているチェックリスト名（ファイル名の接頭辞に使う）。
   startRecording: (name) => ipcRenderer.invoke('rec:start', name),
-  // 録画停止。
+  // 録画停止（ready のときはガジェットを閉じるだけ）。
   stopRecording: () => ipcRenderer.invoke('rec:stop'),
+
+  // ── ガジェット窓（gadget.html）用 ────────────────────────────
+  // 「録画開始」ボタン。撮影を開始する。戻り値 { ok, startTime }。
+  beginCapture: () => ipcRenderer.invoke('rec:begin'),
+  // クリック位置の赤丸（〇マーカー）合成の ON/OFF。
+  setMarker: (on) => ipcRenderer.invoke('rec:setMarker', !!on),
+  // スクショ保存フォルダを OS のファイルマネージャで開く（プレビュークリック）。
+  openShotsDir: () => ipcRenderer.invoke('rec:openDir'),
   // 録画状態の変化通知（true=録画中 / false=停止）。ボタン表示の同期に使う。
   onState: (cb) => {
     ipcRenderer.removeAllListeners('rec:state');
