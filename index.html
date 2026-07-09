@@ -554,6 +554,9 @@
   .ie-tool.active { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
   .ie-color input { width: 34px; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: none; cursor: pointer; }
   .ie-size input { vertical-align: middle; }
+  .ie-opacity { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+  .ie-opacity input[type="range"] { width: 90px; vertical-align: middle; }
+  .ie-opacity .ie-opacity-val { min-width: 3em; }
   .ie-canvas-wrap {
     /* ウインドウ固定のもと、ここが残り高さを埋めて内部スクロールする。
        100% では画像全体がちょうど収まり（fitScale）、スクロール不要。 */
@@ -2785,6 +2788,7 @@
             <div class="ie-tools">
               <button class="ie-tool" data-tool="hand" title="ハンド（画像を移動）">✋</button>
               <button class="ie-tool" data-tool="arrow" title="矢印">↗</button>
+              <button class="ie-tool" data-tool="line" title="直線（Shiftで45°刻み）">╱</button>
               <button class="ie-tool" data-tool="rect" title="四角">▢</button>
               <button class="ie-tool" data-tool="ellipse" title="丸">◯</button>
               <button class="ie-tool" data-tool="callout" title="吹き出し（コメント）">💬</button>
@@ -2801,6 +2805,7 @@
             </span>
             <label class="ie-color" title="色"><input type="color" value="#ff3b30" /></label>
             <label class="ie-size" title="線の太さ"><input type="range" min="1" max="40" value="6" /></label>
+            <label class="ie-opacity" title="透過率（0%=不透明）">透過<input type="range" min="0" max="90" step="10" value="0" /><span class="ie-opacity-val">0%</span></label>
             <span class="ie-zoom" title="編集中の表示倍率（拡大縮小しても保存される画像の仕上がりは変わりません）">
               🔍
               <input type="range" class="ie-zoom-range" min="10" max="400" step="5" value="100" aria-label="表示倍率" />
@@ -2826,6 +2831,38 @@
       const toolBtns = overlay.querySelectorAll('.ie-tool');
       let tool = 'arrow';
       const undoStack = [];
+
+      // ---- ベクター注釈オブジェクト ----
+      // 矢印・直線・四角・丸・テキスト・吹き出しはラスタライズせずオブジェクトとして
+      // 保持し、後から選択・移動・再編集・削除できる（Excel の図形と同じ考え方）。
+      // ペン・ハイライトの手描き線だけが annoCanvas（ラスター層）に載る。
+      let objects = [];
+      let objSeq = 1;
+      const newObjId = () => 'o' + Date.now().toString(36) + '-' + (objSeq++);
+      let selectedId = null; // 選択中オブジェクト（クリックで選択、Delete で削除）
+      const selectedObj = () => objects.find((o) => o.id === selectedId) || null;
+
+      // ---- ツール別の透過率（%）。スライダーはツール切替でそのツールの値に同期 ----
+      const toolOpacity = { pen: 0, marker: 60, arrow: 0, line: 0, rect: 0, ellipse: 0, text: 0, callout: 0 };
+      const opacityWrap = overlay.querySelector('.ie-opacity');
+      const opacityInput = overlay.querySelector('.ie-opacity input');
+      const opacityVal = overlay.querySelector('.ie-opacity-val');
+      const toolAlpha = (t) => 1 - (toolOpacity[t] || 0) / 100;
+      function syncOpacityUI() {
+        const has = Object.prototype.hasOwnProperty.call(toolOpacity, tool);
+        opacityWrap.style.visibility = has ? '' : 'hidden';
+        if (has) { opacityInput.value = toolOpacity[tool]; opacityVal.textContent = toolOpacity[tool] + '%'; }
+      }
+      // 選択オブジェクトへの透過率変更を1操作として undo できるよう、つまみを
+      // 掴んだ時点でスナップショットを取る。
+      opacityInput.addEventListener('pointerdown', () => { if (selectedObj()) pushUndo(); });
+      opacityInput.addEventListener('input', () => {
+        const v = Math.max(0, Math.min(90, Math.round(Number(opacityInput.value) || 0)));
+        opacityVal.textContent = v + '%';
+        if (Object.prototype.hasOwnProperty.call(toolOpacity, tool)) toolOpacity[tool] = v;
+        const sel = selectedObj();
+        if (sel) { sel.opacity = 1 - v / 100; recomposite(); } // 選択中オブジェクトへ即時反映
+      });
 
       // ---- 編集中だけの表示ズーム ----
       // canvas のピクセル数（＝保存される実体）は一切変えず、CSS の表示サイズだけを
@@ -2897,13 +2934,16 @@
         baseCanvas.width = w; baseCanvas.height = h;
         annoCanvas.width = w; annoCanvas.height = h;
       }
-      // 表示 canvas に base→anno を重ね描き。crop 中は選択オーバーレイも重ねる。
+      // 表示 canvas に base→anno（手描き線）→オブジェクトを重ね描き。
+      // 選択枠・crop 中の選択オーバーレイはさらにその上。
       function recomposite() {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.globalAlpha = 1;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(baseCanvas, 0, 0);
         ctx.drawImage(annoCanvas, 0, 0);
+        drawObjects(ctx);
+        drawSelection();
         if (cropMode && cropRect) drawCropOverlay();
       }
       // 表示 px / canvas px の比率（ハンドルや点線を画面上一定サイズに保つのに使う）。
@@ -2913,10 +2953,13 @@
         commitCallout(); // 別ツールへ移るときは編集中の吹き出しを確定
         if (t !== 'crop') exitCropMode(); // crop 以外へ移ると選択枠を破棄
         tool = t;
+        selectedId = null; // ツール切替で選択解除
         toolBtns.forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
         canvas.classList.toggle('tool-hand', t === 'hand');
         canvas.classList.toggle('tool-crop', t === 'crop');
+        syncOpacityUI();
         if (t === 'crop') enterCropMode();
+        recomposite();
       }
       toolBtns.forEach((b) => b.addEventListener('click', () => selectTool(b.dataset.tool)));
 
@@ -2930,18 +2973,21 @@
       };
       baseImg.src = srcUrl;
 
-      // ---- Undo（base+anno を両方スナップショット） ----
+      // ---- Undo（base+anno のスナップショット＋オブジェクト一覧の複製） ----
       function pushUndo() {
         try {
           undoStack.push({
             w: canvas.width, h: canvas.height,
             base: baseCanvas.toDataURL('image/png'),
             anno: annoCanvas.toDataURL('image/png'),
+            objects: JSON.parse(JSON.stringify(objects)),
           });
         } catch (_) {}
         if (undoStack.length > 20) undoStack.shift();
       }
       function restore(snap) {
+        objects = JSON.parse(JSON.stringify(snap.objects || []));
+        selectedId = null;
         let pending = 2;
         const done = () => { if (--pending === 0) { applyZoom(); recomposite(); } };
         setLayerSize(snap.w, snap.h);
@@ -2975,12 +3021,21 @@
         g.lineJoin = 'round';
         g.globalAlpha = alpha;
       }
+      // オブジェクト共通のスタイル設定（色・太さ・透過率はオブジェクト自身が持つ）。
+      function setupObjStroke(g, o) {
+        g.strokeStyle = o.color;
+        g.fillStyle = o.color;
+        g.lineWidth = o.size;
+        g.lineCap = 'round';
+        g.lineJoin = 'round';
+        g.globalAlpha = o.opacity;
+      }
       // 矢印：三角を大きめにし、線は矢先まで引かず三角の底辺で止める（太線の丸端が
       // 矢先からはみ出さない）。三角の頂点は (x2,y2)。
-      function drawArrow(g, x1, y1, x2, y2) {
-        const w = Number(sizeInput.value);
+      function drawArrowObj(g, o) {
+        const { x1, y1, x2, y2 } = o;
         const ang = Math.atan2(y2 - y1, x2 - x1);
-        const head = Math.max(18, w * 4);
+        const head = Math.max(18, o.size * 4);
         // 線の終点は三角の「底辺」まで伸ばして三角と密着させる。底辺の2角は頂点から
         // 距離 head・角度 ±π/7 にあり、その軸方向への投影＝ head*cos(π/7) が底辺の位置。
         // head をそのまま使うと底辺より奥で線が止まり隙間になるため、cos(π/7) を掛ける。
@@ -2988,7 +3043,7 @@
         const bx = x2 - backset * Math.cos(ang); // 三角の底辺中央（＝線の終点）
         const by = y2 - backset * Math.sin(ang);
         g.save();
-        setupStroke(g, 1);
+        setupObjStroke(g, o);
         g.lineCap = 'butt';
         g.beginPath(); g.moveTo(x1, y1); g.lineTo(bx, by); g.stroke();
         g.beginPath();
@@ -2998,16 +3053,112 @@
         g.closePath(); g.fill();
         g.restore();
       }
-      function drawRect(g, a, b) {
-        g.save(); setupStroke(g, 1);
-        g.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+      function drawLineObj(g, o) {
+        g.save(); setupObjStroke(g, o);
+        g.beginPath(); g.moveTo(o.x1, o.y1); g.lineTo(o.x2, o.y2); g.stroke();
         g.restore();
       }
-      function drawEllipse(g, a, b) {
-        g.save(); setupStroke(g, 1);
+      function drawRectObj(g, o) {
+        g.save(); setupObjStroke(g, o);
+        g.strokeRect(o.x, o.y, o.w, o.h);
+        g.restore();
+      }
+      function drawEllipseObj(g, o) {
+        g.save(); setupObjStroke(g, o);
         g.beginPath();
-        g.ellipse((a.x + b.x) / 2, (a.y + b.y) / 2, Math.abs(b.x - a.x) / 2, Math.abs(b.y - a.y) / 2, 0, 0, Math.PI * 2);
+        g.ellipse(o.x + o.w / 2, o.y + o.h / 2, o.w / 2, o.h / 2, 0, 0, Math.PI * 2);
         g.stroke(); g.restore();
+      }
+      function drawTextObj(g, o) {
+        g.save();
+        g.globalAlpha = o.opacity;
+        g.fillStyle = o.color;
+        g.font = `bold ${o.fs}px sans-serif`;
+        g.textBaseline = 'top';
+        const lh = o.fs * 1.2;
+        o.text.split('\n').forEach((line, i) => g.fillText(line, o.x, o.y + i * lh));
+        g.restore();
+      }
+      function drawObject(g, o) {
+        if (o.hidden) return; // 入力欄で再編集中は canvas 側を消しておく
+        if (o.type === 'arrow') drawArrowObj(g, o);
+        else if (o.type === 'line') drawLineObj(g, o);
+        else if (o.type === 'rect') drawRectObj(g, o);
+        else if (o.type === 'ellipse') drawEllipseObj(g, o);
+        else if (o.type === 'text') drawTextObj(g, o);
+        else if (o.type === 'callout') drawCalloutObj(g, o, true);
+      }
+      function drawObjects(g) { objects.forEach((o) => drawObject(g, o)); }
+      // ドラッグ中の始点・終点から図形オブジェクトを組み立てる（プレビューと確定で共用）。
+      function shapeFromDrag(t, a, b, shift) {
+        const common = { color: colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha(t) };
+        let bb = b;
+        if (t === 'line' && shift) { // Shift で 45° 刻みにスナップ
+          const d = Math.hypot(b.x - a.x, b.y - a.y);
+          const ang = Math.round(Math.atan2(b.y - a.y, b.x - a.x) / (Math.PI / 4)) * (Math.PI / 4);
+          bb = { x: a.x + d * Math.cos(ang), y: a.y + d * Math.sin(ang) };
+        }
+        if (t === 'arrow' || t === 'line') return { ...common, type: t, x1: a.x, y1: a.y, x2: bb.x, y2: bb.y };
+        return {
+          ...common, type: t,
+          x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+          w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y),
+        };
+      }
+      // オブジェクトの外接矩形（選択枠・ヒットテスト用）
+      function objBounds(o) {
+        if (o.type === 'arrow' || o.type === 'line') {
+          return { x: Math.min(o.x1, o.x2), y: Math.min(o.y1, o.y2), w: Math.abs(o.x2 - o.x1), h: Math.abs(o.y2 - o.y1) };
+        }
+        if (o.type === 'rect' || o.type === 'ellipse') return { x: o.x, y: o.y, w: o.w, h: o.h };
+        if (o.type === 'text') {
+          ctx.save();
+          ctx.font = `bold ${o.fs}px sans-serif`;
+          const lines = o.text.split('\n');
+          let tw = 0;
+          for (const l of lines) tw = Math.max(tw, ctx.measureText(l.length ? l : ' ').width);
+          ctx.restore();
+          return { x: o.x, y: o.y, w: Math.ceil(tw), h: lines.length * o.fs * 1.2 };
+        }
+        if (o.type === 'callout') {
+          const box = calloutBox(o.text, o.fs);
+          return { x: o.x, y: o.y, w: box.w, h: box.h };
+        }
+        return { x: 0, y: 0, w: 0, h: 0 };
+      }
+      // 選択中オブジェクトの破線枠＋ハンドル（Excel 風）。
+      function drawSelection() {
+        const o = selectedObj();
+        if (!o) return;
+        const s = dispScale();
+        const g = ctx;
+        g.save();
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.globalAlpha = 1;
+        const b = objBounds(o);
+        g.strokeStyle = '#1a73e8';
+        g.lineWidth = 1.5 * s;
+        g.setLineDash([5 * s, 4 * s]);
+        g.strokeRect(b.x - 4 * s, b.y - 4 * s, b.w + 8 * s, b.h + 8 * s);
+        g.setLineDash([]);
+        const hs = 9 * s;
+        g.fillStyle = '#1a73e8';
+        objHandles(o).forEach((h) => g.fillRect(h.x - hs / 2, h.y - hs / 2, hs, hs));
+        g.restore();
+      }
+      // 選択オブジェクトの操作ハンドル一覧（kind はドラッグ時の役割）。
+      function objHandles(o) {
+        if (o.type === 'arrow' || o.type === 'line') {
+          return [{ kind: 'p1', x: o.x1, y: o.y1 }, { kind: 'p2', x: o.x2, y: o.y2 }];
+        }
+        if (o.type === 'rect' || o.type === 'ellipse') {
+          return [
+            { kind: 'nw', x: o.x, y: o.y }, { kind: 'ne', x: o.x + o.w, y: o.y },
+            { kind: 'sw', x: o.x, y: o.y + o.h }, { kind: 'se', x: o.x + o.w, y: o.y + o.h },
+          ];
+        }
+        if (o.type === 'callout') return [{ kind: 'tip', x: o.tip.x, y: o.tip.y }];
+        return []; // text は移動のみ
       }
       // ── 吹き出し（クリック挿入・文字で自動リサイズ・尻尾を好きな向きへ）──────
       // calloutBox: 文字から本体（尻尾を除く）の寸法を測る。
@@ -3050,23 +3201,25 @@
         g.arcTo(x, y, x + r, y, r);
         g.closePath();
       }
-      // 本体＋尻尾を描く（drawText=false は文字を描かない＝編集中プレビュー用）。
-      function drawCalloutShape(g, x, y, box, tip, drawText, fs) {
+      // 本体＋尻尾を描く（withText=false は文字を描かない＝編集中プレビュー用）。
+      // o: callout オブジェクト（{x,y,text,fs,tip,color,size,opacity}）。
+      function drawCalloutObj(g, o, withText) {
+        const box = calloutBox(o.text, o.fs);
         const r = Math.min(16, box.w / 2, box.h / 2);
-        const tW = Math.max(10, Math.round(fs * 0.6));
+        const tW = Math.max(10, Math.round(o.fs * 0.6));
         g.save();
-        calloutPath(g, x, y, box.w, box.h, r, tip, tW);
-        g.strokeStyle = colorInput.value;
+        g.globalAlpha = o.opacity;
+        calloutPath(g, o.x, o.y, box.w, box.h, r, o.tip, tW);
+        g.strokeStyle = o.color;
         g.fillStyle = 'rgba(255,255,255,0.92)';
-        g.lineWidth = Math.max(2, Number(sizeInput.value));
+        g.lineWidth = Math.max(2, o.size);
         g.lineJoin = 'round';
-        g.globalAlpha = 1;
         g.fill(); g.stroke();
-        if (drawText) {
-          g.fillStyle = colorInput.value;
-          g.font = `bold ${fs}px sans-serif`;
+        if (withText) {
+          g.fillStyle = o.color;
+          g.font = `bold ${o.fs}px sans-serif`;
           g.textBaseline = 'top';
-          box.lines.forEach((l, i) => g.fillText(l, x + box.P, y + box.P + i * box.lh));
+          box.lines.forEach((l, i) => g.fillText(l, o.x + box.P, o.y + box.P + i * box.lh));
         }
         g.restore();
       }
@@ -3094,47 +3247,65 @@
       }
 
       // ---- テキスト（Electron の prompt 不可対策：その場編集の入力欄を出す）----
-      function beginText(p) {
+      // existing を渡すと既存テキストオブジェクトの再編集（ダブルクリックから）。
+      let editingText = false; // 入力欄が開いている間 true（Delete キー等の誤爆防止）
+      function beginText(p, existing) {
         const scale = canvas.offsetWidth ? canvas.offsetWidth / canvas.width : 1;
-        const fs = Math.max(16, Number(sizeInput.value) * 4); // canvas px でのフォントサイズ
+        const fs = existing ? existing.fs : Math.max(16, Number(sizeInput.value) * 4); // canvas px
+        const pos = existing ? { x: existing.x, y: existing.y } : p;
+        const color = existing ? existing.color : colorInput.value;
         const ta = document.createElement('textarea');
         ta.className = 'ie-text-input';
         ta.rows = 1;
-        ta.style.left = (canvas.offsetLeft + p.x * scale) + 'px';
-        ta.style.top = (canvas.offsetTop + p.y * scale) + 'px';
-        ta.style.color = colorInput.value;
+        ta.style.left = (canvas.offsetLeft + pos.x * scale) + 'px';
+        ta.style.top = (canvas.offsetTop + pos.y * scale) + 'px';
+        ta.style.color = color;
         ta.style.font = `bold ${fs * scale}px sans-serif`;
         canvasWrap.appendChild(ta);
+        editingText = true;
+        const fit = () => {
+          ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px';
+          ta.style.width = 'auto';
+          ta.style.width = Math.min(ta.scrollWidth + 24, canvas.offsetWidth) + 'px';
+        };
+        if (existing) { ta.value = existing.text; existing.hidden = true; recomposite(); fit(); }
         ta.focus();
+        if (existing) ta.select();
         let done = false;
         const commit = () => {
           if (done) return; done = true;
+          editingText = false;
           const text = ta.value;
           ta.remove();
+          if (existing) {
+            delete existing.hidden;
+            if (text.trim() === '') { pushUndo(); objects = objects.filter((o) => o.id !== existing.id); if (selectedId === existing.id) selectedId = null; }
+            else if (text !== existing.text) { pushUndo(); existing.text = text; }
+            recomposite();
+            return;
+          }
           if (text.trim() === '') { recomposite(); return; }
           pushUndo();
-          annoCtx.save();
-          annoCtx.globalAlpha = 1;
-          annoCtx.fillStyle = colorInput.value;
-          annoCtx.font = `bold ${fs}px sans-serif`;
-          annoCtx.textBaseline = 'top';
-          const lh = fs * 1.2;
-          text.split('\n').forEach((line, i) => annoCtx.fillText(line, p.x, p.y + i * lh));
-          annoCtx.restore();
+          objects.push({
+            id: newObjId(), type: 'text', x: pos.x, y: pos.y, text, fs,
+            color, size: Number(sizeInput.value), opacity: toolAlpha('text'),
+          });
           recomposite();
         };
-        const cancel = () => { if (done) return; done = true; ta.remove(); recomposite(); };
+        const cancel = () => {
+          if (done) return; done = true;
+          editingText = false;
+          ta.remove();
+          if (existing) delete existing.hidden;
+          recomposite();
+        };
         ta.addEventListener('keydown', (ev) => {
           ev.stopPropagation(); // 編集中は全体の Esc 閉じや他ショートカットを止める
           if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); commit(); }
           else if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
         });
         ta.addEventListener('blur', commit);
-        ta.addEventListener('input', () => {
-          ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px';
-          ta.style.width = 'auto';
-          ta.style.width = Math.min(ta.scrollWidth + 24, canvas.offsetWidth) + 'px';
-        });
+        ta.addEventListener('input', fit);
       }
 
       // ---- 吹き出し（クリックで挿入 → その場編集。未確定の間だけ尻尾の向きを調整）----
@@ -3147,36 +3318,47 @@
         const t = activeCallout.tip;
         return Math.hypot(p.x - t.x, p.y - t.y) <= CALLOUT_HIT * dispScale();
       }
-      function beginCallout(p) {
+      // existing を渡すと既存吹き出しオブジェクトの再編集（ダブルクリックから）。
+      function beginCallout(p, existing) {
         commitCallout(); // 直前の未確定があれば確定してから
-        const fs = Math.max(16, Number(sizeInput.value) * 4);
+        const fs = existing ? existing.fs : Math.max(16, Number(sizeInput.value) * 4);
         const ta = document.createElement('textarea');
         ta.className = 'ie-callout-input';
-        ta.value = 'ここをクリック';
+        ta.value = existing ? existing.text : 'ここをクリック';
         ta.rows = 1;
         canvasWrap.appendChild(ta);
         const box0 = calloutBox(ta.value, fs);
         const ac = {
-          x: p.x, y: p.y, fs, ta, done: false, dragTip: false, hoverTip: false,
+          x: existing ? existing.x : p.x,
+          y: existing ? existing.y : p.y,
+          fs, ta, existing: existing || null,
+          done: false, dragTip: false, hoverTip: false,
           // 初期の尻尾先端＝本体の下・少し左（下向き）。以後ドラッグで自由に。
-          tip: { x: p.x + Math.min(box0.w * 0.25, 40), y: p.y + box0.h + Math.round(fs * 1.6) },
+          tip: existing ? { x: existing.tip.x, y: existing.tip.y }
+                        : { x: p.x + Math.min(box0.w * 0.25, 40), y: p.y + box0.h + Math.round(fs * 1.6) },
         };
         activeCallout = ac;
+        if (existing) { existing.hidden = true; }
 
         ac.render = () => {
           if (activeCallout !== ac) return;
-          const box = calloutBox(ta.value, fs);
+          // 編集中の見た目は本体だけ描き、文字は textarea 側に出す。
+          const color = existing ? existing.color : colorInput.value;
+          const size = existing ? existing.size : Number(sizeInput.value);
+          const opacity = existing ? existing.opacity : toolAlpha('callout');
+          const preview = { x: ac.x, y: ac.y, text: ta.value, fs, tip: ac.tip, color, size, opacity };
           recomposite();
-          drawCalloutShape(ctx, ac.x, ac.y, box, ac.tip, false, fs); // 本体だけ（文字は textarea 側）
+          drawCalloutObj(ctx, preview, false);
           if (ac.dragTip || ac.hoverTip) {
             ctx.save();
-            ctx.fillStyle = colorInput.value; ctx.strokeStyle = '#fff';
+            ctx.fillStyle = color; ctx.strokeStyle = '#fff';
             ctx.lineWidth = 2 * dispScale();
             ctx.beginPath(); ctx.arc(ac.tip.x, ac.tip.y, 7 * dispScale(), 0, Math.PI * 2);
             ctx.fill(); ctx.stroke();
             ctx.restore();
           }
           // textarea を本文位置へ重ねる（透明背景）。
+          const box = calloutBox(ta.value, fs);
           const s = canvas.offsetWidth ? canvas.offsetWidth / canvas.width : 1;
           ta.style.left = (canvas.offsetLeft + (ac.x + box.P) * s) + 'px';
           ta.style.top = (canvas.offsetTop + (ac.y + box.P) * s) + 'px';
@@ -3185,7 +3367,7 @@
           ta.style.height = ((box.h - box.P * 2) * s) + 'px';
           ta.style.font = `bold ${fs * s}px sans-serif`;
           ta.style.lineHeight = (box.lh * s) + 'px';
-          ta.style.color = colorInput.value;
+          ta.style.color = color;
         };
 
         ta.addEventListener('keydown', (ev) => {
@@ -3210,10 +3392,28 @@
         activeCallout = null;
         const text = ac.ta.value;
         ac.ta.remove();
+        if (ac.existing) {
+          const ex = ac.existing;
+          delete ex.hidden;
+          if (text.trim() === '') {
+            pushUndo();
+            objects = objects.filter((o) => o.id !== ex.id);
+            if (selectedId === ex.id) selectedId = null;
+          } else if (text !== ex.text || ac.tip.x !== ex.tip.x || ac.tip.y !== ex.tip.y) {
+            pushUndo();
+            ex.text = text;
+            ex.tip = { x: ac.tip.x, y: ac.tip.y };
+          }
+          recomposite();
+          return;
+        }
         if (text.trim() === '') { recomposite(); return; }
         pushUndo();
-        const box = calloutBox(text, ac.fs);
-        drawCalloutShape(annoCtx, ac.x, ac.y, box, ac.tip, true, ac.fs);
+        objects.push({
+          id: newObjId(), type: 'callout', x: ac.x, y: ac.y, text, fs: ac.fs,
+          tip: { x: ac.tip.x, y: ac.tip.y },
+          color: colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha('callout'),
+        });
         recomposite();
       }
       function cancelCallout() {
@@ -3222,6 +3422,7 @@
         ac.done = true;
         activeCallout = null;
         ac.ta.remove();
+        if (ac.existing) delete ac.existing.hidden;
         recomposite();
       }
 
@@ -3375,7 +3576,7 @@
             annoCtx.globalAlpha = 1;
             annoCtx.lineWidth = Math.max(4, Number(sizeInput.value) * 2);
           } else {
-            setupStroke(annoCtx, tool === 'marker' ? 0.35 : 1);
+            setupStroke(annoCtx, toolAlpha(tool)); // ツール別の透過率（ペン既定0%・ハイライト既定60%）
             if (tool === 'marker') annoCtx.lineWidth = Number(sizeInput.value) * 3;
           }
           annoCtx.lineCap = 'round'; annoCtx.lineJoin = 'round';
@@ -3403,12 +3604,11 @@
         if (tool === 'pen' || tool === 'marker' || tool === 'eraser') {
           annoCtx.lineTo(p.x, p.y); annoCtx.stroke(); recomposite(); return;
         }
-        // 図形はプレビューを表示 ctx に上描き（annoCanvas は確定時のみ更新）。
+        // 図形はプレビューを表示 ctx に上描き（objects へは確定時のみ追加）。
         recomposite();
-        if (tool === 'arrow') drawArrow(ctx, start.x, start.y, p.x, p.y);
-        else if (tool === 'rect') drawRect(ctx, start, p);
-        else if (tool === 'ellipse') drawEllipse(ctx, start, p);
-        else if (tool === 'mosaic') {
+        if (tool === 'arrow' || tool === 'line' || tool === 'rect' || tool === 'ellipse') {
+          drawObject(ctx, shapeFromDrag(tool, start, p, e.shiftKey));
+        } else if (tool === 'mosaic') {
           ctx.save();
           ctx.globalAlpha = 1;
           ctx.strokeStyle = '#1a73e8';
@@ -3439,11 +3639,19 @@
           recomposite();
           return;
         }
-        pushUndo();
-        if (tool === 'arrow') drawArrow(annoCtx, start.x, start.y, p.x, p.y);
-        else if (tool === 'rect') drawRect(annoCtx, start, p);
-        else if (tool === 'ellipse') drawEllipse(annoCtx, start, p);
-        else if (tool === 'mosaic') {
+        if (tool === 'arrow' || tool === 'line' || tool === 'rect' || tool === 'ellipse') {
+          const o = shapeFromDrag(tool, start, p, e.shiftKey);
+          const tiny = (o.type === 'rect' || o.type === 'ellipse')
+            ? (o.w < 2 && o.h < 2)
+            : Math.hypot(o.x2 - o.x1, o.y2 - o.y1) < 2;
+          if (!tiny) { // 点クリックのゴミ図形は作らない
+            pushUndo();
+            o.id = newObjId();
+            objects.push(o);
+            selectedId = o.id; // 描いた直後は選択状態（すぐ動かせる）
+          }
+        } else if (tool === 'mosaic') {
+          pushUndo();
           applyMosaic(baseCtx, Math.min(start.x, p.x), Math.min(start.y, p.y),
             Math.abs(p.x - start.x), Math.abs(p.y - start.y));
         }
@@ -3474,6 +3682,7 @@
         const og = out.getContext('2d');
         og.drawImage(baseCanvas, 0, 0);
         og.drawImage(annoCanvas, 0, 0);
+        drawObjects(og); // ベクター注釈も焼き込んだ合成を書き出す
         const data = out.toDataURL('image/jpeg', IMG_QUALITY);
         const ok = commitImage((s) =>
           M.replaceItemImage(M.findChecklist(s, c.id), sectionId, itemId, index, data)
