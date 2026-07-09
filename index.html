@@ -610,7 +610,16 @@
 
   /* ドラッグ中 */
   .dragging { opacity: 0.5; }
-  .drop-target { outline: 2px dashed var(--primary); outline-offset: 2px; }
+  .drop-target { outline: 2px dashed var(--primary); outline-offset: 2px; } /* 画像ファイルドロップ用 */
+  /* 並べ替えのドロップ位置（挿入される境界）を示す横破線 */
+  #drag-indicator {
+    position: fixed;
+    display: none;
+    height: 0;
+    border-top: 2px dashed var(--primary);
+    pointer-events: none;
+    z-index: 80;
+  }
 
   /* ---- モーダル ---- */
   .modal-overlay {
@@ -1537,7 +1546,7 @@
       const meta = `${prog.done}/${prog.total}${mins ? ` ・⏱${mins}分` : ''}`;
       return `
         <div class="section" data-section="${section.id}" draggable="false">
-          <div class="section-head" draggable="true" data-drag="section">
+          <div class="section-head" data-drag="section">
             <span class="grip" title="ドラッグで並べ替え">⠿</span>
             <input class="section-title" data-action="edit-section" data-section="${section.id}"
                    placeholder="${isTemplate ? 'フェーズ名（任意）' : 'セクション名（任意）'}"
@@ -1579,13 +1588,17 @@
     function renderItem(sectionId, item) {
       return `
         <li class="item ${item.done ? 'done' : ''}" data-item="${item.id}"
-            data-section="${sectionId}" draggable="true" data-drag="item">
+            data-section="${sectionId}" data-drag="item">
           <span class="grip" title="ドラッグで並べ替え">⠿</span>
           <input type="checkbox" ${item.done ? 'checked' : ''}
                  data-action="toggle" data-section="${sectionId}" data-item="${item.id}" />
           <input class="item-text" data-action="edit-item"
                  data-section="${sectionId}" data-item="${item.id}"
                  value="${escapeHtml(item.text)}" />
+          <button class="icon" title="上へ移動"
+                  data-action="move-item-up" data-section="${sectionId}" data-item="${item.id}">↑</button>
+          <button class="icon" title="下へ移動"
+                  data-action="move-item-down" data-section="${sectionId}" data-item="${item.id}">↓</button>
           <button class="icon danger" title="削除"
                   data-action="delete-item" data-section="${sectionId}" data-item="${item.id}">✕</button>
           ${renderImages(sectionId, item)}
@@ -1600,7 +1613,7 @@
       const time = item.time || '';
       return `
         <li class="item step ${item.done ? 'done' : ''}" data-item="${item.id}"
-            data-section="${sectionId}" draggable="true" data-drag="item">
+            data-section="${sectionId}" data-drag="item">
           <div class="step-rail" title="ドラッグで並べ替え">
             <span class="step-badge">${no}</span>
             <span class="step-line"></span>
@@ -1618,6 +1631,10 @@
                        placeholder="–" aria-label="所要時間（分）" value="${escapeHtml(time)}" />
                 <span class="unit">分</span>
               </span>
+              <button class="icon" title="上へ移動"
+                      data-action="move-item-up" data-section="${sectionId}" data-item="${item.id}">↑</button>
+              <button class="icon" title="下へ移動"
+                      data-action="move-item-down" data-section="${sectionId}" data-item="${item.id}">↓</button>
               <button class="icon danger" title="削除"
                       data-action="delete-item" data-section="${sectionId}" data-item="${item.id}">✕</button>
             </div>
@@ -2160,11 +2177,45 @@
     // =========================================================================
     // dragdrop — セクション/項目のドラッグ&ドロップ並べ替え
     // =========================================================================
+    // ドロップ先を示す横破線インジケーター（挿入される境界の位置に出す）。
+    let dragIndicatorEl = null;
+    function dragIndicator() {
+      if (!dragIndicatorEl) {
+        dragIndicatorEl = document.createElement('div');
+        dragIndicatorEl.id = 'drag-indicator';
+        document.body.appendChild(dragIndicatorEl);
+      }
+      return dragIndicatorEl;
+    }
+    function showDragIndicator(x, y, w) {
+      const el = dragIndicator();
+      el.style.left = x + 'px';
+      el.style.top = (y - 1) + 'px';
+      el.style.width = w + 'px';
+      el.style.display = 'block';
+    }
+    function hideDragIndicator() { if (dragIndicatorEl) dragIndicatorEl.style.display = 'none'; }
+
     function attachDragAndDrop(container, onMove) {
+      // render() のたびに呼ばれるが、リスナーはすべて委譲なので初回だけ配線する
+      //（毎回追加すると drop 1回で onMove が複数回走り、undo 履歴も汚れる）。
+      if (container.__dndWired) return;
+      container.__dndWired = true;
       let dragging = null;
+      let armed = null; // グリップ押下で一時的に draggable にした要素
+      // ドラッグはハンドル（⠿グリップ／手順の番号レール）を掴んだときだけ開始する。
+      // 行全体を常時 draggable にすると、テキスト入力欄・リッチ本文・画像の上での
+      // 操作（文字選択など）がドラッグ判定に食われてしまうため。
+      container.addEventListener('mousedown', (e) => {
+        const grip = e.target.closest && e.target.closest('.grip, .step-rail');
+        const src = grip && grip.closest('[data-drag]');
+        if (src) { src.setAttribute('draggable', 'true'); armed = src; }
+      });
+      const disarm = () => { if (armed) { armed.removeAttribute('draggable'); armed = null; } };
+      document.addEventListener('mouseup', disarm);
       container.addEventListener('dragstart', (e) => {
         const el = e.target.closest('[data-drag]');
-        if (!el) return;
+        if (!el || el.getAttribute('draggable') !== 'true') return;
         const kind = el.dataset.drag;
         if (kind === 'item') {
           const li = el.closest('.item');
@@ -2181,52 +2232,75 @@
         container.querySelectorAll('.dragging, .drop-target')
           .forEach((n) => n.classList.remove('dragging', 'drop-target'));
         dragging = null;
+        hideDragIndicator();
+        disarm();
       });
+      // 挿入位置（どの行とどの行の間に入るか）を drop と同じ中点判定で求める。
+      // dragover での表示と drop での確定が必ず一致するよう、判定を共通化する。
+      function itemDropAt(e) {
+        const overItem = e.target.closest('.item');
+        const overList = e.target.closest('.items');
+        if (overItem) {
+          const siblings = [...overItem.parentElement.querySelectorAll('.item')];
+          let toIndex = siblings.indexOf(overItem);
+          const rect = overItem.getBoundingClientRect();
+          const after = e.clientY > rect.top + rect.height / 2;
+          if (after) toIndex += 1;
+          return { toSection: overItem.dataset.section, toIndex, lineY: after ? rect.bottom : rect.top, rect };
+        }
+        if (overList) {
+          const items = overList.querySelectorAll('.item');
+          const rect = overList.getBoundingClientRect();
+          const last = items[items.length - 1];
+          return {
+            toSection: overList.dataset.section,
+            toIndex: items.length,
+            lineY: last ? last.getBoundingClientRect().bottom : rect.top,
+            rect,
+          };
+        }
+        return null;
+      }
+      function sectionDropAt(e) {
+        const overSection = e.target.closest('.section');
+        if (!overSection) return null;
+        const sections = [...container.querySelectorAll('.section')];
+        let toIndex = sections.indexOf(overSection);
+        const rect = overSection.getBoundingClientRect();
+        const after = e.clientY > rect.top + rect.height / 2;
+        if (after) toIndex += 1;
+        return { id: overSection.dataset.section, toIndex, lineY: after ? rect.bottom : rect.top, rect };
+      }
       container.addEventListener('dragover', (e) => {
         if (!dragging) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
-        const target = dragging.kind === 'item'
-          ? e.target.closest('.item, .items, .section')
-          : e.target.closest('.section');
-        container.querySelectorAll('.drop-target').forEach((n) => n.classList.remove('drop-target'));
-        if (target) target.classList.add('drop-target');
+        const at = dragging.kind === 'item' ? itemDropAt(e) : sectionDropAt(e);
+        if (at) showDragIndicator(at.rect.left, at.lineY, at.rect.width);
+        else hideDragIndicator();
+      });
+      container.addEventListener('dragleave', (e) => {
+        // コンテナ外へ出たときだけ消す（子要素間の移動では消さない）
+        if (!container.contains(e.relatedTarget)) hideDragIndicator();
       });
       container.addEventListener('drop', (e) => {
         if (!dragging) return;
         e.preventDefault();
+        hideDragIndicator();
         if (dragging.kind === 'item') {
-          const overItem = e.target.closest('.item');
-          const overList = e.target.closest('.items');
-          let toSection;
-          let toIndex;
-          if (overItem) {
-            toSection = overItem.dataset.section;
-            const siblings = [...overItem.parentElement.querySelectorAll('.item')];
-            toIndex = siblings.indexOf(overItem);
-            const rect = overItem.getBoundingClientRect();
-            if (e.clientY > rect.top + rect.height / 2) toIndex += 1;
-          } else if (overList) {
-            toSection = overList.dataset.section;
-            toIndex = overList.querySelectorAll('.item').length;
-          } else {
-            return;
-          }
+          const at = itemDropAt(e);
+          if (!at) return;
           onMove({
             kind: 'item',
             itemId: dragging.id,
             fromSection: dragging.fromSection,
-            toSection,
-            toIndex,
+            toSection: at.toSection,
+            toIndex: at.toIndex,
           });
         } else if (dragging.kind === 'section') {
-          const overSection = e.target.closest('.section');
-          if (!overSection || overSection.dataset.section === dragging.id) return;
-          const sections = [...container.querySelectorAll('.section')];
-          let toIndex = sections.indexOf(overSection);
-          const rect = overSection.getBoundingClientRect();
-          if (e.clientY > rect.top + rect.height / 2) toIndex += 1;
-          onMove({ kind: 'section', sectionId: dragging.id, toIndex });
+          const at = sectionDropAt(e);
+          if (!at || at.id === dragging.id) return;
+          onMove({ kind: 'section', sectionId: dragging.id, toIndex: at.toIndex });
         }
       });
     }
@@ -3953,7 +4027,7 @@
       const btn = e.target.closest('[data-action]');
       if (!btn) return;
       const action = btn.dataset.action;
-      if (!['insert-item-after', 'add-image', 'edit-image', 'delete-image'].includes(action)) return;
+      if (!['insert-item-after', 'add-image', 'edit-image', 'delete-image', 'move-item-up', 'move-item-down'].includes(action)) return;
       e.preventDefault();
       const c = currentChecklist();
       if (!c) return;
@@ -3987,6 +4061,16 @@
             M.removeItemImage(M.findChecklist(s, c.id), sectionId, itemId, index)
           );
         }
+      } else if (action === 'move-item-up' || action === 'move-item-down') {
+        // moveItem は「取り出してから挿入」なので 上=i-1 / 下=i+1 でよい
+        const sec = c.sections.find((x) => x.id === sectionId);
+        const i = sec ? sec.items.findIndex((x) => x.id === itemId) : -1;
+        if (i < 0) return;
+        const to = action === 'move-item-up' ? i - 1 : i + 1;
+        if (to < 0 || to > sec.items.length - 1) return; // 先頭↑・末尾↓は何もしない
+        store.commit((s) =>
+          M.moveItem(M.findChecklist(s, c.id), sectionId, itemId, sectionId, to)
+        );
       }
     });
 
