@@ -538,8 +538,38 @@
   }
   .ie-tool:hover { background: var(--surface-2); }
   .ie-tool.active { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
-  .ie-color input { width: 34px; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: none; cursor: pointer; }
+  .ie-color-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    width: auto; height: 34px; padding: 0 8px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); color: var(--text); cursor: pointer;
+  }
+  .ie-color-chip { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(0,0,0,.25); }
   .ie-size input { vertical-align: middle; }
+  /* テキスト/吹き出しの書式（サイズ・太字・斜体）。対象ツール/オブジェクトのときだけ表示 */
+  .ie-textfmt { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+  .ie-textfmt .ie-font-size {
+    width: 58px;
+    font: inherit;
+    text-align: right;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .ie-fmt {
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  .ie-fmt:hover { background: var(--surface-2); }
+  .ie-fmt.active { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
   .ie-opacity { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; color: var(--muted); }
   .ie-opacity input[type="range"] { width: 90px; vertical-align: middle; }
   .ie-opacity .ie-opacity-val { min-width: 3em; }
@@ -698,12 +728,12 @@
   }
   .print-section { margin-bottom: 14px; break-inside: avoid; }
   .print-section-title {
-    font-size: 1.05rem;
+    font-size: 1.15rem;
     margin: 0 0 6px;
     padding-bottom: 3px;
     border-bottom: 1px solid #999;
   }
-  .print-section-meta { font-weight: 400; font-size: 0.85rem; color: #555; }
+  .print-section-meta { font-weight: 400; font-size: 0.9rem; color: #555; }
   .print-items { list-style: none; margin: 0; padding: 0; }
   .print-item {
     display: flex;
@@ -717,12 +747,12 @@
   .print-box { font-size: 1.05rem; line-height: 1; }
   .print-text { flex: 1; min-width: 0; word-break: break-word; }
   .print-item.done .print-text { text-decoration: line-through; color: #666; }
-  .print-step-time { color: #555; font-size: 0.85rem; white-space: nowrap; }
+  .print-step-time { color: #555; font-size: 0.9rem; white-space: nowrap; }
   .print-note {
     flex-basis: 100%;
     margin-left: 1.9em;
     color: #555;
-    font-size: 0.85rem;
+    font-size: 0.95rem;
     word-break: break-word;
   }
   .print-imgs {
@@ -733,11 +763,53 @@
     gap: 6px;
   }
   .print-img {
-    max-width: 48%;
-    max-height: 220px;
     object-fit: contain;
     border: 1px solid #ccc;
     break-inside: avoid;
+  }
+  /* 画像の配置（印刷プレビューで選択・記憶）:
+     1列=用紙の横幅いっぱいに1枚ずつ / 2列=横に2枚並べる */
+  .print-cols-1 .print-img { width: 100%; max-height: 160mm; }
+  .print-cols-2 .print-img { max-width: 49%; max-height: 110mm; }
+
+  /* ---- 印刷プレビュー（モーダル） ---- */
+  .modal.print-preview { max-width: min(900px, 96vw); display: flex; flex-direction: column; }
+  .print-preview-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .print-preview-bar .pp-label { color: var(--muted); font-size: 0.9rem; }
+  .print-preview-bar .pp-spacer { flex: 1; }
+  .pp-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .pp-seg button {
+    font: inherit;
+    font-size: 0.9rem;
+    padding: 6px 12px;
+    border: none;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .pp-seg button + button { border-left: 1px solid var(--border); }
+  .pp-seg button.active { background: var(--primary); color: #fff; }
+  .print-preview-body {
+    background: #6b7076;
+    padding: 18px;
+    border-radius: 8px;
+    overflow: auto;
+    max-height: min(68vh, 900px);
+  }
+  .print-preview-page {
+    background: #fff;
+    color: #000;
+    width: 210mm;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 16mm;
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.45);
   }
 
   /* =========================================================================
@@ -855,6 +927,8 @@
   .rb-btn { min-width: 28px; height: 28px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; font-size: 0.9rem; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; font-family: inherit; }
   .rb-btn:hover { background: var(--surface); border-color: var(--border); }
   .rb-sep { width: 1px; height: 18px; background: var(--border); margin: 0 3px; }
+  .rb-size { height: 28px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text); font: inherit; font-size: 0.85rem; cursor: pointer; }
+  .rb-size:hover { background: var(--surface); border-color: var(--border); }
   .rb-swatch { display: inline-block; width: 13px; height: 4px; border-radius: 2px; background: #c0392b; margin-left: 1px; vertical-align: 2px; }
   .rb-swatch-hl { padding: 0 3px; background: #fff3a3; color: #1f2329; border-radius: 3px; }
   .rb-ins-table { margin-left: auto; border: 1px solid var(--border); background: var(--surface); font-size: 0.85rem; gap: 4px; }
@@ -871,19 +945,30 @@
   .rb-tctl { position: fixed; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border); background: #fff; color: var(--primary); font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,.25); font-size: 0.8rem; line-height: 1; padding: 0; pointer-events: auto; }
   .rb-tctl.rb-tctl-del { color: var(--muted); }
   /* 色パレット */
-  .rb-palette { position: fixed; z-index: 70; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.18); padding: 6px; display: flex; gap: 5px; flex-wrap: wrap; width: 150px; }
-  .rb-palette button { width: 22px; height: 22px; border-radius: 4px; border: 1px solid rgba(0,0,0,.15); cursor: pointer; padding: 0; }
-  .rb-palette .rb-pal-none { width: auto; padding: 0 8px; background: var(--surface); color: var(--muted); border-style: dashed; font-size: 0.72rem; }
+  /* Excel/Office 風カラーパレット（モーダル(z=100)の上にも出すため z を高く） */
+  .rb-palette { position: fixed; z-index: 130; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.28); padding: 8px; }
+  .op-title { font-size: 0.7rem; color: var(--muted); margin: 8px 2px 4px; }
+  .op-title:first-child { margin-top: 0; }
+  .op-row { display: grid; grid-template-columns: repeat(10, 20px); gap: 3px; }
+  .op-vars { margin-top: 4px; display: grid; gap: 2px; }
+  .op-vars .op-row { gap: 3px; }
+  .rb-palette .op-swatch { width: 20px; height: 20px; border-radius: 3px; border: 1px solid rgba(0,0,0,.22); cursor: pointer; padding: 0; }
+  .rb-palette .op-swatch:hover { outline: 2px solid var(--primary); outline-offset: 1px; position: relative; }
+  .op-footer { display: flex; gap: 6px; margin-top: 8px; }
+  .op-none, .op-more { flex: 1; font: inherit; font-size: 0.75rem; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; white-space: nowrap; }
+  .op-none:hover, .op-more:hover { border-color: var(--primary); }
   /* 印刷用リッチ本文 */
-  .print-body { flex-basis: 100%; margin: 4px 0 2px 1.9em; font-size: 0.9rem; }
+  .print-body { flex-basis: 100%; margin: 4px 0 2px 1.9em; font-size: 1rem; }
   .print-body p { margin: 0 0 5px; }
   .print-body ul, .print-body ol { margin: 3px 0 5px 1.3em; padding: 0; }
-  .print-body table { border-collapse: collapse; margin: 5px 0; font-size: 0.86rem; break-inside: avoid; max-width: 100%; }
+  .print-body table { border-collapse: collapse; margin: 5px 0; font-size: 0.95rem; break-inside: avoid; max-width: 100%; }
   .print-body th, .print-body td { border: 1px solid #555; padding: 4px 8px; text-align: left; vertical-align: top; }
   .print-body thead th { background: #e9eef5; font-weight: 700; }
 
   @media print {
     #topbar, #app { display: none !important; }
+    /* プレビューモーダルを開いたまま印刷/PDF化するため、モーダル類も紙面から除く */
+    .modal-overlay { display: none !important; }
     #print-root { display: block !important; }
     body { background: #fff; color: #000; }
     @page { margin: 16mm; }
@@ -1340,11 +1425,24 @@
       a.remove();
       URL.revokeObjectURL(url);
     }
-    function saveAsHtml(checklist) {
+    async function saveAsHtml(checklist) {
       const def = sanitizeFilename(checklist.title || 'checklist');
+      const html = buildStandaloneHtml(checklist);
+      // Electron 版: window.prompt() が使えない（例外になる）ため、
+      // ファイル名の入力ごとネイティブの保存ダイアログに任せる。
+      if (window.fileAPI && window.fileAPI.saveHtml) {
+        try {
+          const res = await window.fileAPI.saveHtml({ title: def, html });
+          if (res && res.error) alert('HTML の保存に失敗しました: ' + res.error);
+        } catch (e) {
+          alert('HTML の保存に失敗しました: ' + e.message);
+        }
+        return;
+      }
+      // 素のブラウザ: prompt でファイル名を確認してダウンロード。
       const input = prompt('ファイル名（.html）', def);
       if (input == null) return; // キャンセル
-      downloadHtml(sanitizeFilename(input), buildStandaloneHtml(checklist));
+      downloadHtml(sanitizeFilename(input), html);
     }
     // 本アプリが出力した HTML から、埋め込みチェックリストを取り出す。
     function parseChecklistFromHtml(text) {
@@ -1368,12 +1466,63 @@
     }
 
     // ---- .docx 出力（Electron 版のみ）----
-    // 既存の印刷ビュー(renderPrintView)をアプリの <style> でラップした静的HTMLを作り、
-    // メインプロセス(main.js)の docx:save 経由で .docx に変換・保存する。素のブラウザでは
-    // window.docxAPI が無いためボタン自体を出さない（下の renderEditor 参照）。
+    // Word 向けの静的HTMLを組み、メインプロセス(main.js)の docx:save 経由で .docx に
+    // 変換・保存する。素のブラウザでは window.docxAPI が無いためボタン自体を出さない
+    // （下の renderEditor 参照）。
+    //
+    // 印刷ビュー(renderPrintView)を流用しない理由: html-to-docx は「<li> の中の
+    // ブロック要素(div等)に入った <img>」を無視するため、<li><div class="print-imgs">
+    // 構造だと画像が全て消える（<li> 内の表も同リスク）。そこで docx 用には
+    // ul/li を使わず、見出し・段落・表・画像を全てトップレベルに並べたHTMLを組む。
+    function renderDocxView(checklist) {
+      const p = progress(checklist);
+      const isTemplate = checklist.type === MODES.TEMPLATE;
+      const dateStr = new Date().toLocaleDateString('ja-JP');
+      const totalMin = isTemplate
+        ? checklist.sections.reduce((a, s) => a + sumMinutes(s.items), 0)
+        : 0;
+      let stepNo = 0;
+      const parts = [];
+      parts.push(`<h1>${escapeHtml(checklist.title)}</h1>`);
+      parts.push(
+        `<p>${modeLabel(checklist.type)} ／ ${p.done} / ${p.total} 完了（${p.percent}%）${
+          totalMin ? ` ・ 総所要 約${totalMin}分` : ''
+        } ／ ${dateStr}</p>`
+      );
+      checklist.sections.forEach((s) => {
+        const mins = isTemplate ? sumMinutes(s.items) : 0;
+        const heading = `${escapeHtml(s.title)}${mins ? `（⏱${mins}分）` : ''}`;
+        if (heading) parts.push(`<h2>${heading}</h2>`);
+        s.items.forEach((it) => {
+          const box = it.done ? '☑' : '☐';
+          if (isTemplate) {
+            stepNo += 1;
+            const time = it.time ? `　⏱${escapeHtml(String(it.time))}分` : '';
+            parts.push(`<p><strong>${stepNo}.</strong> ${box} ${escapeHtml(it.text)}${time}</p>`);
+            const bodyClean = sanitizeBodyHtml(it.body || '');
+            if (bodyClean) parts.push(bodyClean);
+            if (it.note) parts.push(`<p>（メモ）${escapeHtml(it.note)}</p>`);
+          } else {
+            parts.push(`<p>${box} ${escapeHtml(it.text)}</p>`);
+          }
+          (Array.isArray(it.images) ? it.images : []).forEach((src) => {
+            // 画像は必ず独立した段落に置く（li/div 入れ子だと html-to-docx が落とす）。
+            // サイズ指定は不要: html-to-docx が原寸を読み、ページ幅を超える分は
+            // 自動でページ幅いっぱいに縮小する。
+            parts.push(`<p><img src="${src}" alt="" /></p>`);
+          });
+        });
+      });
+      return parts.join('\n');
+    }
     function buildStaticHtmlForDocx(checklist) {
-      const styleCss = (document.querySelector('style') || {}).textContent || '';
-      const body = renderPrintView(checklist);
+      const body = renderDocxView(checklist);
+      // アプリの <style> 全文は渡さない（html-to-docx はほぼ無視する上、巨大になる）。
+      // 表の罫線など docx 側で効く最小限のスタイルだけ付ける。
+      const styleCss =
+        'table { border-collapse: collapse; } ' +
+        'th, td { border: 1px solid #555555; padding: 4px 8px; } ' +
+        'thead th { background-color: #e9eef5; }';
       return (
         '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8" />' +
         '<title>' + escapeHtml(checklist.title || '') + '</title>' +
@@ -1660,6 +1809,14 @@
             <button type="button" class="rb-btn" data-rb-cmd="italic" title="斜体"><i>I</i></button>
             <button type="button" class="rb-btn" data-rb-cmd="underline" title="下線"><u>U</u></button>
             <button type="button" class="rb-btn" data-rb-cmd="strikeThrough" title="取消線"><s>S</s></button>
+            <select class="rb-size" data-rb-size title="文字サイズ（pt）">
+              <option value="" selected>サイズ</option>
+              <option value="8">8</option><option value="9">9</option><option value="10">10</option>
+              <option value="11">11</option><option value="12">12</option><option value="14">14</option>
+              <option value="16">16</option><option value="18">18</option><option value="20">20</option>
+              <option value="24">24</option><option value="28">28</option><option value="36">36</option>
+              <option value="48">48</option>
+            </select>
             <span class="rb-sep"></span>
             <button type="button" class="rb-btn" data-rb-cmd="foreColor" title="文字色">A<span class="rb-swatch"></span></button>
             <button type="button" class="rb-btn" data-rb-cmd="hiliteColor" title="ハイライト（文字）"><span class="rb-swatch-hl">H</span></button>
@@ -1681,16 +1838,100 @@
     const RB_ALLOWED_TAGS = new Set(['P','BR','STRONG','B','EM','I','U','S','STRIKE','SPAN','UL','OL','LI','TABLE','THEAD','TBODY','TR','TH','TD','DIV']);
     const RB_COLOR_RE = /^(#[0-9a-fA-F]{3,8}|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)|rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(0|1|0?\.\d+)\s*\)|transparent|[a-zA-Z]{3,20})$/;
     const RB_ALIGN_RE = /^(left|right|center|justify)$/i;
-    const RB_TEXT_COLORS = ['#1f2329', '#c0392b', '#1d6fb8', '#2f8f6b', '#b8860b', '#7a3da6'];
-    const RB_HL_COLORS = ['#fff3a3', '#cdeccd', '#cfe5fb', '#fad4d4', '#e7d8f5'];
-    const RB_CELL_COLORS = ['#fef0c7', '#e3f3e0', '#dbeafe', '#fde2e2', '#ede9fe', '#eef1f4'];
+    // ---- Excel/Office 風カラーパレット ----
+    // 「テーマの色（10色）＋各列の濃淡5段」「標準の色」「塗りつぶしなし」「その他の色」
+    // で構成する（Office アプリの色選択と同じ構造）。文字色・ハイライト・セル塗り・
+    // 画像編集の色選択で共通に使う。
+    const OP_THEME = ['#FFFFFF', '#000000', '#E7E6E6', '#44546A', '#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5', '#70AD47'];
+    const OP_STANDARD = ['#C00000', '#FF0000', '#FFC000', '#FFFF00', '#92D050', '#00B050', '#00B0F0', '#0070C0', '#002060', '#7030A0'];
+    // t>0: 白へ近づける（明るく） / t<0: 黒へ近づける（暗く）
+    function opTint(hex, t) {
+      const n = parseInt(hex.slice(1), 16);
+      const ch = (v) => Math.max(0, Math.min(255, Math.round(t >= 0 ? v + (255 - v) * t : v * (1 + t))));
+      const r = ch((n >> 16) & 255), g = ch((n >> 8) & 255), b = ch(n & 255);
+      return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1).toUpperCase();
+    }
+    // テーマ各列の濃淡5段（Excel と同じく、列の明るさで段の作り方が変わる）
+    function opVariants(hex, col) {
+      const steps =
+        col === 0 ? [-0.05, -0.15, -0.25, -0.35, -0.5]   // 白: 暗く
+        : col === 1 ? [0.5, 0.35, 0.25, 0.15, 0.05]      // 黒: 明るく
+        : col === 2 ? [-0.1, -0.25, -0.5, -0.75, -0.9]   // 薄い灰: 暗く
+        : [0.8, 0.6, 0.4, -0.25, -0.5];                  // 他: 明3段＋暗2段
+      return steps.map((t) => opTint(hex, t));
+    }
+    // パレット DOM を組み立てる。onPick(色 or 'none') → onClose() の順で呼ぶ。
+    function buildOfficePalette({ withNone, onPick, onClose }) {
+      const pal = document.createElement('div');
+      const pick = (col) => { onPick(col); onClose(); };
+      const swatchRow = (colors, parent) => {
+        const row = document.createElement('div');
+        row.className = 'op-row';
+        colors.forEach((col) => {
+          const b = document.createElement('button');
+          b.type = 'button'; b.className = 'op-swatch'; b.style.background = col; b.title = col;
+          b.addEventListener('mousedown', (e) => { e.preventDefault(); pick(col); });
+          row.appendChild(b);
+        });
+        parent.appendChild(row);
+      };
+      const title = (text) => {
+        const t = document.createElement('div');
+        t.className = 'op-title'; t.textContent = text;
+        pal.appendChild(t);
+      };
+      title('テーマの色');
+      swatchRow(OP_THEME, pal);
+      const varRows = [0, 1, 2, 3, 4].map((r) => OP_THEME.map((c, colIdx) => opVariants(c, colIdx)[r]));
+      const vars = document.createElement('div');
+      vars.className = 'op-vars';
+      varRows.forEach((row) => swatchRow(row, vars));
+      pal.appendChild(vars);
+      title('標準の色');
+      swatchRow(OP_STANDARD, pal);
+      const footer = document.createElement('div');
+      footer.className = 'op-footer';
+      if (withNone) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'op-none'; b.textContent = '塗りつぶしなし';
+        b.addEventListener('mousedown', (e) => { e.preventDefault(); pick('none'); });
+        footer.appendChild(b);
+      }
+      const more = document.createElement('button');
+      more.type = 'button'; more.className = 'op-more'; more.textContent = '🎨 その他の色…';
+      const inp = document.createElement('input');
+      inp.type = 'color'; inp.hidden = true;
+      let savedRange = null;
+      more.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        // ネイティブの色ダイアログでフォーカスが移っても、本文の選択範囲へ
+        // 適用できるよう、開く直前の選択を保存しておく。
+        const sel = window.getSelection();
+        savedRange = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+        inp.click();
+      });
+      inp.addEventListener('change', () => {
+        if (savedRange) {
+          const sel = window.getSelection();
+          try { sel.removeAllRanges(); sel.addRange(savedRange); } catch (_) { /* noop */ }
+        }
+        pick(inp.value);
+      });
+      footer.appendChild(more);
+      footer.appendChild(inp);
+      pal.appendChild(footer);
+      return pal;
+    }
 
     const RB_SIZE_RE = /^\d+(\.\d+)?(px|%)$/; // 表リサイズの保存単位。pt を通さない（Excel 貼り付けのゴミ幅対策）
+    const RB_FONT_SIZE_RE = /^\d+(\.\d+)?(pt|px)$/; // 文字サイズは pt/px の実寸のみ許可
     function rbCleanStyle(srcEl, destEl) {
       [['color'], ['background-color']].forEach(([p]) => {
         const v = (srcEl.style.getPropertyValue(p) || '').trim();
         if (v && RB_COLOR_RE.test(v)) destEl.style.setProperty(p, v);
       });
+      const fsz = (srcEl.style.getPropertyValue('font-size') || '').trim();
+      if (fsz && RB_FONT_SIZE_RE.test(fsz)) destEl.style.setProperty('font-size', fsz);
       const ta = (srcEl.style.getPropertyValue('text-align') || '').trim();
       if (ta && RB_ALIGN_RE.test(ta)) destEl.style.setProperty('text-align', ta);
       // 表のドラッグリサイズで付く width/height/table-layout は表系要素に限って保持する
@@ -1772,14 +2013,16 @@
       const sectionId = editor.dataset.section, itemId = editor.dataset.item;
       const clean = sanitizeBodyHtml(editor.innerHTML);
       if (sanitizeBodyHtml(rbItemBody(c.id, sectionId, itemId)) === clean) return; // 変化なしなら何もしない
-      store.commit((s) => M.setItemField(M.findChecklist(s, c.id), sectionId, itemId, 'body', clean));
+      // 編集中の contenteditable を DOM ごと作り直さないよう、再描画なしで保存する
+      //（再描画すると書式ボタンを押すたびにフォーカスと編集セッションが失われる）
+      commitInPlace((s) => M.setItemField(M.findChecklist(s, c.id), sectionId, itemId, 'body', clean));
     }
     function rbExec(cmd, editor, btn) {
       editor.focus();
       if (cmd === 'insertTable') return rbInsertTable(editor);
-      if (cmd === 'foreColor') return rbOpenPalette(btn, RB_TEXT_COLORS, false, (col) => { document.execCommand('styleWithCSS', false, true); document.execCommand('foreColor', false, col); });
-      if (cmd === 'hiliteColor') return rbOpenPalette(btn, RB_HL_COLORS, true, (col) => { document.execCommand('styleWithCSS', false, true); document.execCommand('hiliteColor', false, col === 'none' ? 'transparent' : col); });
-      if (cmd === 'cellFill') return rbOpenPalette(btn, RB_CELL_COLORS, true, (col) => rbApplyCellFill(editor, col));
+      if (cmd === 'foreColor') return rbOpenPalette(btn, false, (col) => { document.execCommand('styleWithCSS', false, true); document.execCommand('foreColor', false, col); });
+      if (cmd === 'hiliteColor') return rbOpenPalette(btn, true, (col) => { document.execCommand('styleWithCSS', false, true); document.execCommand('hiliteColor', false, col === 'none' ? 'transparent' : col); });
+      if (cmd === 'cellFill') return rbOpenPalette(btn, true, (col) => rbApplyCellFill(editor, col));
       document.execCommand('styleWithCSS', false, false); // 太字等はタグ(<b>等)で出力させる
       document.execCommand(cmd, false, null);
     }
@@ -1949,28 +2192,38 @@
       document.addEventListener('mousemove', move, true);
       document.addEventListener('mouseup', up, true);
     }
-    // 色パレット
-    function rbClosePalette() { const p = document.getElementById('rb-palette'); if (p) p.remove(); }
-    function rbOpenPalette(btn, colors, withNone, onPick) {
-      rbClosePalette();
-      const pal = document.createElement('div');
-      pal.className = 'rb-palette'; pal.id = 'rb-palette';
-      colors.forEach((col) => {
-        const b = document.createElement('button');
-        b.type = 'button'; b.style.background = col; b.title = col;
-        b.addEventListener('mousedown', (e) => { e.preventDefault(); onPick(col); rbClosePalette(); });
-        pal.appendChild(b);
+    // 文字サイズ（pt）を選択範囲へ適用する。execCommand('fontSize', 7) で一旦
+    // <font size="7"> のマーカーを付け、それを pt 指定の <span> に変換する
+    // （execCommand はキーワードサイズしか受けないため）。
+    function rbApplyFontSize(editor, pt, range) {
+      editor.focus();
+      const sel = window.getSelection();
+      if (range) { try { sel.removeAllRanges(); sel.addRange(range); } catch (_) { /* noop */ } }
+      if (!sel.rangeCount || sel.isCollapsed) return; // 範囲選択が無ければ何もしない
+      document.execCommand('styleWithCSS', false, false);
+      document.execCommand('fontSize', false, '7');
+      editor.querySelectorAll('font[size="7"]').forEach((f) => {
+        const span = document.createElement('span');
+        span.style.fontSize = pt + 'pt';
+        while (f.firstChild) span.appendChild(f.firstChild);
+        f.replaceWith(span);
       });
-      if (withNone) {
-        const b = document.createElement('button');
-        b.type = 'button'; b.className = 'rb-pal-none'; b.textContent = 'なし';
-        b.addEventListener('mousedown', (e) => { e.preventDefault(); onPick('none'); rbClosePalette(); });
-        pal.appendChild(b);
-      }
+      rbCommitEditor(editor);
+    }
+
+    // 色パレット（Excel/Office 風。buildOfficePalette を btn の下に開く）
+    function rbClosePalette() { const p = document.getElementById('rb-palette'); if (p) p.remove(); }
+    function rbOpenPalette(btn, withNone, onPick) {
+      rbClosePalette();
+      const pal = buildOfficePalette({ withNone, onPick, onClose: rbClosePalette });
+      pal.className = 'rb-palette'; pal.id = 'rb-palette';
       document.body.appendChild(pal);
       const r = btn.getBoundingClientRect();
-      pal.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 162)) + 'px';
-      pal.style.top = (r.bottom + 4) + 'px';
+      const w = pal.offsetWidth || 250;
+      const h = pal.offsetHeight || 240;
+      pal.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+      // 下にはみ出すときはボタンの上側に開く
+      pal.style.top = (r.bottom + 4 + h > window.innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4) + 'px';
     }
     // 表/TSV の貼り付けをセルに取り込む
     function rbTsvToTable(text) {
@@ -2003,6 +2256,26 @@
           const editor = rb && rb.querySelector('[data-rb-edit]');
           if (editor) rbExec(cmdBtn.dataset.rbCmd, editor, cmdBtn);
         }
+      });
+      // 文字サイズ select: 操作でフォーカスが本文から外れるため、押した時点の
+      // 選択範囲を保存し、決定時に復元してから適用する。
+      let rbSizeRange = null;
+      document.addEventListener('mousedown', (e) => {
+        if (e.target.closest && e.target.closest('[data-rb-size]')) {
+          const sel = window.getSelection();
+          rbSizeRange = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+        }
+      });
+      document.addEventListener('change', (e) => {
+        const sizeSel = e.target.closest && e.target.closest('[data-rb-size]');
+        if (!sizeSel) return;
+        const pt = Number(sizeSel.value);
+        sizeSel.value = ''; // 表示を「サイズ」に戻す（現在値のUIは持たない）
+        if (!pt) return;
+        const rb = sizeSel.closest('.rb');
+        const editor = rb && rb.querySelector('[data-rb-edit]');
+        if (editor) rbApplyFontSize(editor, pt, rbSizeRange);
+        rbSizeRange = null;
       });
       // Alt+Enter でセル内/段落内改行
       document.addEventListener('keydown', (e) => {
@@ -2347,6 +2620,15 @@
     const app = document.getElementById('app');
     const fileInput = document.getElementById('file-input');
 
+    // 入力欄の編集内容を保存するとき、画面全体を再描画しない（DOM は既に最新のため）。
+    // 全再描画すると、blur→change→commit の途中で「次にクリックした入力欄やボタン」が
+    // DOM ごと作り直されてフォーカス移動が空振りし、文字が入力できなくなる。
+    let suppressRender = false;
+    function commitInPlace(mutator, opts) {
+      suppressRender = true;
+      try { store.commit(mutator, opts); } finally { suppressRender = false; }
+    }
+
     // ---- 録画（クリック連動スクリーンショット） ----
     // 実体は Electron メインプロセス側（main.js）。preload が公開する
     // window.recorderAPI が無い＝素のブラウザでは、ボタンは無効表示にする。
@@ -2395,6 +2677,26 @@
       document.querySelector('[data-action="undo"]').disabled = !store.canUndo();
       document.querySelector('[data-action="redo"]').disabled = !store.canRedo();
       updateRecordButton();
+    }
+    // 所要時間の表示（ヘッダの総所要・セクション別の⏱分）だけを部分更新する。
+    // 時間入力の保存は commitInPlace（再描画なし）のため、派生表示はここで追随させる。
+    function refreshTimeLabels() {
+      const c = currentChecklist();
+      if (!c || c.type !== MODES.TEMPLATE) return;
+      const p = progress(c);
+      const totalMin = c.sections.reduce((a, s) => a + sumMinutes(s.items), 0);
+      const head = app.querySelector('.editor-progress small');
+      if (head) {
+        head.textContent =
+          `${p.done} / ${p.total} 完了（${p.percent}%）${totalMin ? ` ・ 総所要 約${totalMin}分` : ''}`;
+      }
+      c.sections.forEach((s, idx) => {
+        const el = app.querySelector(`.section[data-section="${s.id}"] .section-progress`);
+        if (!el) return;
+        const prog = p.sections[idx];
+        const mins = sumMinutes(s.items);
+        el.textContent = `${prog.done}/${prog.total}${mins ? ` ・⏱${mins}分` : ''}`;
+      });
     }
     function currentChecklist() {
       const route = parseHash();
@@ -2499,22 +2801,102 @@
       return true;
     }
 
-    // 印刷ビューを差し込んでブラウザの印刷ダイアログを開く。
-    // 印刷後（またはキャンセル後）は中身を空にして画面に残らないようにする。
-    function printChecklist(checklist) {
+    // ---- 印刷ビューの画像レイアウト（'1col'=全幅1枚ずつ / '2col'=横2枚） ----
+    // プレビュー画面で選択し、設定として記憶する（undo履歴には積まない）。
+    function printImgLayout() {
+      const s = store.state.settings;
+      return (s && s.printImgLayout) === '1col' ? '1col' : '2col';
+    }
+    function setPrintImgLayout(v) {
+      commitInPlace((s) => {
+        s.settings = s.settings || {};
+        s.settings.printImgLayout = v === '1col' ? '1col' : '2col';
+      }, { history: false });
+    }
+    function printColsClass() {
+      return printImgLayout() === '1col' ? 'print-cols-1' : 'print-cols-2';
+    }
+
+    // #print-root に印刷ビューを流し込む（window.print / printToPDF の直前に呼ぶ）。
+    function fillPrintRoot(checklist) {
       let root = document.getElementById('print-root');
       if (!root) {
         root = document.createElement('div');
         root.id = 'print-root';
         document.body.appendChild(root);
       }
+      root.className = printColsClass();
       root.innerHTML = renderPrintView(checklist);
+      return root;
+    }
+    function clearPrintRoot() {
+      const root = document.getElementById('print-root');
+      if (root) { root.innerHTML = ''; root.className = ''; }
+    }
+
+    // 印刷ビューを差し込んでブラウザの印刷ダイアログを開く。
+    // 印刷後（またはキャンセル後）は中身を空にして画面に残らないようにする。
+    function printChecklist(checklist) {
+      fillPrintRoot(checklist);
       const cleanup = () => {
-        root.innerHTML = '';
+        clearPrintRoot();
         window.removeEventListener('afterprint', cleanup);
       };
       window.addEventListener('afterprint', cleanup);
       window.print();
+    }
+
+    // 印刷プレビュー。紙面の見た目を画面内で確認してから 印刷 / PDF保存 する。
+    // Electron の window.print() は OS のダイアログだけでプレビューが無いため、
+    // アプリ内でプレビューを出す（@media print で .modal-overlay は紙面から除外済み）。
+    function openPrintPreview(checklist) {
+      const overlay = buildModal(`
+        <h3>印刷プレビュー</h3>
+        <div class="print-preview-bar">
+          <span class="pp-label">画像の配置:</span>
+          <span class="pp-seg">
+            <button type="button" data-pp-cols="1col">1列（大きく）</button>
+            <button type="button" data-pp-cols="2col">2列</button>
+          </span>
+          <span class="pp-spacer"></span>
+          <button type="button" class="btn primary" data-pp-print>🖨 印刷</button>
+          ${window.printAPI ? '<button type="button" class="btn" data-pp-pdf>📄 PDFに保存</button>' : ''}
+          <button type="button" class="btn" data-close>閉じる</button>
+        </div>
+        <div class="print-preview-body"><div class="print-preview-page"></div></div>
+      `);
+      overlay.querySelector('.modal').classList.add('print-preview');
+      const page = overlay.querySelector('.print-preview-page');
+      const renderPreview = () => {
+        page.className = 'print-preview-page ' + printColsClass();
+        page.innerHTML = renderPrintView(checklist);
+        overlay.querySelectorAll('[data-pp-cols]').forEach((b) =>
+          b.classList.toggle('active', b.dataset.ppCols === printImgLayout())
+        );
+      };
+      renderPreview();
+      overlay.querySelectorAll('[data-pp-cols]').forEach((b) =>
+        b.addEventListener('click', () => { setPrintImgLayout(b.dataset.ppCols); renderPreview(); })
+      );
+      overlay.querySelector('[data-pp-print]').addEventListener('click', () => printChecklist(checklist));
+      const pdfBtn = overlay.querySelector('[data-pp-pdf]');
+      if (pdfBtn) {
+        pdfBtn.addEventListener('click', async () => {
+          pdfBtn.disabled = true;
+          try {
+            fillPrintRoot(checklist); // printToPDF は @media print の見た目で現ページを描画する
+            const res = await window.printAPI.savePdf({
+              title: sanitizeFilename(checklist.title || 'checklist'),
+            });
+            if (res && res.error) alert('PDF の保存に失敗しました: ' + res.error);
+          } catch (e) {
+            alert('PDF の保存に失敗しました: ' + e.message);
+          } finally {
+            clearPrintRoot();
+            pdfBtn.disabled = false;
+          }
+        });
+      }
     }
 
     function buildModal(innerHtml) {
@@ -2875,8 +3257,24 @@
               <button type="button" class="btn primary ie-crop-apply">トリミング適用</button>
               <button type="button" class="btn ie-crop-cancel">取消</button>
             </span>
-            <label class="ie-color" title="色"><input type="color" value="#ff3b30" /></label>
+            <span class="ie-color" title="色">
+              <button type="button" class="ie-color-btn" title="色（Excel風パレットから選択）"><span class="ie-color-chip"></span>▾</button>
+              <input type="color" value="#ff3b30" hidden />
+            </span>
             <label class="ie-size" title="線の太さ"><input type="range" min="1" max="40" value="6" /></label>
+            <span class="ie-textfmt" hidden>
+              文字
+              <input type="number" class="ie-font-size" min="8" max="200" step="1" value="24"
+                     list="ie-font-sizes" title="文字サイズ（px）" aria-label="文字サイズ（px）" />
+              <datalist id="ie-font-sizes">
+                <option value="12"></option><option value="14"></option><option value="16"></option>
+                <option value="20"></option><option value="24"></option><option value="28"></option>
+                <option value="32"></option><option value="40"></option><option value="48"></option>
+                <option value="64"></option><option value="80"></option><option value="96"></option>
+              </datalist>
+              <button type="button" class="ie-fmt ie-fmt-bold" title="太字"><b>B</b></button>
+              <button type="button" class="ie-fmt ie-fmt-italic" title="斜体"><i>I</i></button>
+            </span>
             <label class="ie-opacity" title="透過率（0%=不透明）">透過<input type="range" min="0" max="90" step="10" value="0" /><span class="ie-opacity-val">0%</span></label>
             <span class="ie-zoom" title="編集中の表示倍率（拡大縮小しても保存される画像の仕上がりは変わりません）">
               🔍
@@ -2944,6 +3342,78 @@
         sel.color = colorInput.value;
         recomposite();
       });
+      // 色ボタン: Excel風パレットを開く。選んだ色は隠し input(colorInput) に入れて
+      // 既存の反映ロジック（選択オブジェクト・新規描画の色）をそのまま使う。
+      const colorBtn = overlay.querySelector('.ie-color-btn');
+      const colorChip = overlay.querySelector('.ie-color-chip');
+      const syncColorChip = () => { colorChip.style.background = colorInput.value; };
+      colorInput.addEventListener('input', syncColorChip);
+      syncColorChip();
+      // 開いた状態でもう一度押したら閉じる（document の mousedown が先に閉じるため、
+      // mousedown 時点で開いていたかを覚えておく）。
+      let palWasOpen = false;
+      colorBtn.addEventListener('mousedown', () => { palWasOpen = !!document.getElementById('rb-palette'); });
+      colorBtn.addEventListener('click', () => {
+        if (palWasOpen) { palWasOpen = false; return; }
+        rbOpenPalette(colorBtn, false, (col) => {
+          colorInput.value = col;
+          colorInput.dispatchEvent(new Event('input'));
+        });
+      });
+
+      // ---- テキスト/吹き出しの書式（サイズ・太字・斜体）----
+      // 対象: (a) これから作るオブジェクトの既定値 (b) その場編集中の入力欄
+      //       (c) 選択中の text/callout オブジェクト。
+      // フォント文字列は objFont に一本化する（bold は既定 ON=旧データ互換）。
+      function objFont(o, scale = 1) {
+        return `${o.italic ? 'italic ' : ''}${o.bold === false ? '' : 'bold '}${(Number(o.fs) || 16) * scale}px sans-serif`;
+      }
+      const textFmtWrap = overlay.querySelector('.ie-textfmt');
+      const fontSizeInput = overlay.querySelector('.ie-font-size');
+      const boldBtn = overlay.querySelector('.ie-fmt-bold');
+      const italicBtn = overlay.querySelector('.ie-fmt-italic');
+      const textFmt = { fs: 24, bold: true, italic: false }; // 新規作成の既定書式
+      let fmtTarget = null; // その場編集中の入力欄が登録するフック { get(), set(changes) }
+      const isTextObj = (o) => !!o && (o.type === 'text' || o.type === 'callout');
+      function syncTextFmtUI() {
+        const sel = selectedObj();
+        const src = fmtTarget ? fmtTarget.get()
+          : isTextObj(sel) ? sel
+          : (tool === 'text' || tool === 'callout') ? textFmt : null;
+        textFmtWrap.hidden = !src;
+        if (!src) return;
+        // 入力中のカーソルを飛ばさないよう、フォーカス中は値を書き戻さない
+        if (document.activeElement !== fontSizeInput) fontSizeInput.value = Math.round(Number(src.fs) || 16);
+        boldBtn.classList.toggle('active', src.bold !== false);
+        italicBtn.classList.toggle('active', !!src.italic);
+      }
+      let fmtGestureFor = null; // 選択オブジェクトへの連続変更を1回の undo にまとめる
+      function applyTextFmt(changes) {
+        Object.assign(textFmt, changes); // 次回の新規作成にも引き継ぐ
+        if (fmtTarget) { fmtTarget.set(changes); syncTextFmtUI(); return; }
+        const sel = selectedObj();
+        if (isTextObj(sel)) {
+          if (fmtGestureFor !== sel.id) { pushUndo(); fmtGestureFor = sel.id; }
+          Object.assign(sel, changes);
+          recomposite();
+        }
+        syncTextFmtUI();
+      }
+      const clampFs = (v) => Math.max(8, Math.min(200, Math.round(Number(v) || 0)));
+      fontSizeInput.addEventListener('input', () => {
+        const v = Number(fontSizeInput.value);
+        if (v >= 8 && v <= 200) applyTextFmt({ fs: Math.round(v) });
+      });
+      fontSizeInput.addEventListener('change', () => {
+        const v = clampFs(fontSizeInput.value) || textFmt.fs;
+        fontSizeInput.value = v;
+        applyTextFmt({ fs: v });
+      });
+      // その場編集（textarea）中に押しても blur→確定 させないよう mousedown を殺す
+      boldBtn.addEventListener('mousedown', (e) => e.preventDefault());
+      italicBtn.addEventListener('mousedown', (e) => e.preventDefault());
+      boldBtn.addEventListener('click', () => applyTextFmt({ bold: !boldBtn.classList.contains('active') }));
+      italicBtn.addEventListener('click', () => applyTextFmt({ italic: !italicBtn.classList.contains('active') }));
 
       // ---- 編集中だけの表示ズーム ----
       // canvas のピクセル数（＝保存される実体）は一切変えず、CSS の表示サイズだけを
@@ -3065,6 +3535,7 @@
         drawObjects(ctx);
         drawSelection();
         if (cropMode && cropRect) drawCropOverlay();
+        syncTextFmtUI(); // ツール・選択・編集状態に書式コントロールを追随させる
       }
       // 表示 px / canvas px の比率（ハンドルや点線を画面上一定サイズに保つのに使う）。
       function dispScale() { return canvas.offsetWidth ? canvas.width / canvas.offsetWidth : 1; }
@@ -3200,7 +3671,7 @@
         g.save();
         g.globalAlpha = o.opacity;
         g.fillStyle = o.color;
-        g.font = `bold ${o.fs}px sans-serif`;
+        g.font = objFont(o);
         g.textBaseline = 'top';
         const lh = o.fs * 1.2;
         o.text.split('\n').forEach((line, i) => g.fillText(line, o.x, o.y + i * lh));
@@ -3240,7 +3711,7 @@
         if (o.type === 'rect' || o.type === 'ellipse') return { x: o.x, y: o.y, w: o.w, h: o.h };
         if (o.type === 'text') {
           ctx.save();
-          ctx.font = `bold ${o.fs}px sans-serif`;
+          ctx.font = objFont(o);
           const lines = o.text.split('\n');
           let tw = 0;
           for (const l of lines) tw = Math.max(tw, ctx.measureText(l.length ? l : ' ').width);
@@ -3248,7 +3719,7 @@
           return { x: o.x, y: o.y, w: Math.ceil(tw), h: lines.length * o.fs * 1.2 };
         }
         if (o.type === 'callout') {
-          const box = calloutBox(o.text, o.fs);
+          const box = calloutBox(o.text, o.fs, o);
           return { x: o.x, y: o.y, w: box.w, h: box.h };
         }
         return { x: 0, y: 0, w: 0, h: 0 };
@@ -3364,9 +3835,9 @@
       }
       // ── 吹き出し（クリック挿入・文字で自動リサイズ・尻尾を好きな向きへ）──────
       // calloutBox: 文字から本体（尻尾を除く）の寸法を測る。
-      function calloutBox(text, fs) {
+      function calloutBox(text, fs, style) {
         annoCtx.save();
-        annoCtx.font = `bold ${fs}px sans-serif`;
+        annoCtx.font = objFont({ fs, bold: style && style.bold, italic: style && style.italic });
         const lines = (text.length ? text : ' ').split('\n');
         const lh = Math.round(fs * 1.3);
         let tw = 0;
@@ -3406,7 +3877,7 @@
       // 本体＋尻尾を描く（withText=false は文字を描かない＝編集中プレビュー用）。
       // o: callout オブジェクト（{x,y,text,fs,tip,color,size,opacity}）。
       function drawCalloutObj(g, o, withText) {
-        const box = calloutBox(o.text, o.fs);
+        const box = calloutBox(o.text, o.fs, o);
         const r = Math.min(16, box.w / 2, box.h / 2);
         const tW = Math.max(10, Math.round(o.fs * 0.6));
         g.save();
@@ -3419,7 +3890,7 @@
         g.fill(); g.stroke();
         if (withText) {
           g.fillStyle = o.color;
-          g.font = `bold ${o.fs}px sans-serif`;
+          g.font = objFont(o);
           g.textBaseline = 'top';
           box.lines.forEach((l, i) => g.fillText(l, o.x + box.P, o.y + box.P + i * box.lh));
         }
@@ -3453,7 +3924,10 @@
       let editingText = false; // 入力欄が開いている間 true（Delete キー等の誤爆防止）
       function beginText(p, existing) {
         const scale = canvas.offsetWidth ? canvas.offsetWidth / canvas.width : 1;
-        const fs = existing ? existing.fs : Math.max(16, Number(sizeInput.value) * 4); // canvas px
+        // 書式（サイズ・太字・斜体）: 既存の再編集はその値、新規はツールバーの既定値
+        const fmt = existing
+          ? { fs: existing.fs, bold: existing.bold !== false, italic: !!existing.italic }
+          : { fs: textFmt.fs, bold: textFmt.bold, italic: textFmt.italic };
         const pos = existing ? { x: existing.x, y: existing.y } : p;
         const color = existing ? existing.color : colorInput.value;
         const ta = document.createElement('textarea');
@@ -3462,7 +3936,8 @@
         ta.style.left = (canvas.offsetLeft + pos.x * scale) + 'px';
         ta.style.top = (canvas.offsetTop + pos.y * scale) + 'px';
         ta.style.color = color;
-        ta.style.font = `bold ${fs * scale}px sans-serif`;
+        const applyTaStyle = () => { ta.style.font = objFont(fmt, scale); };
+        applyTaStyle();
         canvasWrap.appendChild(ta);
         editingText = true;
         const fit = () => {
@@ -3470,6 +3945,12 @@
           ta.style.width = 'auto';
           ta.style.width = Math.min(ta.scrollWidth + 24, canvas.offsetWidth) + 'px';
         };
+        // 編集中はツールバーの書式変更を入力欄へ即時反映させる
+        fmtTarget = {
+          get: () => fmt,
+          set: (changes) => { Object.assign(fmt, changes); applyTaStyle(); fit(); },
+        };
+        syncTextFmtUI();
         if (existing) { ta.value = existing.text; existing.hidden = true; recomposite(); fit(); }
         ta.focus();
         if (existing) ta.select();
@@ -3477,26 +3958,39 @@
         const commit = () => {
           if (done) return; done = true;
           editingText = false;
+          fmtTarget = null;
           const text = ta.value;
           ta.remove();
           if (existing) {
             delete existing.hidden;
+            const fmtChanged =
+              existing.fs !== fmt.fs ||
+              (existing.bold !== false) !== fmt.bold ||
+              !!existing.italic !== fmt.italic;
             if (text.trim() === '') { pushUndo(); objects = objects.filter((o) => o.id !== existing.id); if (selectedId === existing.id) selectedId = null; }
-            else if (text !== existing.text) { pushUndo(); existing.text = text; }
+            else if (text !== existing.text || fmtChanged) {
+              pushUndo();
+              existing.text = text;
+              existing.fs = fmt.fs; existing.bold = fmt.bold; existing.italic = fmt.italic;
+            }
             recomposite();
             return;
           }
           if (text.trim() === '') { recomposite(); return; }
           pushUndo();
-          objects.push({
-            id: newObjId(), type: 'text', x: pos.x, y: pos.y, text, fs,
+          const obj = {
+            id: newObjId(), type: 'text', x: pos.x, y: pos.y, text,
+            fs: fmt.fs, bold: fmt.bold, italic: fmt.italic,
             color, size: Number(sizeInput.value), opacity: toolAlpha('text'),
-          });
+          };
+          objects.push(obj);
+          selectedId = obj.id; // 確定直後も選択状態にして、書式変更を続けられるように
           recomposite();
         };
         const cancel = () => {
           if (done) return; done = true;
           editingText = false;
+          fmtTarget = null;
           ta.remove();
           if (existing) delete existing.hidden;
           recomposite();
@@ -3523,21 +4017,25 @@
       // existing を渡すと既存吹き出しオブジェクトの再編集（ダブルクリックから）。
       function beginCallout(p, existing) {
         commitCallout(); // 直前の未確定があれば確定してから
-        const fs = existing ? existing.fs : Math.max(16, Number(sizeInput.value) * 4);
+        // 書式: 既存の再編集はその値、新規はツールバーの既定値
+        const fmt0 = existing
+          ? { fs: existing.fs, bold: existing.bold !== false, italic: !!existing.italic }
+          : { fs: textFmt.fs, bold: textFmt.bold, italic: textFmt.italic };
         const ta = document.createElement('textarea');
         ta.className = 'ie-callout-input';
         ta.value = existing ? existing.text : 'ここをクリック';
         ta.rows = 1;
         canvasWrap.appendChild(ta);
-        const box0 = calloutBox(ta.value, fs);
+        const box0 = calloutBox(ta.value, fmt0.fs, fmt0);
         const ac = {
           x: existing ? existing.x : p.x,
           y: existing ? existing.y : p.y,
-          fs, ta, existing: existing || null,
+          fs: fmt0.fs, bold: fmt0.bold, italic: fmt0.italic,
+          ta, existing: existing || null,
           done: false, dragTip: false, hoverTip: false,
           // 初期の尻尾先端＝本体の下・少し左（下向き）。以後ドラッグで自由に。
           tip: existing ? { x: existing.tip.x, y: existing.tip.y }
-                        : { x: p.x + Math.min(box0.w * 0.25, 40), y: p.y + box0.h + Math.round(fs * 1.6) },
+                        : { x: p.x + Math.min(box0.w * 0.25, 40), y: p.y + box0.h + Math.round(fmt0.fs * 1.6) },
         };
         activeCallout = ac;
         if (existing) { existing.hidden = true; }
@@ -3548,7 +4046,7 @@
           const color = existing ? existing.color : colorInput.value;
           const size = existing ? existing.size : Number(sizeInput.value);
           const opacity = existing ? existing.opacity : toolAlpha('callout');
-          const preview = { x: ac.x, y: ac.y, text: ta.value, fs, tip: ac.tip, color, size, opacity };
+          const preview = { x: ac.x, y: ac.y, text: ta.value, fs: ac.fs, bold: ac.bold, italic: ac.italic, tip: ac.tip, color, size, opacity };
           recomposite();
           drawCalloutObj(ctx, preview, false);
           if (ac.dragTip || ac.hoverTip) {
@@ -3560,17 +4058,23 @@
             ctx.restore();
           }
           // textarea を本文位置へ重ねる（透明背景）。
-          const box = calloutBox(ta.value, fs);
+          const box = calloutBox(ta.value, ac.fs, ac);
           const s = canvas.offsetWidth ? canvas.offsetWidth / canvas.width : 1;
           ta.style.left = (canvas.offsetLeft + (ac.x + box.P) * s) + 'px';
           ta.style.top = (canvas.offsetTop + (ac.y + box.P) * s) + 'px';
           // 右側の内側パディング分を余白として使い、キャレットが隠れないようにする。
           ta.style.width = ((box.w - box.P) * s) + 'px';
           ta.style.height = ((box.h - box.P * 2) * s) + 'px';
-          ta.style.font = `bold ${fs * s}px sans-serif`;
+          ta.style.font = objFont(ac, s);
           ta.style.lineHeight = (box.lh * s) + 'px';
           ta.style.color = color;
         };
+        // 編集中はツールバーの書式変更を吹き出しへ即時反映させる
+        fmtTarget = {
+          get: () => ac,
+          set: (changes) => { Object.assign(ac, changes); ac.render(); },
+        };
+        syncTextFmtUI();
 
         ta.addEventListener('keydown', (ev) => {
           ev.stopPropagation();
@@ -3592,30 +4096,37 @@
         if (!ac || ac.done) return;
         ac.done = true;
         activeCallout = null;
+        fmtTarget = null;
         const text = ac.ta.value;
         ac.ta.remove();
         if (ac.existing) {
           const ex = ac.existing;
           delete ex.hidden;
+          const fmtChanged =
+            ex.fs !== ac.fs || (ex.bold !== false) !== ac.bold || !!ex.italic !== ac.italic;
           if (text.trim() === '') {
             pushUndo();
             objects = objects.filter((o) => o.id !== ex.id);
             if (selectedId === ex.id) selectedId = null;
-          } else if (text !== ex.text || ac.tip.x !== ex.tip.x || ac.tip.y !== ex.tip.y) {
+          } else if (text !== ex.text || ac.tip.x !== ex.tip.x || ac.tip.y !== ex.tip.y || fmtChanged) {
             pushUndo();
             ex.text = text;
             ex.tip = { x: ac.tip.x, y: ac.tip.y };
+            ex.fs = ac.fs; ex.bold = ac.bold; ex.italic = ac.italic;
           }
           recomposite();
           return;
         }
         if (text.trim() === '') { recomposite(); return; }
         pushUndo();
-        objects.push({
-          id: newObjId(), type: 'callout', x: ac.x, y: ac.y, text, fs: ac.fs,
+        const obj = {
+          id: newObjId(), type: 'callout', x: ac.x, y: ac.y, text,
+          fs: ac.fs, bold: ac.bold, italic: ac.italic,
           tip: { x: ac.tip.x, y: ac.tip.y },
           color: colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha('callout'),
-        });
+        };
+        objects.push(obj);
+        selectedId = obj.id; // 確定直後も選択状態にして、書式変更を続けられるように
         recomposite();
       }
       function cancelCallout() {
@@ -3623,6 +4134,7 @@
         if (!ac || ac.done) return;
         ac.done = true;
         activeCallout = null;
+        fmtTarget = null;
         ac.ta.remove();
         if (ac.existing) delete ac.existing.hidden;
         recomposite();
@@ -4135,7 +4647,7 @@
         case 'share':
           return c && openShareDialog(c);
         case 'print':
-          return c && printChecklist(c);
+          return c && openPrintPreview(c);
         case 'cover':
           return c && openCoverDialog(c.id);
         case 'save-html':
@@ -4159,22 +4671,25 @@
       const el = e.target;
       const c = currentChecklist();
       if (!c) return;
+      // 入力欄の DOM は既に編集後の値なので、保存は commitInPlace（再描画なし）で行う。
+      // ここで全再描画すると、次にクリックした入力欄が消えてフォーカスが失われる。
       if (el.matches('[data-action="edit-title"]')) {
-        store.commit((s) => M.renameChecklist(M.findChecklist(s, c.id), el.value));
+        commitInPlace((s) => M.renameChecklist(M.findChecklist(s, c.id), el.value));
       } else if (el.matches('[data-action="edit-section"]')) {
-        store.commit((s) => M.renameSection(M.findChecklist(s, c.id), el.dataset.section, el.value));
+        commitInPlace((s) => M.renameSection(M.findChecklist(s, c.id), el.dataset.section, el.value));
       } else if (el.matches('[data-action="edit-item"]')) {
-        store.commit((s) =>
+        commitInPlace((s) =>
           M.editItem(M.findChecklist(s, c.id), el.dataset.section, el.dataset.item, el.value)
         );
       } else if (el.matches('[data-action="edit-note"]')) {
-        store.commit((s) =>
+        commitInPlace((s) =>
           M.setItemField(M.findChecklist(s, c.id), el.dataset.section, el.dataset.item, 'note', el.value)
         );
       } else if (el.matches('[data-action="edit-time"]')) {
-        store.commit((s) =>
+        commitInPlace((s) =>
           M.setItemField(M.findChecklist(s, c.id), el.dataset.section, el.dataset.item, 'time', el.value)
         );
+        refreshTimeLabels(); // 合計（総所要・⏱分）表示だけ追随
       }
     });
 
@@ -4236,6 +4751,7 @@
 
     // ---- 起動 ----
     store.subscribe(() => {
+      if (suppressRender) { updateTopbar(); return; } // 入力内容の保存時は再描画しない
       render();
       restoreFocus();
     });

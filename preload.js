@@ -53,3 +53,19 @@ contextBridge.exposeInMainWorld('docxAPI', {
   // payload = { title, html }。戻り値 = { saved:boolean, canceled?:boolean } / { error:string }。
   save: (payload) => ipcRenderer.invoke('docx:save', payload),
 });
+
+// HTML 保存（Electron 版のみ）。window.prompt() が Electron で使えないため、
+// ファイル名の入力ごとネイティブ保存ダイアログに任せる。
+contextBridge.exposeInMainWorld('fileAPI', {
+  available: true,
+  // payload = { title, html }。戻り値 = { saved } / { canceled } / { error }。
+  saveHtml: (payload) => ipcRenderer.invoke('file:saveHtml', payload),
+});
+
+// PDF 保存（Electron 版のみ）。#print-root に印刷ビューを流し込んだ状態で呼ぶと、
+// 現在のページを @media print の見た目で PDF 化して保存する。
+contextBridge.exposeInMainWorld('printAPI', {
+  available: true,
+  // payload = { title }。戻り値 = { saved } / { canceled } / { error }。
+  savePdf: (payload) => ipcRenderer.invoke('print:pdf', payload),
+});
