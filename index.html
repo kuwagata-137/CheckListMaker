@@ -1769,18 +1769,21 @@
       rbCommitEditor(editor);
     }
     // 表構造操作
-    function rbAddColumn(table) {
+    // idx の位置に列を挿入（idx が列数以上なら末尾に追加）
+    function rbAddColumnAt(table, idx) {
       table.querySelectorAll('tr').forEach((r) => {
         const head = r.parentElement && r.parentElement.tagName === 'THEAD';
-        const c = document.createElement(head ? 'th' : 'td'); c.innerHTML = '<br>'; r.appendChild(c);
+        const c = document.createElement(head ? 'th' : 'td'); c.innerHTML = '<br>';
+        r.insertBefore(c, r.children[idx] || null);
       });
     }
-    function rbAddRow(table) {
+    // beforeTr の直前に行を挿入（null なら末尾に追加）。thead には入れない。
+    function rbAddRowAt(table, beforeTr) {
       const cols = table.rows[0] ? table.rows[0].children.length : 1;
       const tbody = table.tBodies[0] || table.createTBody();
       const tr = document.createElement('tr');
       for (let i = 0; i < cols; i++) { const td = document.createElement('td'); td.innerHTML = '<br>'; tr.appendChild(td); }
-      tbody.appendChild(tr);
+      tbody.insertBefore(tr, beforeTr && beforeTr.parentElement === tbody ? beforeTr : null);
     }
     function rbDelColumn(table, idx) {
       table.querySelectorAll('tr').forEach((r) => { if (r.children.length > 1 && r.children[idx]) r.children[idx].remove(); });
@@ -1791,37 +1794,59 @@
     let rbTctlEl = null;
     let rbCtx = null;
     let rbHideTimer = null;
+    const RB_TCTL_NEAR = 36; // ボタンのアンカーとカーソルの距離がこの px 以内のときだけ表示
     function rbEnsureTctl() {
       if (rbTctlEl) return;
       rbTctlEl = document.createElement('div');
       rbTctlEl.id = 'rb-tctl';
       rbTctlEl.hidden = true;
       rbTctlEl.innerHTML =
-        '<button type="button" class="rb-tctl rb-tctl-add" data-rb-tctl="add-col" title="列を追加（右端）">＋</button>' +
-        '<button type="button" class="rb-tctl rb-tctl-add" data-rb-tctl="add-row" title="行を追加（下端）">＋</button>' +
+        '<button type="button" class="rb-tctl rb-tctl-add" data-rb-tctl="ins-col" title="ここに列を挿入">＋</button>' +
+        '<button type="button" class="rb-tctl rb-tctl-add" data-rb-tctl="ins-row" title="ここに行を挿入">＋</button>' +
         '<button type="button" class="rb-tctl rb-tctl-del" data-rb-tctl="del-col" title="この列を削除">−</button>' +
         '<button type="button" class="rb-tctl rb-tctl-del" data-rb-tctl="del-row" title="この行を削除">−</button>';
       document.body.appendChild(rbTctlEl);
     }
     function rbHideTctl() { if (rbTctlEl) rbTctlEl.hidden = true; rbCtx = null; }
-    function rbPositionTctl() {
+    // カーソルに近い境界へ挿入ボタン、ホバー中の行・列へ削除ボタンを配置し、
+    // それぞれ「本来出る位置」から RB_TCTL_NEAR px 以内にカーソルがあるものだけ表示する。
+    function rbPositionTctl(e) {
       rbEnsureTctl();
       const t = rbCtx.table.getBoundingClientRect();
       const c = rbCtx.cell.getBoundingClientRect();
+      const cell = rbCtx.cell;
+      const tr = cell.closest('tr');
+      // 列挿入: セルの左右どちらか近い方の境界（最終境界＝末尾追加）
+      const colRight = e.clientX > c.left + c.width / 2;
+      rbCtx.insColIdx = cell.cellIndex + (colRight ? 1 : 0);
+      const insColX = colRight ? c.right : c.left;
+      // 行挿入: 行の上下どちらか近い方の境界。ただし見出し行の上には出さない。
+      const inHead = tr.parentElement && tr.parentElement.tagName === 'THEAD';
+      const rowBottom = inHead || e.clientY > c.top + c.height / 2;
+      const insRowY = rowBottom ? c.bottom : c.top;
+      const bodyRows = Array.from(rbCtx.table.tBodies[0] ? rbCtx.table.tBodies[0].rows : []);
+      if (inHead) rbCtx.insRowRef = bodyRows[0] || null;                 // 見出しの下＝先頭行の前
+      else rbCtx.insRowRef = rowBottom ? tr.nextElementSibling : tr;     // 境界の直後の行の前（null＝末尾）
       const b = rbTctlEl.children;
-      const place = (el, x, y) => { el.style.left = (x - 10) + 'px'; el.style.top = (y - 10) + 'px'; };
-      place(b[0], t.right, t.top);            // 列追加＝右上角
-      place(b[1], t.left, t.bottom);          // 行追加＝左下角
-      place(b[2], c.left + c.width / 2, t.top); // 列削除＝列の中央・上
-      place(b[3], t.left, c.top + c.height / 2); // 行削除＝行の中央・左
-      rbTctlEl.hidden = false;
+      const place = (el, x, y) => {
+        const show = Math.hypot(e.clientX - x, e.clientY - y) <= RB_TCTL_NEAR;
+        el.style.display = show ? '' : 'none';
+        if (show) { el.style.left = (x - 10) + 'px'; el.style.top = (y - 10) + 'px'; }
+        return show;
+      };
+      let any = false;
+      any = place(b[0], insColX, t.top) || any;                    // 列挿入＝境界の上端
+      any = place(b[1], t.left, insRowY) || any;                   // 行挿入＝境界の左端
+      any = place(b[2], c.left + c.width / 2, t.top - 22) || any;  // 列削除＝列中央・表の少し上
+      any = place(b[3], t.left - 22, c.top + c.height / 2) || any; // 行削除＝行中央・表の少し左
+      rbTctlEl.hidden = !any;
     }
     function rbHandleTctl(action) {
       if (!rbCtx) return;
       const { editor, table, cell } = rbCtx;
       if (!editor || !table || !editor.contains(table)) return;
-      if (action === 'add-col') rbAddColumn(table);
-      else if (action === 'add-row') rbAddRow(table);
+      if (action === 'ins-col') rbAddColumnAt(table, rbCtx.insColIdx);
+      else if (action === 'ins-row') rbAddRowAt(table, rbCtx.insRowRef);
       else if (action === 'del-col') rbDelColumn(table, cell.cellIndex);
       else if (action === 'del-row') rbDelRow(table, cell.closest('tr'));
       rbNormalizeTable(table);
@@ -1909,7 +1934,7 @@
         const cell = e.target.closest && e.target.closest('.rb-body td, .rb-body th');
         if (cell) {
           rbCtx = { editor: cell.closest('[data-rb-edit]'), table: cell.closest('table'), cell };
-          clearTimeout(rbHideTimer); rbPositionTctl();
+          clearTimeout(rbHideTimer); rbPositionTctl(e);
         } else {
           clearTimeout(rbHideTimer); rbHideTimer = setTimeout(rbHideTctl, 160);
         }
