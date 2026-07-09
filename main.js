@@ -614,6 +614,63 @@ async function saveDocx(event, payload) {
   }
 }
 
+// ── HTML 保存 ───────────────────────────────────────────────
+// レンダラーから受け取った単体HTML文書をネイティブ保存ダイアログで書き出す。
+// （レンダラーの window.prompt() は Electron 非サポートのため、ファイル名の
+//   入力はネイティブダイアログに任せる。）
+async function saveHtmlFile(event, payload) {
+  const { title, html } = payload || {};
+  if (!html) return { error: 'HTML が空です。' };
+  const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+  const safe =
+    String(title || 'checklist')
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .slice(0, 120) || 'checklist';
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: 'HTML として保存',
+    defaultPath: safe + '.html',
+    filters: [{ name: 'HTML 文書', extensions: ['html'] }],
+  });
+  if (canceled || !filePath) return { saved: false, canceled: true };
+  try {
+    fs.writeFileSync(filePath, html, 'utf8');
+    return { saved: true, filePath };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+// ── PDF 保存（印刷プレビューの「PDFに保存」） ─────────────────
+// レンダラー側で #print-root に印刷ビューを流し込んだ状態で呼ばれる。
+// printToPDF は @media print の CSS で描画されるため、画面と同じ見た目で
+// 印刷ビューだけが出力される。
+async function savePdfFile(event, payload) {
+  const { title } = payload || {};
+  const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+  const safe =
+    String(title || 'checklist')
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .slice(0, 120) || 'checklist';
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: 'PDF として保存',
+    defaultPath: safe + '.pdf',
+    filters: [{ name: 'PDF 文書', extensions: ['pdf'] }],
+  });
+  if (canceled || !filePath) return { saved: false, canceled: true };
+  try {
+    const buf = await event.sender.printToPDF({
+      printBackground: true,
+      pageSize: 'A4',
+    });
+    fs.writeFileSync(filePath, buf);
+    // 出力結果をすぐ確認できるよう、既定のPDFビューアで開く。
+    shell.openPath(filePath);
+    return { saved: true, filePath };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
 // ── アプリ起動 ──────────────────────────────────────────────
 app.whenReady().then(() => {
   // ハンドラは一度だけ登録し、内部の recording フラグで制御する。
@@ -645,6 +702,8 @@ app.whenReady().then(() => {
     }
   });
   ipcMain.handle('docx:save', (e, payload) => saveDocx(e, payload));
+  ipcMain.handle('file:saveHtml', (e, payload) => saveHtmlFile(e, payload));
+  ipcMain.handle('print:pdf', (e, payload) => savePdfFile(e, payload));
 
   createMainWindow();
 
