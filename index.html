@@ -2815,7 +2815,7 @@
             <button class="btn ie-undo" title="元に戻す">↶ 元に戻す</button>
           </div>
           <div class="ie-canvas-wrap"><canvas class="ie-canvas"></canvas></div>
-          <p class="ie-hint">ドラッグで描画。テキストはクリック位置に入力（Enterで確定）。吹き出しはクリックで挿入（既定文「ここをクリック」）→文字数で自動リサイズ、尻尾の先に近づくと出るハンドルで向きを変えられます。消しゴムは描いた注釈だけを消します（スクショは残る）。トリミングは四隅・各辺のハンドルで範囲を決めて「トリミング適用」。ハンドで画像を移動できます。</p>
+          <p class="ie-hint">ドラッグで描画。矢印・直線・図形・テキスト・吹き出しはクリックで選択→ドラッグで移動、ハンドルで変形、Deleteで削除、テキスト・吹き出しはダブルクリックで文字を再編集できます。消しゴムは描いた注釈を消します（線はなぞって、図形などは触れると丸ごと。スクショ本体は残る）。トリミングは範囲を決めて「トリミング適用」。ハンドで画像を移動、ホイール（他ツールはCtrl+ホイール）でズームできます。</p>
           <div class="ie-actions">
             <button class="btn primary ie-save">保存</button>
             <button class="btn ie-cancel">キャンセル</button>
@@ -2862,6 +2862,14 @@
         if (Object.prototype.hasOwnProperty.call(toolOpacity, tool)) toolOpacity[tool] = v;
         const sel = selectedObj();
         if (sel) { sel.opacity = 1 - v / 100; recomposite(); } // 選択中オブジェクトへ即時反映
+      });
+      // 色の変更も選択中オブジェクトへ反映（連続 input を1回の undo にまとめる）
+      colorInput.addEventListener('input', () => {
+        const sel = selectedObj();
+        if (!sel) { colorGestureFor = null; return; }
+        if (colorGestureFor !== sel.id) { pushUndo(); colorGestureFor = sel.id; }
+        sel.color = colorInput.value;
+        recomposite();
       });
 
       // ---- 編集中だけの表示ズーム ----
@@ -3159,6 +3167,81 @@
         }
         if (o.type === 'callout') return [{ kind: 'tip', x: o.tip.x, y: o.tip.y }];
         return []; // text は移動のみ
+      }
+      // ---- オブジェクトのヒットテスト（クリック選択・消しゴム削除用） ----
+      function distSeg(p, x1, y1, x2, y2) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const len2 = dx * dx + dy * dy;
+        const t = len2 ? Math.max(0, Math.min(1, ((p.x - x1) * dx + (p.y - y1) * dy) / len2)) : 0;
+        return Math.hypot(p.x - (x1 + t * dx), p.y - (y1 + t * dy));
+      }
+      // pad: 判定を広げる追加量（消しゴムの半径など）
+      function objHit(o, p, pad) {
+        const tol = Math.max((o.size || 0) / 2 + 4, 8 * dispScale()) + (pad || 0);
+        if (o.type === 'arrow' || o.type === 'line') return distSeg(p, o.x1, o.y1, o.x2, o.y2) <= tol;
+        if (o.type === 'rect') {
+          // 枠線の近傍だけ当たり（塗り無しなので内側は素通しにして下の物を掴める）
+          const inOuter = p.x >= o.x - tol && p.x <= o.x + o.w + tol && p.y >= o.y - tol && p.y <= o.y + o.h + tol;
+          const inInner = p.x >= o.x + tol && p.x <= o.x + o.w - tol && p.y >= o.y + tol && p.y <= o.y + o.h - tol;
+          return inOuter && !inInner;
+        }
+        if (o.type === 'ellipse') {
+          const rx = o.w / 2, ry = o.h / 2;
+          if (rx < 1 || ry < 1) return false;
+          const nd = Math.hypot((p.x - (o.x + rx)) / rx, (p.y - (o.y + ry)) / ry); // 正規化距離
+          return Math.abs(nd - 1) * Math.min(rx, ry) <= tol;
+        }
+        // text / callout はバウンディングボックス（callout は尻尾先端も）
+        const b = objBounds(o);
+        if (p.x >= b.x - tol && p.x <= b.x + b.w + tol && p.y >= b.y - tol && p.y <= b.y + b.h + tol) return true;
+        if (o.type === 'callout') return Math.hypot(p.x - o.tip.x, p.y - o.tip.y) <= CALLOUT_HIT * dispScale();
+        return false;
+      }
+      // 最前面（配列の後ろ）から順に当たりを探す
+      function hitObject(p, pad) {
+        for (let i = objects.length - 1; i >= 0; i--) {
+          const o = objects[i];
+          if (!o.hidden && objHit(o, p, pad)) return o;
+        }
+        return null;
+      }
+      function hitObjHandle(o, p) {
+        const tol = 11 * dispScale();
+        for (const h of objHandles(o)) {
+          if (Math.abs(p.x - h.x) <= tol && Math.abs(p.y - h.y) <= tol) return h.kind;
+        }
+        return null;
+      }
+      // 選択オブジェクトのドラッグ（移動・端点・四隅・尻尾）を適用する。
+      // d.orig（ドラッグ開始時の複製）基準で差分を足すので累積誤差が出ない。
+      function applyObjDrag(d, p) {
+        const dx = p.x - d.sx, dy = p.y - d.sy;
+        const o = d.obj, s = d.orig;
+        if (d.mode === 'move') {
+          if (o.type === 'arrow' || o.type === 'line') { o.x1 = s.x1 + dx; o.y1 = s.y1 + dy; o.x2 = s.x2 + dx; o.y2 = s.y2 + dy; }
+          else { o.x = s.x + dx; o.y = s.y + dy; }
+          if (o.tip) { o.tip.x = s.tip.x + dx; o.tip.y = s.tip.y + dy; }
+        } else if (d.mode === 'p1') { o.x1 = s.x1 + dx; o.y1 = s.y1 + dy; }
+        else if (d.mode === 'p2') { o.x2 = s.x2 + dx; o.y2 = s.y2 + dy; }
+        else if (d.mode === 'tip') { o.tip.x = s.tip.x + dx; o.tip.y = s.tip.y + dy; }
+        else { // nw / ne / sw / se（rect・ellipse のリサイズ）
+          let x1 = s.x, y1 = s.y, x2 = s.x + s.w, y2 = s.y + s.h;
+          if (d.mode.includes('w')) x1 = Math.min(x2 - 4, x1 + dx);
+          if (d.mode.includes('e')) x2 = Math.max(x1 + 4, x2 + dx);
+          if (d.mode.includes('n')) y1 = Math.min(y2 - 4, y1 + dy);
+          if (d.mode.includes('s')) y2 = Math.max(y1 + 4, y2 + dy);
+          o.x = x1; o.y = y1; o.w = x2 - x1; o.h = y2 - y1;
+        }
+      }
+      // 消しゴムが触れたオブジェクトを丸ごと削除する（要件：元画像以外はすべて消せる）
+      function eraseObjectsAt(p) {
+        const radius = Math.max(4, Number(sizeInput.value) * 2) / 2;
+        const before = objects.length;
+        objects = objects.filter((o) => {
+          if (!o.hidden && objHit(o, p, radius)) { if (selectedId === o.id) selectedId = null; return false; }
+          return true;
+        });
+        return objects.length !== before;
       }
       // ── 吹き出し（クリック挿入・文字で自動リサイズ・尻尾を好きな向きへ）──────
       // calloutBox: 文字から本体（尻尾を除く）の寸法を測る。
@@ -3528,6 +3611,13 @@
         setLayerSize(rw, rh);
         baseCtx.drawImage(tb, 0, 0);
         annoCtx.drawImage(tak, 0, 0);
+        // オブジェクトは切り出し位置に合わせて平行移動する（範囲外に出たものも
+        // 消さずに残す＝描画時にクリップされるだけで、移動で戻せる）。
+        objects.forEach((o) => {
+          if (o.type === 'arrow' || o.type === 'line') { o.x1 -= rx; o.y1 -= ry; o.x2 -= rx; o.y2 -= ry; }
+          else { o.x -= rx; o.y -= ry; }
+          if (o.tip) { o.tip.x -= rx; o.tip.y -= ry; }
+        });
         cropMode = false; cropRect = null; cropDrag = null;
         if (cropActions) cropActions.hidden = true;
         selectTool('arrow');
@@ -3543,9 +3633,16 @@
       // ---- ポインタ操作 ----
       let drawing = false;
       let start = null;
+      let objDrag = null; // 選択オブジェクトのドラッグ {mode, obj, sx, sy, orig, moved}
+      let colorGestureFor = null; // 選択オブジェクトへの色変更を1操作でundoするための印
+      // オブジェクトを配置する系のツール＋ハンドでは、既存オブジェクトのクリックを
+      // 「選択・移動」として扱う（Excel と同じ感覚）。ペン・ハイライト・消しゴム・
+      // モザイク・トリミングは描く／消すが優先なので選択しない。
+      const OBJECT_TOOLS = ['hand', 'arrow', 'line', 'rect', 'ellipse', 'text', 'callout'];
 
       canvas.addEventListener('pointerdown', (e) => {
         e.preventDefault();
+        colorGestureFor = null;
         const p = xy(e);
         // 吹き出し編集中：先端付近を掴めば尻尾ドラッグ、それ以外を押したら確定して続行。
         if (activeCallout) {
@@ -3556,6 +3653,25 @@
             return;
           }
           commitCallout();
+        }
+        // 既存オブジェクトの選択・ドラッグ開始（ツール本来の動作より優先）
+        if (OBJECT_TOOLS.includes(tool)) {
+          const sel = selectedObj();
+          const hk = sel && hitObjHandle(sel, p);
+          if (hk) { // 選択中オブジェクトのハンドル（端点・四隅・尻尾）
+            objDrag = { mode: hk, obj: sel, sx: p.x, sy: p.y, orig: JSON.parse(JSON.stringify(sel)), moved: false };
+            canvas.setPointerCapture(e.pointerId);
+            return;
+          }
+          const hit = hitObject(p);
+          if (hit) {
+            selectedId = hit.id;
+            objDrag = { mode: 'move', obj: hit, sx: p.x, sy: p.y, orig: JSON.parse(JSON.stringify(hit)), moved: false };
+            canvas.setPointerCapture(e.pointerId);
+            recomposite();
+            return;
+          }
+          if (selectedId) { selectedId = null; recomposite(); } // 空白クリックで選択解除して通常動作へ
         }
         if (tool === 'hand') { startPan(e); return; }
         if (tool === 'crop') {
@@ -3582,6 +3698,7 @@
           annoCtx.lineCap = 'round'; annoCtx.lineJoin = 'round';
           annoCtx.beginPath(); annoCtx.moveTo(p.x, p.y);
           annoCtx.lineTo(p.x + 0.01, p.y + 0.01); annoCtx.stroke(); // 点クリックでも痕を残す
+          if (tool === 'eraser') eraseObjectsAt(p);
           recomposite();
         }
         canvas.setPointerCapture(e.pointerId);
@@ -3597,12 +3714,35 @@
           canvas.style.cursor = hov ? 'grab' : (tool === 'callout' ? 'crosshair' : '');
           return;
         }
+        // 選択オブジェクトのドラッグ（移動・変形）。undo は実際に動いた時だけ積む。
+        if (objDrag) {
+          const p = xy(e);
+          if (!objDrag.moved) {
+            if (Math.hypot(p.x - objDrag.sx, p.y - objDrag.sy) < 2 * dispScale()) return; // クリックの揺れは無視
+            pushUndo();
+            objDrag.moved = true;
+          }
+          applyObjDrag(objDrag, p);
+          recomposite();
+          return;
+        }
         if (tool === 'hand') { doPan(e); return; }
         if (tool === 'crop') { if (cropDrag) updateCrop(xy(e)); return; }
-        if (!drawing) return;
+        if (!drawing) {
+          // ホバー中のカーソル表示（ハンドル＝grab、本体＝move）。hand はパン用カーソル優先。
+          if (OBJECT_TOOLS.includes(tool) && tool !== 'hand') {
+            const p2 = xy(e);
+            const sel = selectedObj();
+            const hk = sel && hitObjHandle(sel, p2);
+            canvas.style.cursor = hk ? 'grab' : (hitObject(p2) ? 'move' : '');
+          }
+          return;
+        }
         const p = xy(e);
         if (tool === 'pen' || tool === 'marker' || tool === 'eraser') {
-          annoCtx.lineTo(p.x, p.y); annoCtx.stroke(); recomposite(); return;
+          annoCtx.lineTo(p.x, p.y); annoCtx.stroke();
+          if (tool === 'eraser') eraseObjectsAt(p); // 触れたオブジェクトは丸ごと消す
+          recomposite(); return;
         }
         // 図形はプレビューを表示 ctx に上描き（objects へは確定時のみ追加）。
         recomposite();
@@ -3629,6 +3769,7 @@
           }
           return;
         }
+        if (objDrag) { objDrag = null; recomposite(); return; }
         if (tool === 'hand') { endPan(); return; }
         if (tool === 'crop') { cropDrag = null; return; }
         if (!drawing) return;
@@ -3661,7 +3802,21 @@
       canvas.addEventListener('pointercancel', () => {
         if (activeCallout && activeCallout.dragTip) { activeCallout.dragTip = false; activeCallout.render(); return; }
         if (tool === 'pen' || tool === 'marker' || tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
-        drawing = false; cropDrag = null; endPan(); recomposite();
+        drawing = false; cropDrag = null; objDrag = null; endPan(); recomposite();
+      });
+      // ダブルクリックでテキスト・吹き出しを再編集（Excel と同じ操作感）
+      canvas.addEventListener('dblclick', (e) => {
+        if (activeCallout || cropMode) return;
+        if (!OBJECT_TOOLS.includes(tool)) return;
+        const p = xy(e);
+        const hit = hitObject(p);
+        if (hit && (hit.type === 'text' || hit.type === 'callout')) {
+          e.preventDefault();
+          selectedId = hit.id;
+          objDrag = null;
+          if (hit.type === 'text') beginText(p, hit);
+          else beginCallout(p, hit);
+        }
       });
 
       function close() {
@@ -3670,7 +3825,22 @@
         document.removeEventListener('keydown', onKey);
         overlay.remove();
       }
-      function onKey(ev) { if (ev.key === 'Escape') close(); }
+      function onKey(ev) {
+        // テキスト・吹き出しの入力欄は自前の keydown で stopPropagation するため
+        // ここへは届かない。他の入力要素上でも誤動作しないようガードする。
+        const t = ev.target;
+        const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+        if (ev.key === 'Escape') {
+          if (selectedId) { selectedId = null; recomposite(); return; } // まず選択解除、もう一度で閉じる
+          close();
+        } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedId && !inField) {
+          ev.preventDefault();
+          pushUndo();
+          objects = objects.filter((o) => o.id !== selectedId);
+          selectedId = null;
+          recomposite();
+        }
+      }
       document.addEventListener('keydown', onKey);
       overlay.querySelector('.ie-cancel').addEventListener('click', close);
       overlay.querySelector('.ie-save').addEventListener('click', () => {
