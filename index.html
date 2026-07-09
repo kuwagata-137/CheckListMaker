@@ -861,7 +861,7 @@
   .rb-body:empty::before { content: attr(data-placeholder); color: var(--muted); opacity: 0.7; }
   .rb-body p { margin: 0 0 6px; }
   .rb-body ul, .rb-body ol { margin: 4px 0 6px 1.4em; padding: 0; }
-  .rb-body table { border-collapse: collapse; margin: 6px 0; font-size: 0.9rem; }
+  .rb-body table { border-collapse: collapse; margin: 6px 0; font-size: 0.9rem; max-width: 100%; }
   .rb-body th, .rb-body td { border: 1px solid #c9ccd2; padding: 5px 9px; text-align: left; vertical-align: top; min-width: 48px; }
   .rb-body thead th { background: #eef4fb; font-weight: 700; }
   /* 行列コントロール（フローティング・近接時のみ表示） */
@@ -877,7 +877,7 @@
   .print-body { flex-basis: 100%; margin: 4px 0 2px 1.9em; font-size: 0.9rem; }
   .print-body p { margin: 0 0 5px; }
   .print-body ul, .print-body ol { margin: 3px 0 5px 1.3em; padding: 0; }
-  .print-body table { border-collapse: collapse; margin: 5px 0; font-size: 0.86rem; break-inside: avoid; }
+  .print-body table { border-collapse: collapse; margin: 5px 0; font-size: 0.86rem; break-inside: avoid; max-width: 100%; }
   .print-body th, .print-body td { border: 1px solid #555; padding: 4px 8px; text-align: left; vertical-align: top; }
   .print-body thead th { background: #e9eef5; font-weight: 700; }
 
@@ -1658,6 +1658,7 @@
     const RB_HL_COLORS = ['#fff3a3', '#cdeccd', '#cfe5fb', '#fad4d4', '#e7d8f5'];
     const RB_CELL_COLORS = ['#fef0c7', '#e3f3e0', '#dbeafe', '#fde2e2', '#ede9fe', '#eef1f4'];
 
+    const RB_SIZE_RE = /^\d+(\.\d+)?(px|%)$/; // 表リサイズの保存単位。pt を通さない（Excel 貼り付けのゴミ幅対策）
     function rbCleanStyle(srcEl, destEl) {
       [['color'], ['background-color']].forEach(([p]) => {
         const v = (srcEl.style.getPropertyValue(p) || '').trim();
@@ -1665,6 +1666,16 @@
       });
       const ta = (srcEl.style.getPropertyValue('text-align') || '').trim();
       if (ta && RB_ALIGN_RE.test(ta)) destEl.style.setProperty('text-align', ta);
+      // 表のドラッグリサイズで付く width/height/table-layout は表系要素に限って保持する
+      if (/^(TABLE|TR|TH|TD)$/.test(srcEl.tagName)) {
+        ['width', 'height'].forEach((p) => {
+          const v = (srcEl.style.getPropertyValue(p) || '').trim();
+          if (v && RB_SIZE_RE.test(v)) destEl.style.setProperty(p, v);
+        });
+        if (srcEl.tagName === 'TABLE' && (srcEl.style.getPropertyValue('table-layout') || '').trim() === 'fixed') {
+          destEl.style.setProperty('table-layout', 'fixed');
+        }
+      }
     }
     function rbWalk(src, destParent) {
       src.childNodes.forEach((node) => {
@@ -1853,6 +1864,64 @@
       rbHideTctl();
       rbCommitEditor(editor);
     }
+    // 表の列幅・行高ドラッグリサイズ（セル境界の ±5px でだけ有効）
+    const RB_RESIZE_EDGE = 5;
+    let rbResizeDrag = null;   // ドラッグ中 {kind, table, editor, target}
+    let rbCursorEd = null;     // リサイズカーソルを出している editor
+    // マウス位置がセル境界のリサイズゾーンなら対象を返す。列幅は見出し行のセルに、
+    // 行高は tr に設定する。先頭列の左端・先頭行の上端（＝表の外周）は対象外。
+    function rbResizeZone(e) {
+      const cell = e.target.closest && e.target.closest('.rb-body td, .rb-body th');
+      if (!cell) return null;
+      const table = cell.closest('table');
+      const editor = cell.closest('[data-rb-edit]');
+      if (!table || !editor) return null;
+      const r = cell.getBoundingClientRect();
+      const headRow = (table.tHead && table.tHead.rows[0]) || table.rows[0];
+      const col = (i) => (headRow && headRow.children[i]) ? { kind: 'col', table, editor, target: headRow.children[i] } : null;
+      if (r.right - e.clientX <= RB_RESIZE_EDGE) return col(cell.cellIndex);
+      if (e.clientX - r.left <= RB_RESIZE_EDGE && cell.cellIndex > 0) return col(cell.cellIndex - 1);
+      const tr = cell.closest('tr');
+      if (r.bottom - e.clientY <= RB_RESIZE_EDGE) return { kind: 'row', table, editor, target: tr };
+      if (e.clientY - r.top <= RB_RESIZE_EDGE) {
+        const rows = Array.from(table.rows);
+        const i = rows.indexOf(tr);
+        if (i > 0) return { kind: 'row', table, editor, target: rows[i - 1] };
+      }
+      return null;
+    }
+    function rbStartResize(zone, e) {
+      rbHideTctl();
+      // 初回の列リサイズで全列に px 幅を焼き付けて fixed レイアウト化し、
+      // 以後どの列を動かしても他列が勝手に伸縮しないようにする。
+      if (zone.kind === 'col' && zone.table.style.tableLayout !== 'fixed') {
+        const head = (zone.table.tHead && zone.table.tHead.rows[0]) || zone.table.rows[0];
+        Array.from(head.children).forEach((th) => { th.style.width = th.offsetWidth + 'px'; });
+        zone.table.style.width = zone.table.offsetWidth + 'px';
+        zone.table.style.tableLayout = 'fixed';
+      }
+      const startX = e.clientX, startY = e.clientY;
+      const startW = zone.target.offsetWidth, startH = zone.target.offsetHeight;
+      const startTW = zone.table.offsetWidth;
+      rbResizeDrag = zone;
+      const move = (ev) => {
+        if (zone.kind === 'col') {
+          const w = Math.max(24, startW + (ev.clientX - startX));
+          zone.target.style.width = w + 'px';
+          zone.table.style.width = (startTW + (w - startW)) + 'px';
+        } else {
+          zone.target.style.height = Math.max(20, startH + (ev.clientY - startY)) + 'px';
+        }
+      };
+      const up = () => {
+        document.removeEventListener('mousemove', move, true);
+        document.removeEventListener('mouseup', up, true);
+        rbResizeDrag = null;
+        rbCommitEditor(zone.editor);
+      };
+      document.addEventListener('mousemove', move, true);
+      document.addEventListener('mouseup', up, true);
+    }
     // 色パレット
     function rbClosePalette() { const p = document.getElementById('rb-palette'); if (p) p.remove(); }
     function rbOpenPalette(btn, colors, withNone, onPick) {
@@ -1896,6 +1965,11 @@
         const inPalette = e.target.closest && e.target.closest('.rb-palette');
         if (!cmdBtn && !inPalette) rbClosePalette();
         if (tctlBtn) { e.preventDefault(); rbHandleTctl(tctlBtn.dataset.rbTctl); return; }
+        // セル境界のリサイズ開始（preventDefault でキャレット移動・選択を抑止）
+        if (!rbResizeDrag && e.button === 0) {
+          const rz = rbResizeZone(e);
+          if (rz) { e.preventDefault(); rbStartResize(rz, e); return; }
+        }
         if (cmdBtn) {
           e.preventDefault(); // 選択・フォーカスを本文に残す
           const rb = cmdBtn.closest('.rb');
@@ -1928,12 +2002,17 @@
         if (to && to.closest && (to.closest('.rb-palette') || to.closest('#rb-tctl'))) return;
         rbCommitEditor(ed);
       });
-      // 表セルへの近接で行列コントロールを表示
+      // 表セルへの近接で行列コントロールを表示。境界付近ではリサイズカーソルに切替。
       document.addEventListener('mousemove', (e) => {
+        if (rbResizeDrag) return; // リサイズドラッグ中はコントロールを出さない
         if (rbTctlEl && e.target.closest && e.target.closest('#rb-tctl')) { clearTimeout(rbHideTimer); return; }
         const cell = e.target.closest && e.target.closest('.rb-body td, .rb-body th');
+        const ed = cell && cell.closest('[data-rb-edit]');
+        if (rbCursorEd && rbCursorEd !== ed) { rbCursorEd.style.cursor = ''; rbCursorEd = null; }
         if (cell) {
-          rbCtx = { editor: cell.closest('[data-rb-edit]'), table: cell.closest('table'), cell };
+          const zone = rbResizeZone(e);
+          if (ed) { ed.style.cursor = zone ? (zone.kind === 'col' ? 'col-resize' : 'row-resize') : ''; rbCursorEd = ed; }
+          rbCtx = { editor: ed, table: cell.closest('table'), cell };
           clearTimeout(rbHideTimer); rbPositionTctl(e);
         } else {
           clearTimeout(rbHideTimer); rbHideTimer = setTimeout(rbHideTctl, 160);
