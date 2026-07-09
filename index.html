@@ -612,6 +612,9 @@
     text-align: left;
   }
   .ie-crop-actions { display: inline-flex; gap: 6px; }
+  /* display 指定が UA の [hidden]{display:none} を上書きしてしまうため明示する。
+     これが無いとトリミング適用/取消ボタンが常時表示になる。 */
+  .ie-crop-actions[hidden] { display: none; }
   .ie-crop-actions .btn { padding: 6px 10px; }
   .ie-actions { display: flex; gap: 8px; margin-top: 12px; }
   .ie-hint { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
