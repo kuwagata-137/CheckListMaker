@@ -554,6 +554,9 @@
   .ie-tool.active { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
   .ie-color input { width: 34px; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: none; cursor: pointer; }
   .ie-size input { vertical-align: middle; }
+  .ie-opacity { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+  .ie-opacity input[type="range"] { width: 90px; vertical-align: middle; }
+  .ie-opacity .ie-opacity-val { min-width: 3em; }
   .ie-canvas-wrap {
     /* ウインドウ固定のもと、ここが残り高さを埋めて内部スクロールする。
        100% では画像全体がちょうど収まり（fitScale）、スクロール不要。 */
@@ -612,6 +615,9 @@
     text-align: left;
   }
   .ie-crop-actions { display: inline-flex; gap: 6px; }
+  /* display 指定が UA の [hidden]{display:none} を上書きしてしまうため明示する。
+     これが無いとトリミング適用/取消ボタンが常時表示になる。 */
+  .ie-crop-actions[hidden] { display: none; }
   .ie-crop-actions .btn { padding: 6px 10px; }
   .ie-actions { display: flex; gap: 8px; margin-top: 12px; }
   .ie-hint { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
@@ -861,7 +867,7 @@
   .rb-body:empty::before { content: attr(data-placeholder); color: var(--muted); opacity: 0.7; }
   .rb-body p { margin: 0 0 6px; }
   .rb-body ul, .rb-body ol { margin: 4px 0 6px 1.4em; padding: 0; }
-  .rb-body table { border-collapse: collapse; margin: 6px 0; font-size: 0.9rem; }
+  .rb-body table { border-collapse: collapse; margin: 6px 0; font-size: 0.9rem; max-width: 100%; }
   .rb-body th, .rb-body td { border: 1px solid #c9ccd2; padding: 5px 9px; text-align: left; vertical-align: top; min-width: 48px; }
   .rb-body thead th { background: #eef4fb; font-weight: 700; }
   /* 行列コントロール（フローティング・近接時のみ表示） */
@@ -877,7 +883,7 @@
   .print-body { flex-basis: 100%; margin: 4px 0 2px 1.9em; font-size: 0.9rem; }
   .print-body p { margin: 0 0 5px; }
   .print-body ul, .print-body ol { margin: 3px 0 5px 1.3em; padding: 0; }
-  .print-body table { border-collapse: collapse; margin: 5px 0; font-size: 0.86rem; break-inside: avoid; }
+  .print-body table { border-collapse: collapse; margin: 5px 0; font-size: 0.86rem; break-inside: avoid; max-width: 100%; }
   .print-body th, .print-body td { border: 1px solid #555; padding: 4px 8px; text-align: left; vertical-align: top; }
   .print-body thead th { background: #e9eef5; font-weight: 700; }
 
@@ -1068,26 +1074,45 @@
     }
     // ---- 画像（スクリーンショット注釈）操作 ----
     // 画像は圧縮済み JPEG の dataURL 文字列として item.images に配列で持つ。
+    // item.imageEdits は images と index を揃えた並行配列で、画像エディタの
+    // 編集ソース（{v:1, base, strokes, objects}）を保持する。null は「編集
+    // データ無し（未編集 or 旧形式の焼き込み済み画像）」。images[index] は
+    // 常に合成済み JPEG のままなので、サムネイル・印刷・Word 出力・共有は
+    // imageEdits を知らなくてよい。
     function itemImages(item) {
       if (!Array.isArray(item.images)) item.images = [];
       return item.images;
     }
+    // imageEdits を images と同じ長さに正規化して返す
+    function itemImageEdits(item) {
+      const n = itemImages(item).length;
+      if (!Array.isArray(item.imageEdits)) item.imageEdits = [];
+      while (item.imageEdits.length < n) item.imageEdits.push(null);
+      if (item.imageEdits.length > n) item.imageEdits.length = n;
+      return item.imageEdits;
+    }
     function addItemImage(checklist, sectionId, itemId, dataUrl) {
       const s = findSection(checklist, sectionId);
       const i = s && s.items.find((x) => x.id === itemId);
-      if (i) itemImages(i).push(dataUrl);
+      if (i) { itemImages(i).push(dataUrl); itemImageEdits(i); }
       return touch(checklist);
     }
-    function replaceItemImage(checklist, sectionId, itemId, index, dataUrl) {
+    function replaceItemImage(checklist, sectionId, itemId, index, dataUrl, edit) {
       const s = findSection(checklist, sectionId);
       const i = s && s.items.find((x) => x.id === itemId);
-      if (i && itemImages(i)[index] !== undefined) i.images[index] = dataUrl;
+      if (i && itemImages(i)[index] !== undefined) {
+        i.images[index] = dataUrl;
+        itemImageEdits(i)[index] = edit || null;
+      }
       return touch(checklist);
     }
     function removeItemImage(checklist, sectionId, itemId, index) {
       const s = findSection(checklist, sectionId);
       const i = s && s.items.find((x) => x.id === itemId);
-      if (i && Array.isArray(i.images)) i.images.splice(index, 1);
+      if (i && Array.isArray(i.images)) {
+        itemImageEdits(i).splice(index, 1); // 先に長さを揃えてから同じ index を消す
+        i.images.splice(index, 1);
+      }
       return touch(checklist);
     }
     // 所要時間(分)の合計。数値解釈できない time は 0 とみなす
@@ -1396,6 +1421,7 @@
             hadImages = true;
             it.images = [];
           }
+          delete it.imageEdits; // 編集ソース（元画像・注釈）も画像同様に巨大なので除外
         })
       );
       const payload = utf8ToBase64(JSON.stringify(stripped));
@@ -1658,6 +1684,7 @@
     const RB_HL_COLORS = ['#fff3a3', '#cdeccd', '#cfe5fb', '#fad4d4', '#e7d8f5'];
     const RB_CELL_COLORS = ['#fef0c7', '#e3f3e0', '#dbeafe', '#fde2e2', '#ede9fe', '#eef1f4'];
 
+    const RB_SIZE_RE = /^\d+(\.\d+)?(px|%)$/; // 表リサイズの保存単位。pt を通さない（Excel 貼り付けのゴミ幅対策）
     function rbCleanStyle(srcEl, destEl) {
       [['color'], ['background-color']].forEach(([p]) => {
         const v = (srcEl.style.getPropertyValue(p) || '').trim();
@@ -1665,6 +1692,16 @@
       });
       const ta = (srcEl.style.getPropertyValue('text-align') || '').trim();
       if (ta && RB_ALIGN_RE.test(ta)) destEl.style.setProperty('text-align', ta);
+      // 表のドラッグリサイズで付く width/height/table-layout は表系要素に限って保持する
+      if (/^(TABLE|TR|TH|TD)$/.test(srcEl.tagName)) {
+        ['width', 'height'].forEach((p) => {
+          const v = (srcEl.style.getPropertyValue(p) || '').trim();
+          if (v && RB_SIZE_RE.test(v)) destEl.style.setProperty(p, v);
+        });
+        if (srcEl.tagName === 'TABLE' && (srcEl.style.getPropertyValue('table-layout') || '').trim() === 'fixed') {
+          destEl.style.setProperty('table-layout', 'fixed');
+        }
+      }
     }
     function rbWalk(src, destParent) {
       src.childNodes.forEach((node) => {
@@ -1769,18 +1806,21 @@
       rbCommitEditor(editor);
     }
     // 表構造操作
-    function rbAddColumn(table) {
+    // idx の位置に列を挿入（idx が列数以上なら末尾に追加）
+    function rbAddColumnAt(table, idx) {
       table.querySelectorAll('tr').forEach((r) => {
         const head = r.parentElement && r.parentElement.tagName === 'THEAD';
-        const c = document.createElement(head ? 'th' : 'td'); c.innerHTML = '<br>'; r.appendChild(c);
+        const c = document.createElement(head ? 'th' : 'td'); c.innerHTML = '<br>';
+        r.insertBefore(c, r.children[idx] || null);
       });
     }
-    function rbAddRow(table) {
+    // beforeTr の直前に行を挿入（null なら末尾に追加）。thead には入れない。
+    function rbAddRowAt(table, beforeTr) {
       const cols = table.rows[0] ? table.rows[0].children.length : 1;
       const tbody = table.tBodies[0] || table.createTBody();
       const tr = document.createElement('tr');
       for (let i = 0; i < cols; i++) { const td = document.createElement('td'); td.innerHTML = '<br>'; tr.appendChild(td); }
-      tbody.appendChild(tr);
+      tbody.insertBefore(tr, beforeTr && beforeTr.parentElement === tbody ? beforeTr : null);
     }
     function rbDelColumn(table, idx) {
       table.querySelectorAll('tr').forEach((r) => { if (r.children.length > 1 && r.children[idx]) r.children[idx].remove(); });
@@ -1791,42 +1831,122 @@
     let rbTctlEl = null;
     let rbCtx = null;
     let rbHideTimer = null;
+    const RB_TCTL_NEAR = 36; // ボタンのアンカーとカーソルの距離がこの px 以内のときだけ表示
     function rbEnsureTctl() {
       if (rbTctlEl) return;
       rbTctlEl = document.createElement('div');
       rbTctlEl.id = 'rb-tctl';
       rbTctlEl.hidden = true;
       rbTctlEl.innerHTML =
-        '<button type="button" class="rb-tctl rb-tctl-add" data-rb-tctl="add-col" title="列を追加（右端）">＋</button>' +
-        '<button type="button" class="rb-tctl rb-tctl-add" data-rb-tctl="add-row" title="行を追加（下端）">＋</button>' +
+        '<button type="button" class="rb-tctl rb-tctl-add" data-rb-tctl="ins-col" title="ここに列を挿入">＋</button>' +
+        '<button type="button" class="rb-tctl rb-tctl-add" data-rb-tctl="ins-row" title="ここに行を挿入">＋</button>' +
         '<button type="button" class="rb-tctl rb-tctl-del" data-rb-tctl="del-col" title="この列を削除">−</button>' +
         '<button type="button" class="rb-tctl rb-tctl-del" data-rb-tctl="del-row" title="この行を削除">−</button>';
       document.body.appendChild(rbTctlEl);
     }
     function rbHideTctl() { if (rbTctlEl) rbTctlEl.hidden = true; rbCtx = null; }
-    function rbPositionTctl() {
+    // カーソルに近い境界へ挿入ボタン、ホバー中の行・列へ削除ボタンを配置し、
+    // それぞれ「本来出る位置」から RB_TCTL_NEAR px 以内にカーソルがあるものだけ表示する。
+    function rbPositionTctl(e) {
       rbEnsureTctl();
       const t = rbCtx.table.getBoundingClientRect();
       const c = rbCtx.cell.getBoundingClientRect();
+      const cell = rbCtx.cell;
+      const tr = cell.closest('tr');
+      // 列挿入: セルの左右どちらか近い方の境界（最終境界＝末尾追加）
+      const colRight = e.clientX > c.left + c.width / 2;
+      rbCtx.insColIdx = cell.cellIndex + (colRight ? 1 : 0);
+      const insColX = colRight ? c.right : c.left;
+      // 行挿入: 行の上下どちらか近い方の境界。ただし見出し行の上には出さない。
+      const inHead = tr.parentElement && tr.parentElement.tagName === 'THEAD';
+      const rowBottom = inHead || e.clientY > c.top + c.height / 2;
+      const insRowY = rowBottom ? c.bottom : c.top;
+      const bodyRows = Array.from(rbCtx.table.tBodies[0] ? rbCtx.table.tBodies[0].rows : []);
+      if (inHead) rbCtx.insRowRef = bodyRows[0] || null;                 // 見出しの下＝先頭行の前
+      else rbCtx.insRowRef = rowBottom ? tr.nextElementSibling : tr;     // 境界の直後の行の前（null＝末尾）
       const b = rbTctlEl.children;
-      const place = (el, x, y) => { el.style.left = (x - 10) + 'px'; el.style.top = (y - 10) + 'px'; };
-      place(b[0], t.right, t.top);            // 列追加＝右上角
-      place(b[1], t.left, t.bottom);          // 行追加＝左下角
-      place(b[2], c.left + c.width / 2, t.top); // 列削除＝列の中央・上
-      place(b[3], t.left, c.top + c.height / 2); // 行削除＝行の中央・左
-      rbTctlEl.hidden = false;
+      const place = (el, x, y) => {
+        const show = Math.hypot(e.clientX - x, e.clientY - y) <= RB_TCTL_NEAR;
+        el.style.display = show ? '' : 'none';
+        if (show) { el.style.left = (x - 10) + 'px'; el.style.top = (y - 10) + 'px'; }
+        return show;
+      };
+      let any = false;
+      any = place(b[0], insColX, t.top) || any;                    // 列挿入＝境界の上端
+      any = place(b[1], t.left, insRowY) || any;                   // 行挿入＝境界の左端
+      any = place(b[2], c.left + c.width / 2, t.top - 22) || any;  // 列削除＝列中央・表の少し上
+      any = place(b[3], t.left - 22, c.top + c.height / 2) || any; // 行削除＝行中央・表の少し左
+      rbTctlEl.hidden = !any;
     }
     function rbHandleTctl(action) {
       if (!rbCtx) return;
       const { editor, table, cell } = rbCtx;
       if (!editor || !table || !editor.contains(table)) return;
-      if (action === 'add-col') rbAddColumn(table);
-      else if (action === 'add-row') rbAddRow(table);
+      if (action === 'ins-col') rbAddColumnAt(table, rbCtx.insColIdx);
+      else if (action === 'ins-row') rbAddRowAt(table, rbCtx.insRowRef);
       else if (action === 'del-col') rbDelColumn(table, cell.cellIndex);
       else if (action === 'del-row') rbDelRow(table, cell.closest('tr'));
       rbNormalizeTable(table);
       rbHideTctl();
       rbCommitEditor(editor);
+    }
+    // 表の列幅・行高ドラッグリサイズ（セル境界の ±5px でだけ有効）
+    const RB_RESIZE_EDGE = 5;
+    let rbResizeDrag = null;   // ドラッグ中 {kind, table, editor, target}
+    let rbCursorEd = null;     // リサイズカーソルを出している editor
+    // マウス位置がセル境界のリサイズゾーンなら対象を返す。列幅は見出し行のセルに、
+    // 行高は tr に設定する。先頭列の左端・先頭行の上端（＝表の外周）は対象外。
+    function rbResizeZone(e) {
+      const cell = e.target.closest && e.target.closest('.rb-body td, .rb-body th');
+      if (!cell) return null;
+      const table = cell.closest('table');
+      const editor = cell.closest('[data-rb-edit]');
+      if (!table || !editor) return null;
+      const r = cell.getBoundingClientRect();
+      const headRow = (table.tHead && table.tHead.rows[0]) || table.rows[0];
+      const col = (i) => (headRow && headRow.children[i]) ? { kind: 'col', table, editor, target: headRow.children[i] } : null;
+      if (r.right - e.clientX <= RB_RESIZE_EDGE) return col(cell.cellIndex);
+      if (e.clientX - r.left <= RB_RESIZE_EDGE && cell.cellIndex > 0) return col(cell.cellIndex - 1);
+      const tr = cell.closest('tr');
+      if (r.bottom - e.clientY <= RB_RESIZE_EDGE) return { kind: 'row', table, editor, target: tr };
+      if (e.clientY - r.top <= RB_RESIZE_EDGE) {
+        const rows = Array.from(table.rows);
+        const i = rows.indexOf(tr);
+        if (i > 0) return { kind: 'row', table, editor, target: rows[i - 1] };
+      }
+      return null;
+    }
+    function rbStartResize(zone, e) {
+      rbHideTctl();
+      // 初回の列リサイズで全列に px 幅を焼き付けて fixed レイアウト化し、
+      // 以後どの列を動かしても他列が勝手に伸縮しないようにする。
+      if (zone.kind === 'col' && zone.table.style.tableLayout !== 'fixed') {
+        const head = (zone.table.tHead && zone.table.tHead.rows[0]) || zone.table.rows[0];
+        Array.from(head.children).forEach((th) => { th.style.width = th.offsetWidth + 'px'; });
+        zone.table.style.width = zone.table.offsetWidth + 'px';
+        zone.table.style.tableLayout = 'fixed';
+      }
+      const startX = e.clientX, startY = e.clientY;
+      const startW = zone.target.offsetWidth, startH = zone.target.offsetHeight;
+      const startTW = zone.table.offsetWidth;
+      rbResizeDrag = zone;
+      const move = (ev) => {
+        if (zone.kind === 'col') {
+          const w = Math.max(24, startW + (ev.clientX - startX));
+          zone.target.style.width = w + 'px';
+          zone.table.style.width = (startTW + (w - startW)) + 'px';
+        } else {
+          zone.target.style.height = Math.max(20, startH + (ev.clientY - startY)) + 'px';
+        }
+      };
+      const up = () => {
+        document.removeEventListener('mousemove', move, true);
+        document.removeEventListener('mouseup', up, true);
+        rbResizeDrag = null;
+        rbCommitEditor(zone.editor);
+      };
+      document.addEventListener('mousemove', move, true);
+      document.addEventListener('mouseup', up, true);
     }
     // 色パレット
     function rbClosePalette() { const p = document.getElementById('rb-palette'); if (p) p.remove(); }
@@ -1871,6 +1991,11 @@
         const inPalette = e.target.closest && e.target.closest('.rb-palette');
         if (!cmdBtn && !inPalette) rbClosePalette();
         if (tctlBtn) { e.preventDefault(); rbHandleTctl(tctlBtn.dataset.rbTctl); return; }
+        // セル境界のリサイズ開始（preventDefault でキャレット移動・選択を抑止）
+        if (!rbResizeDrag && e.button === 0) {
+          const rz = rbResizeZone(e);
+          if (rz) { e.preventDefault(); rbStartResize(rz, e); return; }
+        }
         if (cmdBtn) {
           e.preventDefault(); // 選択・フォーカスを本文に残す
           const rb = cmdBtn.closest('.rb');
@@ -1903,13 +2028,18 @@
         if (to && to.closest && (to.closest('.rb-palette') || to.closest('#rb-tctl'))) return;
         rbCommitEditor(ed);
       });
-      // 表セルへの近接で行列コントロールを表示
+      // 表セルへの近接で行列コントロールを表示。境界付近ではリサイズカーソルに切替。
       document.addEventListener('mousemove', (e) => {
+        if (rbResizeDrag) return; // リサイズドラッグ中はコントロールを出さない
         if (rbTctlEl && e.target.closest && e.target.closest('#rb-tctl')) { clearTimeout(rbHideTimer); return; }
         const cell = e.target.closest && e.target.closest('.rb-body td, .rb-body th');
+        const ed = cell && cell.closest('[data-rb-edit]');
+        if (rbCursorEd && rbCursorEd !== ed) { rbCursorEd.style.cursor = ''; rbCursorEd = null; }
         if (cell) {
-          rbCtx = { editor: cell.closest('[data-rb-edit]'), table: cell.closest('table'), cell };
-          clearTimeout(rbHideTimer); rbPositionTctl();
+          const zone = rbResizeZone(e);
+          if (ed) { ed.style.cursor = zone ? (zone.kind === 'col' ? 'col-resize' : 'row-resize') : ''; rbCursorEd = ed; }
+          rbCtx = { editor: ed, table: cell.closest('table'), cell };
+          clearTimeout(rbHideTimer); rbPositionTctl(e);
         } else {
           clearTimeout(rbHideTimer); rbHideTimer = setTimeout(rbHideTctl, 160);
         }
@@ -2669,6 +2799,12 @@
       const item = findItemLive(c.id, sectionId, itemId);
       if (!item || !Array.isArray(item.images) || item.images[index] === undefined) return;
       const srcUrl = item.images[index];
+      // 分離保存された編集ソース（v1）。あれば元画像＋手描き線＋オブジェクトを
+      // 復元して「保存後も消せる・再編集できる」を実現する。無ければ旧形式
+      // （焼き込み済み JPEG）としてそのまま base に読む。
+      const savedEdit = Array.isArray(item.imageEdits) ? item.imageEdits[index] : null;
+      const isV1 = !!(savedEdit && savedEdit.v === 1);
+      const baseSrc = (isV1 && savedEdit.base) ? savedEdit.base : srcUrl;
 
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
@@ -2678,6 +2814,7 @@
             <div class="ie-tools">
               <button class="ie-tool" data-tool="hand" title="ハンド（画像を移動）">✋</button>
               <button class="ie-tool" data-tool="arrow" title="矢印">↗</button>
+              <button class="ie-tool" data-tool="line" title="直線（Shiftで45°刻み）">╱</button>
               <button class="ie-tool" data-tool="rect" title="四角">▢</button>
               <button class="ie-tool" data-tool="ellipse" title="丸">◯</button>
               <button class="ie-tool" data-tool="callout" title="吹き出し（コメント）">💬</button>
@@ -2694,6 +2831,7 @@
             </span>
             <label class="ie-color" title="色"><input type="color" value="#ff3b30" /></label>
             <label class="ie-size" title="線の太さ"><input type="range" min="1" max="40" value="6" /></label>
+            <label class="ie-opacity" title="透過率（0%=不透明）">透過<input type="range" min="0" max="90" step="10" value="0" /><span class="ie-opacity-val">0%</span></label>
             <span class="ie-zoom" title="編集中の表示倍率（拡大縮小しても保存される画像の仕上がりは変わりません）">
               🔍
               <input type="range" class="ie-zoom-range" min="10" max="400" step="5" value="100" aria-label="表示倍率" />
@@ -2703,7 +2841,7 @@
             <button class="btn ie-undo" title="元に戻す">↶ 元に戻す</button>
           </div>
           <div class="ie-canvas-wrap"><canvas class="ie-canvas"></canvas></div>
-          <p class="ie-hint">ドラッグで描画。テキストはクリック位置に入力（Enterで確定）。吹き出しはクリックで挿入（既定文「ここをクリック」）→文字数で自動リサイズ、尻尾の先に近づくと出るハンドルで向きを変えられます。消しゴムは描いた注釈だけを消します（スクショは残る）。トリミングは四隅・各辺のハンドルで範囲を決めて「トリミング適用」。ハンドで画像を移動できます。</p>
+          <p class="ie-hint">ドラッグで描画。矢印・直線・図形・テキスト・吹き出しはクリックで選択→ドラッグで移動、ハンドルで変形、Deleteで削除、テキスト・吹き出しはダブルクリックで文字を再編集できます。消しゴムは描いた注釈を消します（線はなぞって、図形などは触れると丸ごと。スクショ本体は残る）。トリミングは範囲を決めて「トリミング適用」。ハンドで画像を移動、ホイール（他ツールはCtrl+ホイール）でズームできます。</p>
           <div class="ie-actions">
             <button class="btn primary ie-save">保存</button>
             <button class="btn ie-cancel">キャンセル</button>
@@ -2719,6 +2857,47 @@
       const toolBtns = overlay.querySelectorAll('.ie-tool');
       let tool = 'arrow';
       const undoStack = [];
+
+      // ---- ベクター注釈オブジェクト ----
+      // 矢印・直線・四角・丸・テキスト・吹き出しはラスタライズせずオブジェクトとして
+      // 保持し、後から選択・移動・再編集・削除できる（Excel の図形と同じ考え方）。
+      // ペン・ハイライトの手描き線だけが annoCanvas（ラスター層）に載る。
+      let objects = isV1 ? JSON.parse(JSON.stringify(savedEdit.objects || [])) : [];
+      let objSeq = 1;
+      const newObjId = () => 'o' + Date.now().toString(36) + '-' + (objSeq++);
+      objects.forEach((o) => { delete o.hidden; if (!o.id) o.id = newObjId(); }); // 保存データの保険
+      let selectedId = null; // 選択中オブジェクト（クリックで選択、Delete で削除）
+      const selectedObj = () => objects.find((o) => o.id === selectedId) || null;
+
+      // ---- ツール別の透過率（%）。スライダーはツール切替でそのツールの値に同期 ----
+      const toolOpacity = { pen: 0, marker: 60, arrow: 0, line: 0, rect: 0, ellipse: 0, text: 0, callout: 0 };
+      const opacityWrap = overlay.querySelector('.ie-opacity');
+      const opacityInput = overlay.querySelector('.ie-opacity input');
+      const opacityVal = overlay.querySelector('.ie-opacity-val');
+      const toolAlpha = (t) => 1 - (toolOpacity[t] || 0) / 100;
+      function syncOpacityUI() {
+        const has = Object.prototype.hasOwnProperty.call(toolOpacity, tool);
+        opacityWrap.style.visibility = has ? '' : 'hidden';
+        if (has) { opacityInput.value = toolOpacity[tool]; opacityVal.textContent = toolOpacity[tool] + '%'; }
+      }
+      // 選択オブジェクトへの透過率変更を1操作として undo できるよう、つまみを
+      // 掴んだ時点でスナップショットを取る。
+      opacityInput.addEventListener('pointerdown', () => { if (selectedObj()) pushUndo(); });
+      opacityInput.addEventListener('input', () => {
+        const v = Math.max(0, Math.min(90, Math.round(Number(opacityInput.value) || 0)));
+        opacityVal.textContent = v + '%';
+        if (Object.prototype.hasOwnProperty.call(toolOpacity, tool)) toolOpacity[tool] = v;
+        const sel = selectedObj();
+        if (sel) { sel.opacity = 1 - v / 100; recomposite(); } // 選択中オブジェクトへ即時反映
+      });
+      // 色の変更も選択中オブジェクトへ反映（連続 input を1回の undo にまとめる）
+      colorInput.addEventListener('input', () => {
+        const sel = selectedObj();
+        if (!sel) { colorGestureFor = null; return; }
+        if (colorGestureFor !== sel.id) { pushUndo(); colorGestureFor = sel.id; }
+        sel.color = colorInput.value;
+        recomposite();
+      });
 
       // ---- 編集中だけの表示ズーム ----
       // canvas のピクセル数（＝保存される実体）は一切変えず、CSS の表示サイズだけを
@@ -2759,6 +2938,23 @@
       // ウインドウのリサイズでフィット基準が変わるため、開いている間は追従させる。
       const onResize = () => applyZoom();
       window.addEventListener('resize', onResize);
+      // ホイールズーム: ハンドツール中は素のホイールで、他ツールでは Ctrl+ホイールで
+      // ズームする（素のホイールは通常スクロールのまま）。トラックパッドのピンチは
+      // ctrlKey 付き wheel として届くため、どのツールでもピンチズームが効く。
+      canvasWrap.addEventListener('wheel', (e) => {
+        if (!(tool === 'hand' || e.ctrlKey)) return; // それ以外は既定のスクロール
+        e.preventDefault();
+        // カーソル直下の canvas 座標を保持したままズームする（カーソル中心ズーム）
+        const r = canvas.getBoundingClientRect();
+        const px = (e.clientX - r.left) * (canvas.width / r.width);
+        const py = (e.clientY - r.top) * (canvas.height / r.height);
+        setZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+        // setZoom がクランプ・丸めするため、適用後の実スケールから再アンカーする
+        const wrapR = canvasWrap.getBoundingClientRect();
+        const scale = canvas.offsetWidth / canvas.width;
+        canvasWrap.scrollLeft = canvas.offsetLeft + px * scale - (e.clientX - wrapR.left);
+        canvasWrap.scrollTop = canvas.offsetTop + py * scale - (e.clientY - wrapR.top);
+      }, { passive: false });
 
       // ---- 2レイヤー構成（非破壊の注釈） ----
       // base = スクショ本体（モザイク・トリミングはこちらに適用）。
@@ -2773,13 +2969,16 @@
         baseCanvas.width = w; baseCanvas.height = h;
         annoCanvas.width = w; annoCanvas.height = h;
       }
-      // 表示 canvas に base→anno を重ね描き。crop 中は選択オーバーレイも重ねる。
+      // 表示 canvas に base→anno（手描き線）→オブジェクトを重ね描き。
+      // 選択枠・crop 中の選択オーバーレイはさらにその上。
       function recomposite() {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.globalAlpha = 1;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(baseCanvas, 0, 0);
         ctx.drawImage(annoCanvas, 0, 0);
+        drawObjects(ctx);
+        drawSelection();
         if (cropMode && cropRect) drawCropOverlay();
       }
       // 表示 px / canvas px の比率（ハンドルや点線を画面上一定サイズに保つのに使う）。
@@ -2789,10 +2988,13 @@
         commitCallout(); // 別ツールへ移るときは編集中の吹き出しを確定
         if (t !== 'crop') exitCropMode(); // crop 以外へ移ると選択枠を破棄
         tool = t;
+        selectedId = null; // ツール切替で選択解除
         toolBtns.forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
         canvas.classList.toggle('tool-hand', t === 'hand');
         canvas.classList.toggle('tool-crop', t === 'crop');
+        syncOpacityUI();
         if (t === 'crop') enterCropMode();
+        recomposite();
       }
       toolBtns.forEach((b) => b.addEventListener('click', () => selectTool(b.dataset.tool)));
 
@@ -2800,24 +3002,34 @@
       baseImg.onload = () => {
         setLayerSize(baseImg.naturalWidth, baseImg.naturalHeight);
         baseCtx.drawImage(baseImg, 0, 0);
+        // 分離保存された手描き線（ペン・ハイライト）のラスター層を復元
+        if (isV1 && savedEdit.strokes) {
+          const si = new Image();
+          si.onload = () => { annoCtx.drawImage(si, 0, 0); recomposite(); };
+          si.onerror = () => recomposite();
+          si.src = savedEdit.strokes;
+        }
         recomposite();
         // 枠のレイアウト確定後にフィット（=100%=全体表示）。以後ユーザーが自由に拡大可。
         requestAnimationFrame(fitZoom);
       };
-      baseImg.src = srcUrl;
+      baseImg.src = baseSrc;
 
-      // ---- Undo（base+anno を両方スナップショット） ----
+      // ---- Undo（base+anno のスナップショット＋オブジェクト一覧の複製） ----
       function pushUndo() {
         try {
           undoStack.push({
             w: canvas.width, h: canvas.height,
             base: baseCanvas.toDataURL('image/png'),
             anno: annoCanvas.toDataURL('image/png'),
+            objects: JSON.parse(JSON.stringify(objects)),
           });
         } catch (_) {}
         if (undoStack.length > 20) undoStack.shift();
       }
       function restore(snap) {
+        objects = JSON.parse(JSON.stringify(snap.objects || []));
+        selectedId = null;
         let pending = 2;
         const done = () => { if (--pending === 0) { applyZoom(); recomposite(); } };
         setLayerSize(snap.w, snap.h);
@@ -2851,12 +3063,21 @@
         g.lineJoin = 'round';
         g.globalAlpha = alpha;
       }
+      // オブジェクト共通のスタイル設定（色・太さ・透過率はオブジェクト自身が持つ）。
+      function setupObjStroke(g, o) {
+        g.strokeStyle = o.color;
+        g.fillStyle = o.color;
+        g.lineWidth = o.size;
+        g.lineCap = 'round';
+        g.lineJoin = 'round';
+        g.globalAlpha = o.opacity;
+      }
       // 矢印：三角を大きめにし、線は矢先まで引かず三角の底辺で止める（太線の丸端が
       // 矢先からはみ出さない）。三角の頂点は (x2,y2)。
-      function drawArrow(g, x1, y1, x2, y2) {
-        const w = Number(sizeInput.value);
+      function drawArrowObj(g, o) {
+        const { x1, y1, x2, y2 } = o;
         const ang = Math.atan2(y2 - y1, x2 - x1);
-        const head = Math.max(18, w * 4);
+        const head = Math.max(18, o.size * 4);
         // 線の終点は三角の「底辺」まで伸ばして三角と密着させる。底辺の2角は頂点から
         // 距離 head・角度 ±π/7 にあり、その軸方向への投影＝ head*cos(π/7) が底辺の位置。
         // head をそのまま使うと底辺より奥で線が止まり隙間になるため、cos(π/7) を掛ける。
@@ -2864,7 +3085,7 @@
         const bx = x2 - backset * Math.cos(ang); // 三角の底辺中央（＝線の終点）
         const by = y2 - backset * Math.sin(ang);
         g.save();
-        setupStroke(g, 1);
+        setupObjStroke(g, o);
         g.lineCap = 'butt';
         g.beginPath(); g.moveTo(x1, y1); g.lineTo(bx, by); g.stroke();
         g.beginPath();
@@ -2874,16 +3095,187 @@
         g.closePath(); g.fill();
         g.restore();
       }
-      function drawRect(g, a, b) {
-        g.save(); setupStroke(g, 1);
-        g.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+      function drawLineObj(g, o) {
+        g.save(); setupObjStroke(g, o);
+        g.beginPath(); g.moveTo(o.x1, o.y1); g.lineTo(o.x2, o.y2); g.stroke();
         g.restore();
       }
-      function drawEllipse(g, a, b) {
-        g.save(); setupStroke(g, 1);
+      function drawRectObj(g, o) {
+        g.save(); setupObjStroke(g, o);
+        g.strokeRect(o.x, o.y, o.w, o.h);
+        g.restore();
+      }
+      function drawEllipseObj(g, o) {
+        g.save(); setupObjStroke(g, o);
         g.beginPath();
-        g.ellipse((a.x + b.x) / 2, (a.y + b.y) / 2, Math.abs(b.x - a.x) / 2, Math.abs(b.y - a.y) / 2, 0, 0, Math.PI * 2);
+        g.ellipse(o.x + o.w / 2, o.y + o.h / 2, o.w / 2, o.h / 2, 0, 0, Math.PI * 2);
         g.stroke(); g.restore();
+      }
+      function drawTextObj(g, o) {
+        g.save();
+        g.globalAlpha = o.opacity;
+        g.fillStyle = o.color;
+        g.font = `bold ${o.fs}px sans-serif`;
+        g.textBaseline = 'top';
+        const lh = o.fs * 1.2;
+        o.text.split('\n').forEach((line, i) => g.fillText(line, o.x, o.y + i * lh));
+        g.restore();
+      }
+      function drawObject(g, o) {
+        if (o.hidden) return; // 入力欄で再編集中は canvas 側を消しておく
+        if (o.type === 'arrow') drawArrowObj(g, o);
+        else if (o.type === 'line') drawLineObj(g, o);
+        else if (o.type === 'rect') drawRectObj(g, o);
+        else if (o.type === 'ellipse') drawEllipseObj(g, o);
+        else if (o.type === 'text') drawTextObj(g, o);
+        else if (o.type === 'callout') drawCalloutObj(g, o, true);
+      }
+      function drawObjects(g) { objects.forEach((o) => drawObject(g, o)); }
+      // ドラッグ中の始点・終点から図形オブジェクトを組み立てる（プレビューと確定で共用）。
+      function shapeFromDrag(t, a, b, shift) {
+        const common = { color: colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha(t) };
+        let bb = b;
+        if (t === 'line' && shift) { // Shift で 45° 刻みにスナップ
+          const d = Math.hypot(b.x - a.x, b.y - a.y);
+          const ang = Math.round(Math.atan2(b.y - a.y, b.x - a.x) / (Math.PI / 4)) * (Math.PI / 4);
+          bb = { x: a.x + d * Math.cos(ang), y: a.y + d * Math.sin(ang) };
+        }
+        if (t === 'arrow' || t === 'line') return { ...common, type: t, x1: a.x, y1: a.y, x2: bb.x, y2: bb.y };
+        return {
+          ...common, type: t,
+          x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+          w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y),
+        };
+      }
+      // オブジェクトの外接矩形（選択枠・ヒットテスト用）
+      function objBounds(o) {
+        if (o.type === 'arrow' || o.type === 'line') {
+          return { x: Math.min(o.x1, o.x2), y: Math.min(o.y1, o.y2), w: Math.abs(o.x2 - o.x1), h: Math.abs(o.y2 - o.y1) };
+        }
+        if (o.type === 'rect' || o.type === 'ellipse') return { x: o.x, y: o.y, w: o.w, h: o.h };
+        if (o.type === 'text') {
+          ctx.save();
+          ctx.font = `bold ${o.fs}px sans-serif`;
+          const lines = o.text.split('\n');
+          let tw = 0;
+          for (const l of lines) tw = Math.max(tw, ctx.measureText(l.length ? l : ' ').width);
+          ctx.restore();
+          return { x: o.x, y: o.y, w: Math.ceil(tw), h: lines.length * o.fs * 1.2 };
+        }
+        if (o.type === 'callout') {
+          const box = calloutBox(o.text, o.fs);
+          return { x: o.x, y: o.y, w: box.w, h: box.h };
+        }
+        return { x: 0, y: 0, w: 0, h: 0 };
+      }
+      // 選択中オブジェクトの破線枠＋ハンドル（Excel 風）。
+      function drawSelection() {
+        const o = selectedObj();
+        if (!o) return;
+        const s = dispScale();
+        const g = ctx;
+        g.save();
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.globalAlpha = 1;
+        const b = objBounds(o);
+        g.strokeStyle = '#1a73e8';
+        g.lineWidth = 1.5 * s;
+        g.setLineDash([5 * s, 4 * s]);
+        g.strokeRect(b.x - 4 * s, b.y - 4 * s, b.w + 8 * s, b.h + 8 * s);
+        g.setLineDash([]);
+        const hs = 9 * s;
+        g.fillStyle = '#1a73e8';
+        objHandles(o).forEach((h) => g.fillRect(h.x - hs / 2, h.y - hs / 2, hs, hs));
+        g.restore();
+      }
+      // 選択オブジェクトの操作ハンドル一覧（kind はドラッグ時の役割）。
+      function objHandles(o) {
+        if (o.type === 'arrow' || o.type === 'line') {
+          return [{ kind: 'p1', x: o.x1, y: o.y1 }, { kind: 'p2', x: o.x2, y: o.y2 }];
+        }
+        if (o.type === 'rect' || o.type === 'ellipse') {
+          return [
+            { kind: 'nw', x: o.x, y: o.y }, { kind: 'ne', x: o.x + o.w, y: o.y },
+            { kind: 'sw', x: o.x, y: o.y + o.h }, { kind: 'se', x: o.x + o.w, y: o.y + o.h },
+          ];
+        }
+        if (o.type === 'callout') return [{ kind: 'tip', x: o.tip.x, y: o.tip.y }];
+        return []; // text は移動のみ
+      }
+      // ---- オブジェクトのヒットテスト（クリック選択・消しゴム削除用） ----
+      function distSeg(p, x1, y1, x2, y2) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const len2 = dx * dx + dy * dy;
+        const t = len2 ? Math.max(0, Math.min(1, ((p.x - x1) * dx + (p.y - y1) * dy) / len2)) : 0;
+        return Math.hypot(p.x - (x1 + t * dx), p.y - (y1 + t * dy));
+      }
+      // pad: 判定を広げる追加量（消しゴムの半径など）
+      function objHit(o, p, pad) {
+        const tol = Math.max((o.size || 0) / 2 + 4, 8 * dispScale()) + (pad || 0);
+        if (o.type === 'arrow' || o.type === 'line') return distSeg(p, o.x1, o.y1, o.x2, o.y2) <= tol;
+        if (o.type === 'rect') {
+          // 枠線の近傍だけ当たり（塗り無しなので内側は素通しにして下の物を掴める）
+          const inOuter = p.x >= o.x - tol && p.x <= o.x + o.w + tol && p.y >= o.y - tol && p.y <= o.y + o.h + tol;
+          const inInner = p.x >= o.x + tol && p.x <= o.x + o.w - tol && p.y >= o.y + tol && p.y <= o.y + o.h - tol;
+          return inOuter && !inInner;
+        }
+        if (o.type === 'ellipse') {
+          const rx = o.w / 2, ry = o.h / 2;
+          if (rx < 1 || ry < 1) return false;
+          const nd = Math.hypot((p.x - (o.x + rx)) / rx, (p.y - (o.y + ry)) / ry); // 正規化距離
+          return Math.abs(nd - 1) * Math.min(rx, ry) <= tol;
+        }
+        // text / callout はバウンディングボックス（callout は尻尾先端も）
+        const b = objBounds(o);
+        if (p.x >= b.x - tol && p.x <= b.x + b.w + tol && p.y >= b.y - tol && p.y <= b.y + b.h + tol) return true;
+        if (o.type === 'callout') return Math.hypot(p.x - o.tip.x, p.y - o.tip.y) <= CALLOUT_HIT * dispScale();
+        return false;
+      }
+      // 最前面（配列の後ろ）から順に当たりを探す
+      function hitObject(p, pad) {
+        for (let i = objects.length - 1; i >= 0; i--) {
+          const o = objects[i];
+          if (!o.hidden && objHit(o, p, pad)) return o;
+        }
+        return null;
+      }
+      function hitObjHandle(o, p) {
+        const tol = 11 * dispScale();
+        for (const h of objHandles(o)) {
+          if (Math.abs(p.x - h.x) <= tol && Math.abs(p.y - h.y) <= tol) return h.kind;
+        }
+        return null;
+      }
+      // 選択オブジェクトのドラッグ（移動・端点・四隅・尻尾）を適用する。
+      // d.orig（ドラッグ開始時の複製）基準で差分を足すので累積誤差が出ない。
+      function applyObjDrag(d, p) {
+        const dx = p.x - d.sx, dy = p.y - d.sy;
+        const o = d.obj, s = d.orig;
+        if (d.mode === 'move') {
+          if (o.type === 'arrow' || o.type === 'line') { o.x1 = s.x1 + dx; o.y1 = s.y1 + dy; o.x2 = s.x2 + dx; o.y2 = s.y2 + dy; }
+          else { o.x = s.x + dx; o.y = s.y + dy; }
+          if (o.tip) { o.tip.x = s.tip.x + dx; o.tip.y = s.tip.y + dy; }
+        } else if (d.mode === 'p1') { o.x1 = s.x1 + dx; o.y1 = s.y1 + dy; }
+        else if (d.mode === 'p2') { o.x2 = s.x2 + dx; o.y2 = s.y2 + dy; }
+        else if (d.mode === 'tip') { o.tip.x = s.tip.x + dx; o.tip.y = s.tip.y + dy; }
+        else { // nw / ne / sw / se（rect・ellipse のリサイズ）
+          let x1 = s.x, y1 = s.y, x2 = s.x + s.w, y2 = s.y + s.h;
+          if (d.mode.includes('w')) x1 = Math.min(x2 - 4, x1 + dx);
+          if (d.mode.includes('e')) x2 = Math.max(x1 + 4, x2 + dx);
+          if (d.mode.includes('n')) y1 = Math.min(y2 - 4, y1 + dy);
+          if (d.mode.includes('s')) y2 = Math.max(y1 + 4, y2 + dy);
+          o.x = x1; o.y = y1; o.w = x2 - x1; o.h = y2 - y1;
+        }
+      }
+      // 消しゴムが触れたオブジェクトを丸ごと削除する（要件：元画像以外はすべて消せる）
+      function eraseObjectsAt(p) {
+        const radius = Math.max(4, Number(sizeInput.value) * 2) / 2;
+        const before = objects.length;
+        objects = objects.filter((o) => {
+          if (!o.hidden && objHit(o, p, radius)) { if (selectedId === o.id) selectedId = null; return false; }
+          return true;
+        });
+        return objects.length !== before;
       }
       // ── 吹き出し（クリック挿入・文字で自動リサイズ・尻尾を好きな向きへ）──────
       // calloutBox: 文字から本体（尻尾を除く）の寸法を測る。
@@ -2926,23 +3318,25 @@
         g.arcTo(x, y, x + r, y, r);
         g.closePath();
       }
-      // 本体＋尻尾を描く（drawText=false は文字を描かない＝編集中プレビュー用）。
-      function drawCalloutShape(g, x, y, box, tip, drawText, fs) {
+      // 本体＋尻尾を描く（withText=false は文字を描かない＝編集中プレビュー用）。
+      // o: callout オブジェクト（{x,y,text,fs,tip,color,size,opacity}）。
+      function drawCalloutObj(g, o, withText) {
+        const box = calloutBox(o.text, o.fs);
         const r = Math.min(16, box.w / 2, box.h / 2);
-        const tW = Math.max(10, Math.round(fs * 0.6));
+        const tW = Math.max(10, Math.round(o.fs * 0.6));
         g.save();
-        calloutPath(g, x, y, box.w, box.h, r, tip, tW);
-        g.strokeStyle = colorInput.value;
+        g.globalAlpha = o.opacity;
+        calloutPath(g, o.x, o.y, box.w, box.h, r, o.tip, tW);
+        g.strokeStyle = o.color;
         g.fillStyle = 'rgba(255,255,255,0.92)';
-        g.lineWidth = Math.max(2, Number(sizeInput.value));
+        g.lineWidth = Math.max(2, o.size);
         g.lineJoin = 'round';
-        g.globalAlpha = 1;
         g.fill(); g.stroke();
-        if (drawText) {
-          g.fillStyle = colorInput.value;
-          g.font = `bold ${fs}px sans-serif`;
+        if (withText) {
+          g.fillStyle = o.color;
+          g.font = `bold ${o.fs}px sans-serif`;
           g.textBaseline = 'top';
-          box.lines.forEach((l, i) => g.fillText(l, x + box.P, y + box.P + i * box.lh));
+          box.lines.forEach((l, i) => g.fillText(l, o.x + box.P, o.y + box.P + i * box.lh));
         }
         g.restore();
       }
@@ -2970,47 +3364,65 @@
       }
 
       // ---- テキスト（Electron の prompt 不可対策：その場編集の入力欄を出す）----
-      function beginText(p) {
+      // existing を渡すと既存テキストオブジェクトの再編集（ダブルクリックから）。
+      let editingText = false; // 入力欄が開いている間 true（Delete キー等の誤爆防止）
+      function beginText(p, existing) {
         const scale = canvas.offsetWidth ? canvas.offsetWidth / canvas.width : 1;
-        const fs = Math.max(16, Number(sizeInput.value) * 4); // canvas px でのフォントサイズ
+        const fs = existing ? existing.fs : Math.max(16, Number(sizeInput.value) * 4); // canvas px
+        const pos = existing ? { x: existing.x, y: existing.y } : p;
+        const color = existing ? existing.color : colorInput.value;
         const ta = document.createElement('textarea');
         ta.className = 'ie-text-input';
         ta.rows = 1;
-        ta.style.left = (canvas.offsetLeft + p.x * scale) + 'px';
-        ta.style.top = (canvas.offsetTop + p.y * scale) + 'px';
-        ta.style.color = colorInput.value;
+        ta.style.left = (canvas.offsetLeft + pos.x * scale) + 'px';
+        ta.style.top = (canvas.offsetTop + pos.y * scale) + 'px';
+        ta.style.color = color;
         ta.style.font = `bold ${fs * scale}px sans-serif`;
         canvasWrap.appendChild(ta);
+        editingText = true;
+        const fit = () => {
+          ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px';
+          ta.style.width = 'auto';
+          ta.style.width = Math.min(ta.scrollWidth + 24, canvas.offsetWidth) + 'px';
+        };
+        if (existing) { ta.value = existing.text; existing.hidden = true; recomposite(); fit(); }
         ta.focus();
+        if (existing) ta.select();
         let done = false;
         const commit = () => {
           if (done) return; done = true;
+          editingText = false;
           const text = ta.value;
           ta.remove();
+          if (existing) {
+            delete existing.hidden;
+            if (text.trim() === '') { pushUndo(); objects = objects.filter((o) => o.id !== existing.id); if (selectedId === existing.id) selectedId = null; }
+            else if (text !== existing.text) { pushUndo(); existing.text = text; }
+            recomposite();
+            return;
+          }
           if (text.trim() === '') { recomposite(); return; }
           pushUndo();
-          annoCtx.save();
-          annoCtx.globalAlpha = 1;
-          annoCtx.fillStyle = colorInput.value;
-          annoCtx.font = `bold ${fs}px sans-serif`;
-          annoCtx.textBaseline = 'top';
-          const lh = fs * 1.2;
-          text.split('\n').forEach((line, i) => annoCtx.fillText(line, p.x, p.y + i * lh));
-          annoCtx.restore();
+          objects.push({
+            id: newObjId(), type: 'text', x: pos.x, y: pos.y, text, fs,
+            color, size: Number(sizeInput.value), opacity: toolAlpha('text'),
+          });
           recomposite();
         };
-        const cancel = () => { if (done) return; done = true; ta.remove(); recomposite(); };
+        const cancel = () => {
+          if (done) return; done = true;
+          editingText = false;
+          ta.remove();
+          if (existing) delete existing.hidden;
+          recomposite();
+        };
         ta.addEventListener('keydown', (ev) => {
           ev.stopPropagation(); // 編集中は全体の Esc 閉じや他ショートカットを止める
           if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); commit(); }
           else if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
         });
         ta.addEventListener('blur', commit);
-        ta.addEventListener('input', () => {
-          ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px';
-          ta.style.width = 'auto';
-          ta.style.width = Math.min(ta.scrollWidth + 24, canvas.offsetWidth) + 'px';
-        });
+        ta.addEventListener('input', fit);
       }
 
       // ---- 吹き出し（クリックで挿入 → その場編集。未確定の間だけ尻尾の向きを調整）----
@@ -3023,36 +3435,47 @@
         const t = activeCallout.tip;
         return Math.hypot(p.x - t.x, p.y - t.y) <= CALLOUT_HIT * dispScale();
       }
-      function beginCallout(p) {
+      // existing を渡すと既存吹き出しオブジェクトの再編集（ダブルクリックから）。
+      function beginCallout(p, existing) {
         commitCallout(); // 直前の未確定があれば確定してから
-        const fs = Math.max(16, Number(sizeInput.value) * 4);
+        const fs = existing ? existing.fs : Math.max(16, Number(sizeInput.value) * 4);
         const ta = document.createElement('textarea');
         ta.className = 'ie-callout-input';
-        ta.value = 'ここをクリック';
+        ta.value = existing ? existing.text : 'ここをクリック';
         ta.rows = 1;
         canvasWrap.appendChild(ta);
         const box0 = calloutBox(ta.value, fs);
         const ac = {
-          x: p.x, y: p.y, fs, ta, done: false, dragTip: false, hoverTip: false,
+          x: existing ? existing.x : p.x,
+          y: existing ? existing.y : p.y,
+          fs, ta, existing: existing || null,
+          done: false, dragTip: false, hoverTip: false,
           // 初期の尻尾先端＝本体の下・少し左（下向き）。以後ドラッグで自由に。
-          tip: { x: p.x + Math.min(box0.w * 0.25, 40), y: p.y + box0.h + Math.round(fs * 1.6) },
+          tip: existing ? { x: existing.tip.x, y: existing.tip.y }
+                        : { x: p.x + Math.min(box0.w * 0.25, 40), y: p.y + box0.h + Math.round(fs * 1.6) },
         };
         activeCallout = ac;
+        if (existing) { existing.hidden = true; }
 
         ac.render = () => {
           if (activeCallout !== ac) return;
-          const box = calloutBox(ta.value, fs);
+          // 編集中の見た目は本体だけ描き、文字は textarea 側に出す。
+          const color = existing ? existing.color : colorInput.value;
+          const size = existing ? existing.size : Number(sizeInput.value);
+          const opacity = existing ? existing.opacity : toolAlpha('callout');
+          const preview = { x: ac.x, y: ac.y, text: ta.value, fs, tip: ac.tip, color, size, opacity };
           recomposite();
-          drawCalloutShape(ctx, ac.x, ac.y, box, ac.tip, false, fs); // 本体だけ（文字は textarea 側）
+          drawCalloutObj(ctx, preview, false);
           if (ac.dragTip || ac.hoverTip) {
             ctx.save();
-            ctx.fillStyle = colorInput.value; ctx.strokeStyle = '#fff';
+            ctx.fillStyle = color; ctx.strokeStyle = '#fff';
             ctx.lineWidth = 2 * dispScale();
             ctx.beginPath(); ctx.arc(ac.tip.x, ac.tip.y, 7 * dispScale(), 0, Math.PI * 2);
             ctx.fill(); ctx.stroke();
             ctx.restore();
           }
           // textarea を本文位置へ重ねる（透明背景）。
+          const box = calloutBox(ta.value, fs);
           const s = canvas.offsetWidth ? canvas.offsetWidth / canvas.width : 1;
           ta.style.left = (canvas.offsetLeft + (ac.x + box.P) * s) + 'px';
           ta.style.top = (canvas.offsetTop + (ac.y + box.P) * s) + 'px';
@@ -3061,7 +3484,7 @@
           ta.style.height = ((box.h - box.P * 2) * s) + 'px';
           ta.style.font = `bold ${fs * s}px sans-serif`;
           ta.style.lineHeight = (box.lh * s) + 'px';
-          ta.style.color = colorInput.value;
+          ta.style.color = color;
         };
 
         ta.addEventListener('keydown', (ev) => {
@@ -3086,10 +3509,28 @@
         activeCallout = null;
         const text = ac.ta.value;
         ac.ta.remove();
+        if (ac.existing) {
+          const ex = ac.existing;
+          delete ex.hidden;
+          if (text.trim() === '') {
+            pushUndo();
+            objects = objects.filter((o) => o.id !== ex.id);
+            if (selectedId === ex.id) selectedId = null;
+          } else if (text !== ex.text || ac.tip.x !== ex.tip.x || ac.tip.y !== ex.tip.y) {
+            pushUndo();
+            ex.text = text;
+            ex.tip = { x: ac.tip.x, y: ac.tip.y };
+          }
+          recomposite();
+          return;
+        }
         if (text.trim() === '') { recomposite(); return; }
         pushUndo();
-        const box = calloutBox(text, ac.fs);
-        drawCalloutShape(annoCtx, ac.x, ac.y, box, ac.tip, true, ac.fs);
+        objects.push({
+          id: newObjId(), type: 'callout', x: ac.x, y: ac.y, text, fs: ac.fs,
+          tip: { x: ac.tip.x, y: ac.tip.y },
+          color: colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha('callout'),
+        });
         recomposite();
       }
       function cancelCallout() {
@@ -3098,6 +3539,7 @@
         ac.done = true;
         activeCallout = null;
         ac.ta.remove();
+        if (ac.existing) delete ac.existing.hidden;
         recomposite();
       }
 
@@ -3203,6 +3645,13 @@
         setLayerSize(rw, rh);
         baseCtx.drawImage(tb, 0, 0);
         annoCtx.drawImage(tak, 0, 0);
+        // オブジェクトは切り出し位置に合わせて平行移動する（範囲外に出たものも
+        // 消さずに残す＝描画時にクリップされるだけで、移動で戻せる）。
+        objects.forEach((o) => {
+          if (o.type === 'arrow' || o.type === 'line') { o.x1 -= rx; o.y1 -= ry; o.x2 -= rx; o.y2 -= ry; }
+          else { o.x -= rx; o.y -= ry; }
+          if (o.tip) { o.tip.x -= rx; o.tip.y -= ry; }
+        });
         cropMode = false; cropRect = null; cropDrag = null;
         if (cropActions) cropActions.hidden = true;
         selectTool('arrow');
@@ -3218,9 +3667,16 @@
       // ---- ポインタ操作 ----
       let drawing = false;
       let start = null;
+      let objDrag = null; // 選択オブジェクトのドラッグ {mode, obj, sx, sy, orig, moved}
+      let colorGestureFor = null; // 選択オブジェクトへの色変更を1操作でundoするための印
+      // オブジェクトを配置する系のツール＋ハンドでは、既存オブジェクトのクリックを
+      // 「選択・移動」として扱う（Excel と同じ感覚）。ペン・ハイライト・消しゴム・
+      // モザイク・トリミングは描く／消すが優先なので選択しない。
+      const OBJECT_TOOLS = ['hand', 'arrow', 'line', 'rect', 'ellipse', 'text', 'callout'];
 
       canvas.addEventListener('pointerdown', (e) => {
         e.preventDefault();
+        colorGestureFor = null;
         const p = xy(e);
         // 吹き出し編集中：先端付近を掴めば尻尾ドラッグ、それ以外を押したら確定して続行。
         if (activeCallout) {
@@ -3231,6 +3687,25 @@
             return;
           }
           commitCallout();
+        }
+        // 既存オブジェクトの選択・ドラッグ開始（ツール本来の動作より優先）
+        if (OBJECT_TOOLS.includes(tool)) {
+          const sel = selectedObj();
+          const hk = sel && hitObjHandle(sel, p);
+          if (hk) { // 選択中オブジェクトのハンドル（端点・四隅・尻尾）
+            objDrag = { mode: hk, obj: sel, sx: p.x, sy: p.y, orig: JSON.parse(JSON.stringify(sel)), moved: false };
+            canvas.setPointerCapture(e.pointerId);
+            return;
+          }
+          const hit = hitObject(p);
+          if (hit) {
+            selectedId = hit.id;
+            objDrag = { mode: 'move', obj: hit, sx: p.x, sy: p.y, orig: JSON.parse(JSON.stringify(hit)), moved: false };
+            canvas.setPointerCapture(e.pointerId);
+            recomposite();
+            return;
+          }
+          if (selectedId) { selectedId = null; recomposite(); } // 空白クリックで選択解除して通常動作へ
         }
         if (tool === 'hand') { startPan(e); return; }
         if (tool === 'crop') {
@@ -3251,12 +3726,13 @@
             annoCtx.globalAlpha = 1;
             annoCtx.lineWidth = Math.max(4, Number(sizeInput.value) * 2);
           } else {
-            setupStroke(annoCtx, tool === 'marker' ? 0.35 : 1);
+            setupStroke(annoCtx, toolAlpha(tool)); // ツール別の透過率（ペン既定0%・ハイライト既定60%）
             if (tool === 'marker') annoCtx.lineWidth = Number(sizeInput.value) * 3;
           }
           annoCtx.lineCap = 'round'; annoCtx.lineJoin = 'round';
           annoCtx.beginPath(); annoCtx.moveTo(p.x, p.y);
           annoCtx.lineTo(p.x + 0.01, p.y + 0.01); annoCtx.stroke(); // 点クリックでも痕を残す
+          if (tool === 'eraser') eraseObjectsAt(p);
           recomposite();
         }
         canvas.setPointerCapture(e.pointerId);
@@ -3272,19 +3748,41 @@
           canvas.style.cursor = hov ? 'grab' : (tool === 'callout' ? 'crosshair' : '');
           return;
         }
+        // 選択オブジェクトのドラッグ（移動・変形）。undo は実際に動いた時だけ積む。
+        if (objDrag) {
+          const p = xy(e);
+          if (!objDrag.moved) {
+            if (Math.hypot(p.x - objDrag.sx, p.y - objDrag.sy) < 2 * dispScale()) return; // クリックの揺れは無視
+            pushUndo();
+            objDrag.moved = true;
+          }
+          applyObjDrag(objDrag, p);
+          recomposite();
+          return;
+        }
         if (tool === 'hand') { doPan(e); return; }
         if (tool === 'crop') { if (cropDrag) updateCrop(xy(e)); return; }
-        if (!drawing) return;
+        if (!drawing) {
+          // ホバー中のカーソル表示（ハンドル＝grab、本体＝move）。hand はパン用カーソル優先。
+          if (OBJECT_TOOLS.includes(tool) && tool !== 'hand') {
+            const p2 = xy(e);
+            const sel = selectedObj();
+            const hk = sel && hitObjHandle(sel, p2);
+            canvas.style.cursor = hk ? 'grab' : (hitObject(p2) ? 'move' : '');
+          }
+          return;
+        }
         const p = xy(e);
         if (tool === 'pen' || tool === 'marker' || tool === 'eraser') {
-          annoCtx.lineTo(p.x, p.y); annoCtx.stroke(); recomposite(); return;
+          annoCtx.lineTo(p.x, p.y); annoCtx.stroke();
+          if (tool === 'eraser') eraseObjectsAt(p); // 触れたオブジェクトは丸ごと消す
+          recomposite(); return;
         }
-        // 図形はプレビューを表示 ctx に上描き（annoCanvas は確定時のみ更新）。
+        // 図形はプレビューを表示 ctx に上描き（objects へは確定時のみ追加）。
         recomposite();
-        if (tool === 'arrow') drawArrow(ctx, start.x, start.y, p.x, p.y);
-        else if (tool === 'rect') drawRect(ctx, start, p);
-        else if (tool === 'ellipse') drawEllipse(ctx, start, p);
-        else if (tool === 'mosaic') {
+        if (tool === 'arrow' || tool === 'line' || tool === 'rect' || tool === 'ellipse') {
+          drawObject(ctx, shapeFromDrag(tool, start, p, e.shiftKey));
+        } else if (tool === 'mosaic') {
           ctx.save();
           ctx.globalAlpha = 1;
           ctx.strokeStyle = '#1a73e8';
@@ -3305,6 +3803,7 @@
           }
           return;
         }
+        if (objDrag) { objDrag = null; recomposite(); return; }
         if (tool === 'hand') { endPan(); return; }
         if (tool === 'crop') { cropDrag = null; return; }
         if (!drawing) return;
@@ -3315,11 +3814,19 @@
           recomposite();
           return;
         }
-        pushUndo();
-        if (tool === 'arrow') drawArrow(annoCtx, start.x, start.y, p.x, p.y);
-        else if (tool === 'rect') drawRect(annoCtx, start, p);
-        else if (tool === 'ellipse') drawEllipse(annoCtx, start, p);
-        else if (tool === 'mosaic') {
+        if (tool === 'arrow' || tool === 'line' || tool === 'rect' || tool === 'ellipse') {
+          const o = shapeFromDrag(tool, start, p, e.shiftKey);
+          const tiny = (o.type === 'rect' || o.type === 'ellipse')
+            ? (o.w < 2 && o.h < 2)
+            : Math.hypot(o.x2 - o.x1, o.y2 - o.y1) < 2;
+          if (!tiny) { // 点クリックのゴミ図形は作らない
+            pushUndo();
+            o.id = newObjId();
+            objects.push(o);
+            selectedId = o.id; // 描いた直後は選択状態（すぐ動かせる）
+          }
+        } else if (tool === 'mosaic') {
+          pushUndo();
           applyMosaic(baseCtx, Math.min(start.x, p.x), Math.min(start.y, p.y),
             Math.abs(p.x - start.x), Math.abs(p.y - start.y));
         }
@@ -3329,7 +3836,21 @@
       canvas.addEventListener('pointercancel', () => {
         if (activeCallout && activeCallout.dragTip) { activeCallout.dragTip = false; activeCallout.render(); return; }
         if (tool === 'pen' || tool === 'marker' || tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
-        drawing = false; cropDrag = null; endPan(); recomposite();
+        drawing = false; cropDrag = null; objDrag = null; endPan(); recomposite();
+      });
+      // ダブルクリックでテキスト・吹き出しを再編集（Excel と同じ操作感）
+      canvas.addEventListener('dblclick', (e) => {
+        if (activeCallout || cropMode) return;
+        if (!OBJECT_TOOLS.includes(tool)) return;
+        const p = xy(e);
+        const hit = hitObject(p);
+        if (hit && (hit.type === 'text' || hit.type === 'callout')) {
+          e.preventDefault();
+          selectedId = hit.id;
+          objDrag = null;
+          if (hit.type === 'text') beginText(p, hit);
+          else beginCallout(p, hit);
+        }
       });
 
       function close() {
@@ -3338,21 +3859,60 @@
         document.removeEventListener('keydown', onKey);
         overlay.remove();
       }
-      function onKey(ev) { if (ev.key === 'Escape') close(); }
+      function onKey(ev) {
+        // テキスト・吹き出しの入力欄は自前の keydown で stopPropagation するため
+        // ここへは届かない。他の入力要素上でも誤動作しないようガードする。
+        const t = ev.target;
+        const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+        if (ev.key === 'Escape') {
+          if (selectedId) { selectedId = null; recomposite(); return; } // まず選択解除、もう一度で閉じる
+          close();
+        } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedId && !inField) {
+          ev.preventDefault();
+          pushUndo();
+          objects = objects.filter((o) => o.id !== selectedId);
+          selectedId = null;
+          recomposite();
+        }
+      }
       document.addEventListener('keydown', onKey);
       overlay.querySelector('.ie-cancel').addEventListener('click', close);
+      // 注釈層（手描き線）が完全に透明かどうか（空なら strokes を保存しない容量対策）
+      function isCanvasBlank(cv) {
+        try {
+          const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+          for (let i = 3; i < d.length; i += 4) if (d[i] !== 0) return false;
+          return true;
+        } catch (_) { return false; }
+      }
       overlay.querySelector('.ie-save').addEventListener('click', () => {
         commitCallout(); // 未確定の吹き出しを確定してから書き出す
         exitCropMode();
+        selectedId = null;
         // 合成結果（crop オーバーレイ無し）を別 canvas に作って書き出す。
+        // images[index] は従来どおりこの合成 JPEG（サムネイル・印刷・Word 出力用）。
         const out = document.createElement('canvas');
         out.width = canvas.width; out.height = canvas.height;
         const og = out.getContext('2d');
         og.drawImage(baseCanvas, 0, 0);
         og.drawImage(annoCanvas, 0, 0);
+        drawObjects(og); // ベクター注釈も焼き込んだ合成を書き出す
         const data = out.toDataURL('image/jpeg', IMG_QUALITY);
+        // 編集ソースは焼き込まずに分離保存する。次回開いたときに手描き線は
+        // 消しゴムで消せて、図形・テキスト・吹き出しは再編集できる。
+        const strokesBlank = isCanvasBlank(annoCanvas);
+        const cleanObjects = JSON.parse(JSON.stringify(objects));
+        cleanObjects.forEach((o) => delete o.hidden);
+        const edit = {
+          v: 1,
+          // 線もオブジェクトも無ければ base は合成と同一なので '' で節約
+          //（ロード時に images[index] へフォールバックする）
+          base: (strokesBlank && !cleanObjects.length) ? '' : baseCanvas.toDataURL('image/jpeg', IMG_QUALITY),
+          strokes: strokesBlank ? '' : annoCanvas.toDataURL('image/png'),
+          objects: cleanObjects,
+        };
         const ok = commitImage((s) =>
-          M.replaceItemImage(M.findChecklist(s, c.id), sectionId, itemId, index, data)
+          M.replaceItemImage(M.findChecklist(s, c.id), sectionId, itemId, index, data, edit)
         );
         if (ok) close();
       });
