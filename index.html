@@ -2964,10 +2964,44 @@
       const annoCanvas = document.createElement('canvas');
       const baseCtx = baseCanvas.getContext('2d');
       const annoCtx = annoCanvas.getContext('2d');
+      // 進行中のペン/ハイライト1ストローク専用の作業レイヤー。
+      // ストローク全体を alpha=1 で描いておき、合成・焼き込み時にツールの透過率を
+      // 一括で掛ける。こうしないと move イベントごとの重ね塗りで透過色がどんどん
+      // 濃くなる（長押しで点が濃くなる・自己交差が濃くなる）。
+      const strokeCanvas = document.createElement('canvas');
+      const strokeCtx = strokeCanvas.getContext('2d');
+      let liveStroke = null; // { pts:[{x,y}], color, width, alpha }
       function setLayerSize(w, h) {
         canvas.width = w; canvas.height = h;
         baseCanvas.width = w; baseCanvas.height = h;
         annoCanvas.width = w; annoCanvas.height = h;
+        strokeCanvas.width = w; strokeCanvas.height = h;
+      }
+      // strokeCanvas をクリアして進行中ストロークの全パスを不透明で描き直す。
+      function renderLiveStroke() {
+        strokeCtx.clearRect(0, 0, strokeCanvas.width, strokeCanvas.height);
+        if (!liveStroke || !liveStroke.pts.length) return;
+        const pts = liveStroke.pts;
+        strokeCtx.strokeStyle = liveStroke.color;
+        strokeCtx.lineWidth = liveStroke.width;
+        strokeCtx.lineCap = 'round';
+        strokeCtx.lineJoin = 'round';
+        strokeCtx.globalAlpha = 1;
+        strokeCtx.beginPath();
+        strokeCtx.moveTo(pts[0].x, pts[0].y);
+        if (pts.length === 1) strokeCtx.lineTo(pts[0].x + 0.01, pts[0].y + 0.01); // 点クリックでも痕を残す
+        else for (let i = 1; i < pts.length; i++) strokeCtx.lineTo(pts[i].x, pts[i].y);
+        strokeCtx.stroke();
+      }
+      // ストローク確定: annoCanvas へツールの透過率で1回だけ焼き込む。
+      function bakeLiveStroke() {
+        if (!liveStroke) return;
+        annoCtx.save();
+        annoCtx.globalAlpha = liveStroke.alpha;
+        annoCtx.drawImage(strokeCanvas, 0, 0);
+        annoCtx.restore();
+        liveStroke = null;
+        strokeCtx.clearRect(0, 0, strokeCanvas.width, strokeCanvas.height);
       }
       // 表示 canvas に base→anno（手描き線）→オブジェクトを重ね描き。
       // 選択枠・crop 中の選択オーバーレイはさらにその上。
@@ -2977,6 +3011,11 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(baseCanvas, 0, 0);
         ctx.drawImage(annoCanvas, 0, 0);
+        if (liveStroke) { // 進行中ストロークはツールの透過率で重ねて見せる
+          ctx.globalAlpha = liveStroke.alpha;
+          ctx.drawImage(strokeCanvas, 0, 0);
+          ctx.globalAlpha = 1;
+        }
         drawObjects(ctx);
         drawSelection();
         if (cropMode && cropRect) drawCropOverlay();
@@ -3720,19 +3759,26 @@
         start = p;
         if (tool === 'pen' || tool === 'marker' || tool === 'eraser') {
           pushUndo();
-          annoCtx.save();
           if (tool === 'eraser') {
+            annoCtx.save();
             annoCtx.globalCompositeOperation = 'destination-out';
             annoCtx.globalAlpha = 1;
             annoCtx.lineWidth = Math.max(4, Number(sizeInput.value) * 2);
+            annoCtx.lineCap = 'round'; annoCtx.lineJoin = 'round';
+            annoCtx.beginPath(); annoCtx.moveTo(p.x, p.y);
+            annoCtx.lineTo(p.x + 0.01, p.y + 0.01); annoCtx.stroke(); // 点クリックでも痕を残す
+            eraseObjectsAt(p);
           } else {
-            setupStroke(annoCtx, toolAlpha(tool)); // ツール別の透過率（ペン既定0%・ハイライト既定60%）
-            if (tool === 'marker') annoCtx.lineWidth = Number(sizeInput.value) * 3;
+            // ペン/ハイライトは strokeCanvas に描き、確定時に透過率で一括焼き込み
+            //（annoCtx へ直描きすると move ごとの重ね塗りで透過色が濃くなる）。
+            liveStroke = {
+              pts: [p],
+              color: colorInput.value,
+              width: Number(sizeInput.value) * (tool === 'marker' ? 3 : 1),
+              alpha: toolAlpha(tool),
+            };
+            renderLiveStroke();
           }
-          annoCtx.lineCap = 'round'; annoCtx.lineJoin = 'round';
-          annoCtx.beginPath(); annoCtx.moveTo(p.x, p.y);
-          annoCtx.lineTo(p.x + 0.01, p.y + 0.01); annoCtx.stroke(); // 点クリックでも痕を残す
-          if (tool === 'eraser') eraseObjectsAt(p);
           recomposite();
         }
         canvas.setPointerCapture(e.pointerId);
@@ -3773,9 +3819,13 @@
           return;
         }
         const p = xy(e);
-        if (tool === 'pen' || tool === 'marker' || tool === 'eraser') {
+        if (tool === 'pen' || tool === 'marker') {
+          if (liveStroke) { liveStroke.pts.push(p); renderLiveStroke(); }
+          recomposite(); return;
+        }
+        if (tool === 'eraser') {
           annoCtx.lineTo(p.x, p.y); annoCtx.stroke();
-          if (tool === 'eraser') eraseObjectsAt(p); // 触れたオブジェクトは丸ごと消す
+          eraseObjectsAt(p); // 触れたオブジェクトは丸ごと消す
           recomposite(); return;
         }
         // 図形はプレビューを表示 ctx に上描き（objects へは確定時のみ追加）。
@@ -3809,8 +3859,13 @@
         if (!drawing) return;
         drawing = false;
         const p = xy(e);
-        if (tool === 'pen' || tool === 'marker' || tool === 'eraser') {
+        if (tool === 'eraser') {
           try { annoCtx.restore(); } catch (_) {}
+          recomposite();
+          return;
+        }
+        if (tool === 'pen' || tool === 'marker') {
+          bakeLiveStroke();
           recomposite();
           return;
         }
@@ -3835,7 +3890,8 @@
       canvas.addEventListener('pointerup', finish);
       canvas.addEventListener('pointercancel', () => {
         if (activeCallout && activeCallout.dragTip) { activeCallout.dragTip = false; activeCallout.render(); return; }
-        if (tool === 'pen' || tool === 'marker' || tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
+        if (tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
+        if (tool === 'pen' || tool === 'marker') bakeLiveStroke(); // 描きかけ分は確定させる
         drawing = false; cropDrag = null; objDrag = null; endPan(); recomposite();
       });
       // ダブルクリックでテキスト・吹き出しを再編集（Excel と同じ操作感）
