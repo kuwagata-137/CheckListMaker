@@ -461,16 +461,18 @@
     cursor: pointer;
   }
   .add-image:hover { background: var(--surface-2); border-color: var(--primary); }
-  /* 手順に組み込んだ画像は手順そのものの説明なので、手順欄の幅いっぱいに大きく見せる。
-     （サムネイルではなく原寸に近い表示。クリックで編集できる点は同じ。） */
+  /* 手順に組み込んだ画像は手順そのものの説明なので、サムネイルではなく原寸で見せる。
+     ただし原寸より拡大はしない（トリミングした画像が引き伸ばされないように）。
+     欄の幅を超える大きい画像だけ幅に収まるよう縮小する。 */
   .item-images.is-large {
     flex-direction: column;
-    align-items: stretch;
+    align-items: flex-start;
     gap: 10px;
   }
-  .item-images.is-large .thumb-wrap { display: block; width: 100%; }
+  /* wrap は画像にぴったり沿わせる（全幅のままだと削除×ボタンが画像から離れて右端に浮く） */
+  .item-images.is-large .thumb-wrap { display: block; width: fit-content; max-width: 100%; }
   .item-images.is-large .thumb {
-    width: 100%;
+    width: auto;
     height: auto;
     max-width: 100%;
     max-height: 70vh;
@@ -768,8 +770,10 @@
     break-inside: avoid;
   }
   /* 画像の配置（印刷プレビューで選択・記憶）:
-     1列=用紙の横幅いっぱいに1枚ずつ / 2列=横に2枚並べる */
-  .print-cols-1 .print-img { width: 100%; max-height: 160mm; }
+     1列=1枚ずつ縦に並べる / 2列=横に2枚並べる。
+     どちらも原寸より拡大しない（トリミングした画像が紙幅まで引き伸ばされないように）。
+     紙幅を超える大きい画像だけ収まるよう縮小する。 */
+  .print-cols-1 .print-img { width: auto; max-width: 100%; max-height: 160mm; }
   .print-cols-2 .print-img { max-width: 49%; max-height: 110mm; }
 
   /* ---- 印刷プレビュー（モーダル） ---- */
