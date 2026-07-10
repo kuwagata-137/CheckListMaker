@@ -961,6 +961,10 @@
   .op-footer { display: flex; gap: 6px; margin-top: 8px; }
   .op-none, .op-more { flex: 1; font: inherit; font-size: 0.75rem; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; white-space: nowrap; }
   .op-none:hover, .op-more:hover { border-color: var(--primary); }
+  /* 画像編集の右クリックミニメニュー（rb-palette の枠を流用） */
+  .ie-ctx { padding: 4px; }
+  .ie-ctx button { display: block; width: 100%; font: inherit; font-size: 0.85rem; padding: 6px 14px; border: none; border-radius: 5px; background: transparent; color: var(--text); text-align: left; cursor: pointer; white-space: nowrap; }
+  .ie-ctx button:hover { background: var(--surface-2); }
   /* 印刷用リッチ本文 */
   .print-body { flex-basis: 100%; margin: 4px 0 2px 1.9em; font-size: 1rem; }
   .print-body p { margin: 0 0 5px; }
@@ -3291,7 +3295,7 @@
             <button class="btn ie-undo" title="元に戻す">↶ 元に戻す</button>
           </div>
           <div class="ie-canvas-wrap"><canvas class="ie-canvas"></canvas></div>
-          <p class="ie-hint">ドラッグで描画。矢印・直線・図形・テキスト・吹き出しはクリックで選択→ドラッグで移動、ハンドルで変形、Deleteで削除、テキスト・吹き出しはダブルクリックで文字を再編集できます。消しゴムは描いた注釈を消します（線はなぞって、図形などは触れると丸ごと。スクショ本体は残る）。トリミングは範囲を決めて「トリミング適用」。ハンドで画像を移動、ホイール（他ツールはCtrl+ホイール）でズームできます。</p>
+          <p class="ie-hint">ドラッグで描画。矢印・直線・図形・テキスト・吹き出しはクリックで選択→ドラッグで移動、ハンドルで変形、Delete または右クリック→削除で消せます。テキスト・吹き出しはダブルクリックで文字を再編集できます。消しゴムは描いた注釈を消します（線はなぞって、図形などは触れると丸ごと。スクショ本体は残る）。トリミングは範囲を決めて「トリミング適用」。ハンドで画像を移動、ホイール（他ツールはCtrl+ホイール）でズームできます。</p>
           <div class="ie-actions">
             <button class="btn primary ie-save">保存</button>
             <button class="btn ie-cancel">キャンセル</button>
@@ -4279,6 +4283,9 @@
 
       canvas.addEventListener('pointerdown', (e) => {
         e.preventDefault();
+        // 右ボタンは contextmenu（右クリック削除メニュー）に任せる。
+        // ここを素通しすると右ドラッグで描画・選択が始まってしまう。
+        if (e.button !== 0) return;
         colorGestureFor = null;
         const p = xy(e);
         // 吹き出し編集中：先端付近を掴めば尻尾ドラッグ、それ以外を押したら確定して続行。
@@ -4472,9 +4479,52 @@
           else beginCallout(p, hit);
         }
       });
+      // 選択中オブジェクトの削除（Delete キーと右クリックメニューで共用）
+      function deleteSelectedObject() {
+        if (!selectedId) return;
+        pushUndo();
+        objects = objects.filter((o) => o.id !== selectedId);
+        selectedId = null;
+        recomposite();
+      }
+      // 右クリックでオブジェクトを削除（Office 風のミニコンテキストメニュー）。
+      // 誤右クリックの即消滅を避けるため、選択枠で対象を見せてから「削除」を選ばせる。
+      canvas.addEventListener('contextmenu', (e) => {
+        e.preventDefault(); // 既定メニュー・選択系の既定動作を抑止（Electron では通常出ないが保険）
+        if (cropMode || activeCallout) return;
+        if (!OBJECT_TOOLS.includes(tool)) return; // クリック選択と同じ対象ツールに限定して一貫性を保つ
+        const hit = hitObject(xy(e));
+        if (!hit) return;
+        selectedId = hit.id;
+        recomposite(); // 何が消えるか選択枠で可視化してからメニューを出す
+        ieOpenContextMenu(e.clientX, e.clientY);
+      });
+      // カーソル位置にミニメニューを開く。id を rb-palette にすると、パレット共通の
+      // グローバル mousedown 閉じ処理と rbClosePalette() がそのまま効く。
+      function ieOpenContextMenu(x, y) {
+        rbClosePalette();
+        const menu = document.createElement('div');
+        menu.className = 'rb-palette ie-ctx';
+        menu.id = 'rb-palette';
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '🗑 削除';
+        del.addEventListener('mousedown', (ev) => {
+          ev.preventDefault(); // 先にグローバル閉じ処理が走ってもボタン自体は .rb-palette 内なので届く
+          deleteSelectedObject();
+          rbClosePalette();
+        });
+        menu.appendChild(del);
+        document.body.appendChild(menu);
+        const w = menu.offsetWidth || 120;
+        const h = menu.offsetHeight || 40;
+        menu.style.left = Math.max(8, Math.min(x, window.innerWidth - w - 8)) + 'px';
+        menu.style.top = Math.max(8, Math.min(y, window.innerHeight - h - 8)) + 'px';
+      }
 
       function close() {
         cancelCallout(); // 編集中の吹き出しは破棄
+        rbClosePalette(); // 右クリックメニューを開いたまま閉じた場合の取り残し防止
         window.removeEventListener('resize', onResize);
         document.removeEventListener('keydown', onKey);
         overlay.remove();
@@ -4489,10 +4539,7 @@
           close();
         } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedId && !inField) {
           ev.preventDefault();
-          pushUndo();
-          objects = objects.filter((o) => o.id !== selectedId);
-          selectedId = null;
-          recomposite();
+          deleteSelectedObject();
         }
       }
       document.addEventListener('keydown', onKey);
