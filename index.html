@@ -461,16 +461,18 @@
     cursor: pointer;
   }
   .add-image:hover { background: var(--surface-2); border-color: var(--primary); }
-  /* 手順に組み込んだ画像は手順そのものの説明なので、手順欄の幅いっぱいに大きく見せる。
-     （サムネイルではなく原寸に近い表示。クリックで編集できる点は同じ。） */
+  /* 手順に組み込んだ画像は手順そのものの説明なので、サムネイルではなく原寸で見せる。
+     ただし原寸より拡大はしない（トリミングした画像が引き伸ばされないように）。
+     欄の幅を超える大きい画像だけ幅に収まるよう縮小する。 */
   .item-images.is-large {
     flex-direction: column;
-    align-items: stretch;
+    align-items: flex-start;
     gap: 10px;
   }
-  .item-images.is-large .thumb-wrap { display: block; width: 100%; }
+  /* wrap は画像にぴったり沿わせる（全幅のままだと削除×ボタンが画像から離れて右端に浮く） */
+  .item-images.is-large .thumb-wrap { display: block; width: fit-content; max-width: 100%; }
   .item-images.is-large .thumb {
-    width: 100%;
+    width: auto;
     height: auto;
     max-width: 100%;
     max-height: 70vh;
@@ -546,18 +548,9 @@
   }
   .ie-color-chip { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(0,0,0,.25); }
   .ie-size input { vertical-align: middle; }
-  /* テキスト/吹き出しの書式（サイズ・太字・斜体）。対象ツール/オブジェクトのときだけ表示 */
+  /* テキスト/吹き出しの書式（サイズ・太字・斜体）。対象ツール/オブジェクトのときだけ表示。
+     文字サイズは本文編集と共通の Word 風コンボ（.rb-sizebox）を使う。 */
   .ie-textfmt { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; color: var(--muted); }
-  .ie-textfmt .ie-font-size {
-    width: 58px;
-    font: inherit;
-    text-align: right;
-    padding: 4px 6px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg);
-    color: var(--text);
-  }
   .ie-fmt {
     width: 34px;
     height: 34px;
@@ -768,8 +761,10 @@
     break-inside: avoid;
   }
   /* 画像の配置（印刷プレビューで選択・記憶）:
-     1列=用紙の横幅いっぱいに1枚ずつ / 2列=横に2枚並べる */
-  .print-cols-1 .print-img { width: 100%; max-height: 160mm; }
+     1列=1枚ずつ縦に並べる / 2列=横に2枚並べる。
+     どちらも原寸より拡大しない（トリミングした画像が紙幅まで引き伸ばされないように）。
+     紙幅を超える大きい画像だけ収まるよう縮小する。 */
+  .print-cols-1 .print-img { width: auto; max-width: 100%; max-height: 160mm; }
   .print-cols-2 .print-img { max-width: 49%; max-height: 110mm; }
 
   /* ---- 印刷プレビュー（モーダル） ---- */
@@ -927,8 +922,15 @@
   .rb-btn { min-width: 28px; height: 28px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; font-size: 0.9rem; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; font-family: inherit; }
   .rb-btn:hover { background: var(--surface); border-color: var(--border); }
   .rb-sep { width: 1px; height: 18px; background: var(--border); margin: 0 3px; }
-  .rb-size { height: 28px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text); font: inherit; font-size: 0.85rem; cursor: pointer; }
-  .rb-size:hover { background: var(--surface); border-color: var(--border); }
+  /* 文字サイズコンボ（Word/Excel 風: 現在値入力＋▾一覧。本文編集と画像編集で共用） */
+  .rb-sizebox { display: inline-flex; align-items: stretch; height: 26px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); overflow: hidden; }
+  .rb-sizebox .rb-size-in { width: 44px; border: none; background: transparent; color: var(--text); font: inherit; font-size: 0.85rem; text-align: center; padding: 0 2px; }
+  .rb-sizebox .rb-size-in:focus { outline: none; }
+  /* type=number のスピンボタンはコンボの見た目を崩すので出さない */
+  .rb-sizebox .rb-size-in::-webkit-outer-spin-button, .rb-sizebox .rb-size-in::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .rb-sizebox .rb-size-dd { border: none; border-left: 1px solid var(--border); background: transparent; color: var(--muted); padding: 0 4px; cursor: pointer; font-size: 0.7rem; line-height: 1; }
+  .rb-sizebox .rb-size-dd:hover { background: var(--surface-2); color: var(--text); }
+  .rb-sizebox:focus-within { border-color: var(--primary); }
   .rb-swatch { display: inline-block; width: 13px; height: 4px; border-radius: 2px; background: #c0392b; margin-left: 1px; vertical-align: 2px; }
   .rb-swatch-hl { padding: 0 3px; background: #fff3a3; color: #1f2329; border-radius: 3px; }
   .rb-ins-table { margin-left: auto; border: 1px solid var(--border); background: var(--surface); font-size: 0.85rem; gap: 4px; }
@@ -957,6 +959,15 @@
   .op-footer { display: flex; gap: 6px; margin-top: 8px; }
   .op-none, .op-more { flex: 1; font: inherit; font-size: 0.75rem; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; white-space: nowrap; }
   .op-none:hover, .op-more:hover { border-color: var(--primary); }
+  /* 文字サイズ一覧（Word のサイズプルダウン風。rb-palette の枠で開く） */
+  .op-sizes { display: grid; max-height: 280px; overflow-y: auto; min-width: 64px; }
+  .op-size { font: inherit; font-size: 0.9rem; padding: 4px 18px 4px 14px; border: none; border-radius: 4px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+  .op-size:hover { background: var(--surface-2); }
+  .op-size.active { background: var(--primary); color: var(--primary-text, #fff); }
+  /* 画像編集の右クリックミニメニュー（rb-palette の枠を流用） */
+  .ie-ctx { padding: 4px; }
+  .ie-ctx button { display: block; width: 100%; font: inherit; font-size: 0.85rem; padding: 6px 14px; border: none; border-radius: 5px; background: transparent; color: var(--text); text-align: left; cursor: pointer; white-space: nowrap; }
+  .ie-ctx button:hover { background: var(--surface-2); }
   /* 印刷用リッチ本文 */
   .print-body { flex-basis: 100%; margin: 4px 0 2px 1.9em; font-size: 1rem; }
   .print-body p { margin: 0 0 5px; }
@@ -1475,34 +1486,36 @@
     // 構造だと画像が全て消える（<li> 内の表も同リスク）。そこで docx 用には
     // ul/li を使わず、見出し・段落・表・画像を全てトップレベルに並べたHTMLを組む。
     function renderDocxView(checklist) {
-      const p = progress(checklist);
       const isTemplate = checklist.type === MODES.TEMPLATE;
-      const dateStr = new Date().toLocaleDateString('ja-JP');
       const totalMin = isTemplate
         ? checklist.sections.reduce((a, s) => a + sumMinutes(s.items), 0)
         : 0;
       let stepNo = 0;
       const parts = [];
-      parts.push(`<h1>${escapeHtml(checklist.title)}</h1>`);
+      // タイトルは <h1> にしない: html-to-docx が見出し1（アウトラインレベル付き）に
+      // マップしてしまうため、通常段落＋16pt 太字で出す（Word の手順書要件）。
       parts.push(
-        `<p>${modeLabel(checklist.type)} ／ ${p.done} / ${p.total} 完了（${p.percent}%）${
-          totalMin ? ` ・ 総所要 約${totalMin}分` : ''
-        } ／ ${dateStr}</p>`
+        `<p><span style="font-size:16pt"><strong>${escapeHtml(checklist.title)}</strong></span></p>`
       );
+      // 種別（テンプレート/ToDo）・進捗・日付は Word の手順書には不要なので出さない。
+      // 所要時間は手順書の情報として残す。
+      if (totalMin) parts.push(`<p>総所要 約${totalMin}分</p>`);
       checklist.sections.forEach((s) => {
         const mins = isTemplate ? sumMinutes(s.items) : 0;
         const heading = `${escapeHtml(s.title)}${mins ? `（⏱${mins}分）` : ''}`;
         if (heading) parts.push(`<h2>${heading}</h2>`);
         s.items.forEach((it) => {
-          const box = it.done ? '☑' : '☐';
           if (isTemplate) {
+            // 手順書にチェックボックス記号（☐/☑）は出さない
             stepNo += 1;
             const time = it.time ? `　⏱${escapeHtml(String(it.time))}分` : '';
-            parts.push(`<p><strong>${stepNo}.</strong> ${box} ${escapeHtml(it.text)}${time}</p>`);
+            parts.push(`<p><strong>${stepNo}.</strong> ${escapeHtml(it.text)}${time}</p>`);
             const bodyClean = sanitizeBodyHtml(it.body || '');
             if (bodyClean) parts.push(bodyClean);
             if (it.note) parts.push(`<p>（メモ）${escapeHtml(it.note)}</p>`);
           } else {
+            // ToDo 型はチェック状態が本体情報なので従来通り記号を出す
+            const box = it.done ? '☑' : '☐';
             parts.push(`<p>${box} ${escapeHtml(it.text)}</p>`);
           }
           (Array.isArray(it.images) ? it.images : []).forEach((src) => {
@@ -1809,14 +1822,12 @@
             <button type="button" class="rb-btn" data-rb-cmd="italic" title="斜体"><i>I</i></button>
             <button type="button" class="rb-btn" data-rb-cmd="underline" title="下線"><u>U</u></button>
             <button type="button" class="rb-btn" data-rb-cmd="strikeThrough" title="取消線"><s>S</s></button>
-            <select class="rb-size" data-rb-size title="文字サイズ（pt）">
-              <option value="" selected>サイズ</option>
-              <option value="8">8</option><option value="9">9</option><option value="10">10</option>
-              <option value="11">11</option><option value="12">12</option><option value="14">14</option>
-              <option value="16">16</option><option value="18">18</option><option value="20">20</option>
-              <option value="24">24</option><option value="28">28</option><option value="36">36</option>
-              <option value="48">48</option>
-            </select>
+            <span class="rb-sizebox" title="文字サイズ（pt）">
+              <input type="text" class="rb-size-in" data-rb-size inputmode="decimal" aria-label="文字サイズ（pt）" />
+              <button type="button" class="rb-size-dd" data-rb-size-dd tabindex="-1" title="サイズ一覧">▾</button>
+            </span>
+            <button type="button" class="rb-btn" data-rb-size-step="up" title="文字を大きく">A˄</button>
+            <button type="button" class="rb-btn" data-rb-size-step="down" title="文字を小さく">A˅</button>
             <span class="rb-sep"></span>
             <button type="button" class="rb-btn" data-rb-cmd="foreColor" title="文字色">A<span class="rb-swatch"></span></button>
             <button type="button" class="rb-btn" data-rb-cmd="hiliteColor" title="ハイライト（文字）"><span class="rb-swatch-hl">H</span></button>
@@ -1838,6 +1849,35 @@
     const RB_ALLOWED_TAGS = new Set(['P','BR','STRONG','B','EM','I','U','S','STRIKE','SPAN','UL','OL','LI','TABLE','THEAD','TBODY','TR','TH','TD','DIV']);
     const RB_COLOR_RE = /^(#[0-9a-fA-F]{3,8}|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)|rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(0|1|0?\.\d+)\s*\)|transparent|[a-zA-Z]{3,20})$/;
     const RB_ALIGN_RE = /^(left|right|center|justify)$/i;
+    // ---- Word/Excel 風の文字サイズ一覧 ----
+    // コンボの▾一覧と A˄/A˅（拡大/縮小）ボタンで使う。A˄/A˅ は Word の
+    // 「フォントサイズの拡大/縮小」と同じく一覧上の次/前のサイズへ移動する。
+    // 単位は本文編集=pt（Word標準の並び）、画像編集=px で別々に持つ（変換はしない）。
+    const RB_FONT_SIZES_PT = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72];
+    const IE_FONT_SIZES_PX = [10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 64, 80, 96, 128, 160, 200];
+    function nextFontSize(list, cur) {
+      for (const v of list) if (v > cur) return v;
+      return list[list.length - 1];
+    }
+    function prevFontSize(list, cur) {
+      for (let i = list.length - 1; i >= 0; i--) if (list[i] < cur) return list[i];
+      return list[0];
+    }
+    // サイズ一覧メニュー（rb-palette の枠で開く縦リスト）。op-swatch と同じく
+    // mousedown で確定して本文の選択範囲・フォーカスを奪わない。
+    function buildSizeMenu(sizes, current, onPick) {
+      const menu = document.createElement('div');
+      menu.className = 'op-sizes';
+      sizes.forEach((v) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'op-size' + (current !== null && Math.abs(v - current) < 0.26 ? ' active' : '');
+        b.textContent = String(v);
+        b.addEventListener('mousedown', (e) => { e.preventDefault(); onPick(v); });
+        menu.appendChild(b);
+      });
+      return menu;
+    }
     // ---- Excel/Office 風カラーパレット ----
     // 「テーマの色（10色）＋各列の濃淡5段」「標準の色」「塗りつぶしなし」「その他の色」
     // で構成する（Office アプリの色選択と同じ構造）。文字色・ハイライト・セル塗り・
@@ -2195,6 +2235,29 @@
     // 文字サイズ（pt）を選択範囲へ適用する。execCommand('fontSize', 7) で一旦
     // <font size="7"> のマーカーを付け、それを pt 指定の <span> に変換する
     // （execCommand はキーワードサイズしか受けないため）。
+    // 選択範囲の現在の文字サイズ（pt）を返す。単一サイズならその値、混在なら null
+    //（Word と同様、混在時はコンボを空欄にする）。値は computed style の実効値
+    //（px×0.75、0.5pt 丸め）なので、サイズ未指定のテキストでも基準サイズが出る。
+    function rbSelectionFontSizePt(editor) {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return null;
+      const range = sel.getRangeAt(0);
+      let anchor = range.commonAncestorContainer;
+      if (anchor && anchor.nodeType === 3) anchor = anchor.parentElement;
+      if (!anchor || !editor.contains(anchor)) return null;
+      const toPt = (el) => Math.round(parseFloat(getComputedStyle(el).fontSize) * 0.75 * 2) / 2;
+      if (range.collapsed) return toPt(anchor);
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+      let size = null;
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!node.nodeValue || !node.nodeValue.trim()) continue;
+        if (!range.intersectsNode(node)) continue;
+        const v = toPt(node.parentElement);
+        if (size === null) size = v;
+        else if (Math.abs(size - v) > 0.26) return null; // サイズ混在
+      }
+      return size === null ? toPt(anchor) : size;
+    }
     function rbApplyFontSize(editor, pt, range) {
       editor.focus();
       const sel = window.getSelection();
@@ -2211,12 +2274,16 @@
       rbCommitEditor(editor);
     }
 
-    // 色パレット（Excel/Office 風。buildOfficePalette を btn の下に開く）
+    // ポップアップ共通処理: 中身 contentEl を rb-palette の枠で btn の下に開く。
+    // id を rb-palette に統一することで、グローバルの mousedown 閉じ処理と
+    // rbClosePalette() が色パレット・サイズ一覧の区別なく効く。
     function rbClosePalette() { const p = document.getElementById('rb-palette'); if (p) p.remove(); }
-    function rbOpenPalette(btn, withNone, onPick) {
+    function rbOpenPopup(btn, contentEl, extraClass) {
       rbClosePalette();
-      const pal = buildOfficePalette({ withNone, onPick, onClose: rbClosePalette });
-      pal.className = 'rb-palette'; pal.id = 'rb-palette';
+      const pal = document.createElement('div');
+      pal.className = 'rb-palette' + (extraClass ? ' ' + extraClass : '');
+      pal.id = 'rb-palette';
+      pal.appendChild(contentEl);
       document.body.appendChild(pal);
       const r = btn.getBoundingClientRect();
       const w = pal.offsetWidth || 250;
@@ -2224,6 +2291,10 @@
       pal.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
       // 下にはみ出すときはボタンの上側に開く
       pal.style.top = (r.bottom + 4 + h > window.innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4) + 'px';
+    }
+    // 色パレット（Excel/Office 風。buildOfficePalette を btn の下に開く）
+    function rbOpenPalette(btn, withNone, onPick) {
+      rbOpenPopup(btn, buildOfficePalette({ withNone, onPick, onClose: rbClosePalette }));
     }
     // 表/TSV の貼り付けをセルに取り込む
     function rbTsvToTable(text) {
@@ -2243,7 +2314,9 @@
         const cmdBtn = e.target.closest && e.target.closest('[data-rb-cmd]');
         const tctlBtn = e.target.closest && e.target.closest('[data-rb-tctl]');
         const inPalette = e.target.closest && e.target.closest('.rb-palette');
-        if (!cmdBtn && !inPalette) rbClosePalette();
+        // 文字サイズコンボ（▾のトグル開閉など）は後段の専用ハンドラで開閉を制御する
+        const inSizeUi = e.target.closest && e.target.closest('.rb-sizebox, [data-rb-size-step]');
+        if (!cmdBtn && !inPalette && !inSizeUi) rbClosePalette();
         if (tctlBtn) { e.preventDefault(); rbHandleTctl(tctlBtn.dataset.rbTctl); return; }
         // セル境界のリサイズ開始（preventDefault でキャレット移動・選択を抑止）
         if (!rbResizeDrag && e.button === 0) {
@@ -2257,25 +2330,79 @@
           if (editor) rbExec(cmdBtn.dataset.rbCmd, editor, cmdBtn);
         }
       });
-      // 文字サイズ select: 操作でフォーカスが本文から外れるため、押した時点の
-      // 選択範囲を保存し、決定時に復元してから適用する。
+      // 文字サイズコンボ（Word/Excel 風）: input への直接入力・▾のサイズ一覧・
+      // A˄/A˅ のステップ変更の3系統。コンボ操作でフォーカスが本文から外れるため、
+      // 押した時点の選択範囲を保存し、適用時に復元してから rbApplyFontSize する。
       let rbSizeRange = null;
       document.addEventListener('mousedown', (e) => {
-        if (e.target.closest && e.target.closest('[data-rb-size]')) {
-          const sel = window.getSelection();
-          rbSizeRange = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+        const t = e.target;
+        const sizeUi = t.closest && t.closest('.rb-sizebox, [data-rb-size-step]');
+        if (!sizeUi) return;
+        const rb = sizeUi.closest('.rb');
+        if (!rb) return; // 画像編集側の共用コンボはモーダル内で個別に配線する
+        const sel = window.getSelection();
+        rbSizeRange = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+        const dd = t.closest('[data-rb-size-dd]');
+        const stepBtn = t.closest('[data-rb-size-step]');
+        if (!dd && !stepBtn) return; // input 本体はフォーカスさせて直接入力に使う
+        e.preventDefault(); // 選択・フォーカスを本文に残す
+        const editor = rb.querySelector('[data-rb-edit]');
+        const input = rb.querySelector('.rb-size-in');
+        if (dd) {
+          // もう一度押したら閉じる（トグル）。閉じ処理は上のグローバルハンドラが
+          // サイズUIを素通しするので、ここで自前制御する。
+          const wasOpen = !!document.querySelector('#rb-palette .op-sizes');
+          rbClosePalette();
+          if (wasOpen) return;
+          const savedRange = rbSizeRange;
+          const cur = editor ? rbSelectionFontSizePt(editor) : null;
+          rbOpenPopup(dd, buildSizeMenu(RB_FONT_SIZES_PT, cur, (v) => {
+            rbClosePalette();
+            if (editor) rbApplyFontSize(editor, v, savedRange);
+            if (input) input.value = String(v);
+          }));
+        } else {
+          rbClosePalette();
+          let cur = editor ? rbSelectionFontSizePt(editor) : null;
+          if (cur === null) cur = parseFloat(input && input.value) || 10.5;
+          const v = stepBtn.dataset.rbSizeStep === 'up'
+            ? nextFontSize(RB_FONT_SIZES_PT, cur)
+            : prevFontSize(RB_FONT_SIZES_PT, cur);
+          if (editor) rbApplyFontSize(editor, v, rbSizeRange);
+          if (input) input.value = String(v);
         }
       });
+      // input への直接入力（Enter/フォーカスアウトで確定）
       document.addEventListener('change', (e) => {
-        const sizeSel = e.target.closest && e.target.closest('[data-rb-size]');
-        if (!sizeSel) return;
-        const pt = Number(sizeSel.value);
-        sizeSel.value = ''; // 表示を「サイズ」に戻す（現在値のUIは持たない）
-        if (!pt) return;
-        const rb = sizeSel.closest('.rb');
+        const sizeIn = e.target.closest && e.target.closest('.rb-size-in');
+        if (!sizeIn || !sizeIn.hasAttribute('data-rb-size')) return; // 画像編集側は個別配線
+        const rb = sizeIn.closest('.rb');
         const editor = rb && rb.querySelector('[data-rb-edit]');
-        if (editor) rbApplyFontSize(editor, pt, rbSizeRange);
+        const pt = parseFloat(sizeIn.value);
+        if (!pt || pt <= 0) { sizeIn.value = ''; return; }
+        const v = Math.max(1, Math.min(200, pt));
+        sizeIn.value = String(v);
+        if (editor) rbApplyFontSize(editor, v, rbSizeRange);
         rbSizeRange = null;
+      });
+      // 選択が動いたらコンボへ現在の文字サイズを表示（Word と同じ実効値表示。
+      // selectionchange は高頻度なので rb 内のときだけ・rAF で間引く）
+      let rbSizeSyncReq = 0;
+      document.addEventListener('selectionchange', () => {
+        if (rbSizeSyncReq) return;
+        rbSizeSyncReq = requestAnimationFrame(() => {
+          rbSizeSyncReq = 0;
+          const sel = window.getSelection();
+          let n = sel && sel.rangeCount ? sel.getRangeAt(0).commonAncestorContainer : null;
+          if (n && n.nodeType === 3) n = n.parentElement;
+          const editor = n && n.closest ? n.closest('[data-rb-edit]') : null;
+          if (!editor) return;
+          const rb = editor.closest('.rb');
+          const input = rb && rb.querySelector('.rb-size-in');
+          if (!input || document.activeElement === input) return;
+          const v = rbSelectionFontSizePt(editor);
+          input.value = v === null ? '' : String(v);
+        });
       });
       // Alt+Enter でセル内/段落内改行
       document.addEventListener('keydown', (e) => {
@@ -3264,14 +3391,13 @@
             <label class="ie-size" title="線の太さ"><input type="range" min="1" max="40" value="6" /></label>
             <span class="ie-textfmt" hidden>
               文字
-              <input type="number" class="ie-font-size" min="8" max="200" step="1" value="24"
-                     list="ie-font-sizes" title="文字サイズ（px）" aria-label="文字サイズ（px）" />
-              <datalist id="ie-font-sizes">
-                <option value="12"></option><option value="14"></option><option value="16"></option>
-                <option value="20"></option><option value="24"></option><option value="28"></option>
-                <option value="32"></option><option value="40"></option><option value="48"></option>
-                <option value="64"></option><option value="80"></option><option value="96"></option>
-              </datalist>
+              <span class="rb-sizebox" title="文字サイズ（px）">
+                <input type="number" class="rb-size-in ie-font-size" min="8" max="200" step="1" value="24"
+                       aria-label="文字サイズ（px）" />
+                <button type="button" class="rb-size-dd ie-font-size-dd" tabindex="-1" title="サイズ一覧">▾</button>
+              </span>
+              <button type="button" class="ie-fmt ie-fmt-grow" title="文字を大きく">A˄</button>
+              <button type="button" class="ie-fmt ie-fmt-shrink" title="文字を小さく">A˅</button>
               <button type="button" class="ie-fmt ie-fmt-bold" title="太字"><b>B</b></button>
               <button type="button" class="ie-fmt ie-fmt-italic" title="斜体"><i>I</i></button>
             </span>
@@ -3285,7 +3411,7 @@
             <button class="btn ie-undo" title="元に戻す">↶ 元に戻す</button>
           </div>
           <div class="ie-canvas-wrap"><canvas class="ie-canvas"></canvas></div>
-          <p class="ie-hint">ドラッグで描画。矢印・直線・図形・テキスト・吹き出しはクリックで選択→ドラッグで移動、ハンドルで変形、Deleteで削除、テキスト・吹き出しはダブルクリックで文字を再編集できます。消しゴムは描いた注釈を消します（線はなぞって、図形などは触れると丸ごと。スクショ本体は残る）。トリミングは範囲を決めて「トリミング適用」。ハンドで画像を移動、ホイール（他ツールはCtrl+ホイール）でズームできます。</p>
+          <p class="ie-hint">ドラッグで描画。矢印・直線・図形・テキスト・吹き出しはクリックで選択→ドラッグで移動、ハンドルで変形、Delete または右クリック→削除で消せます。テキスト・吹き出しはダブルクリックで文字を再編集できます。消しゴムは描いた注釈を消します（線はなぞって、図形などは触れると丸ごと。スクショ本体は残る）。トリミングは範囲を決めて「トリミング適用」。ハンドで画像を移動、ホイール（他ツールはCtrl+ホイール）でズームできます。</p>
           <div class="ie-actions">
             <button class="btn primary ie-save">保存</button>
             <button class="btn ie-cancel">キャンセル</button>
@@ -3409,6 +3535,37 @@
         fontSizeInput.value = v;
         applyTextFmt({ fs: v });
       });
+      // ▾のサイズ一覧（本文編集と同じ Word 風メニュー。単位はこちらは px）。
+      // colorBtn と同じく mousedown 時点の開閉状態を覚えてトグルにする。
+      const fontSizeDd = overlay.querySelector('.ie-font-size-dd');
+      let sizeMenuWasOpen = false;
+      fontSizeDd.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // その場編集（textarea）を blur→確定させない
+        sizeMenuWasOpen = !!document.getElementById('rb-palette');
+      });
+      fontSizeDd.addEventListener('click', () => {
+        if (sizeMenuWasOpen) { sizeMenuWasOpen = false; rbClosePalette(); return; }
+        rbOpenPopup(fontSizeDd, buildSizeMenu(IE_FONT_SIZES_PX, Number(fontSizeInput.value) || null, (v) => {
+          rbClosePalette();
+          const fs = clampFs(v);
+          fontSizeInput.value = fs;
+          applyTextFmt({ fs });
+        }));
+      });
+      // A˄/A˅: 一覧上の次/前のサイズへ（Word のフォント拡大/縮小と同じ）
+      const growBtn = overlay.querySelector('.ie-fmt-grow');
+      const shrinkBtn = overlay.querySelector('.ie-fmt-shrink');
+      const stepFontSize = (dir) => {
+        const cur = Number(fontSizeInput.value) || textFmt.fs || 24;
+        const v = dir > 0 ? nextFontSize(IE_FONT_SIZES_PX, cur) : prevFontSize(IE_FONT_SIZES_PX, cur);
+        const fs = clampFs(v);
+        fontSizeInput.value = fs;
+        applyTextFmt({ fs });
+      };
+      growBtn.addEventListener('mousedown', (e) => e.preventDefault());
+      shrinkBtn.addEventListener('mousedown', (e) => e.preventDefault());
+      growBtn.addEventListener('click', () => stepFontSize(1));
+      shrinkBtn.addEventListener('click', () => stepFontSize(-1));
       // その場編集（textarea）中に押しても blur→確定 させないよう mousedown を殺す
       boldBtn.addEventListener('mousedown', (e) => e.preventDefault());
       italicBtn.addEventListener('mousedown', (e) => e.preventDefault());
@@ -4273,6 +4430,9 @@
 
       canvas.addEventListener('pointerdown', (e) => {
         e.preventDefault();
+        // 右ボタンは contextmenu（右クリック削除メニュー）に任せる。
+        // ここを素通しすると右ドラッグで描画・選択が始まってしまう。
+        if (e.button !== 0) return;
         colorGestureFor = null;
         const p = xy(e);
         // 吹き出し編集中：先端付近を掴めば尻尾ドラッグ、それ以外を押したら確定して続行。
@@ -4466,9 +4626,52 @@
           else beginCallout(p, hit);
         }
       });
+      // 選択中オブジェクトの削除（Delete キーと右クリックメニューで共用）
+      function deleteSelectedObject() {
+        if (!selectedId) return;
+        pushUndo();
+        objects = objects.filter((o) => o.id !== selectedId);
+        selectedId = null;
+        recomposite();
+      }
+      // 右クリックでオブジェクトを削除（Office 風のミニコンテキストメニュー）。
+      // 誤右クリックの即消滅を避けるため、選択枠で対象を見せてから「削除」を選ばせる。
+      canvas.addEventListener('contextmenu', (e) => {
+        e.preventDefault(); // 既定メニュー・選択系の既定動作を抑止（Electron では通常出ないが保険）
+        if (cropMode || activeCallout) return;
+        if (!OBJECT_TOOLS.includes(tool)) return; // クリック選択と同じ対象ツールに限定して一貫性を保つ
+        const hit = hitObject(xy(e));
+        if (!hit) return;
+        selectedId = hit.id;
+        recomposite(); // 何が消えるか選択枠で可視化してからメニューを出す
+        ieOpenContextMenu(e.clientX, e.clientY);
+      });
+      // カーソル位置にミニメニューを開く。id を rb-palette にすると、パレット共通の
+      // グローバル mousedown 閉じ処理と rbClosePalette() がそのまま効く。
+      function ieOpenContextMenu(x, y) {
+        rbClosePalette();
+        const menu = document.createElement('div');
+        menu.className = 'rb-palette ie-ctx';
+        menu.id = 'rb-palette';
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '🗑 削除';
+        del.addEventListener('mousedown', (ev) => {
+          ev.preventDefault(); // 先にグローバル閉じ処理が走ってもボタン自体は .rb-palette 内なので届く
+          deleteSelectedObject();
+          rbClosePalette();
+        });
+        menu.appendChild(del);
+        document.body.appendChild(menu);
+        const w = menu.offsetWidth || 120;
+        const h = menu.offsetHeight || 40;
+        menu.style.left = Math.max(8, Math.min(x, window.innerWidth - w - 8)) + 'px';
+        menu.style.top = Math.max(8, Math.min(y, window.innerHeight - h - 8)) + 'px';
+      }
 
       function close() {
         cancelCallout(); // 編集中の吹き出しは破棄
+        rbClosePalette(); // 右クリックメニューを開いたまま閉じた場合の取り残し防止
         window.removeEventListener('resize', onResize);
         document.removeEventListener('keydown', onKey);
         overlay.remove();
@@ -4483,10 +4686,7 @@
           close();
         } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedId && !inField) {
           ev.preventDefault();
-          pushUndo();
-          objects = objects.filter((o) => o.id !== selectedId);
-          selectedId = null;
-          recomposite();
+          deleteSelectedObject();
         }
       }
       document.addEventListener('keydown', onKey);
