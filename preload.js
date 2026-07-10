@@ -50,7 +50,7 @@ contextBridge.exposeInMainWorld('recorderAPI', {
 // .docx に変換・ネイティブ保存ダイアログで書き出す。素のブラウザでは window.docxAPI は undefined。
 contextBridge.exposeInMainWorld('docxAPI', {
   available: true,
-  // payload = { title, html }。戻り値 = { saved:boolean, canceled?:boolean } / { error:string }。
+  // payload = { title, html, meta }。戻り値 = { saved:boolean, canceled?:boolean } / { error:string }。
   save: (payload) => ipcRenderer.invoke('docx:save', payload),
 });
 
