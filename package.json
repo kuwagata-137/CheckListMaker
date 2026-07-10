@@ -32,6 +32,7 @@
       "index.html",
       "main.js",
       "preload.js",
+      "docx-postprocess.js",
       "gadget.html",
       "package.json"
     ],

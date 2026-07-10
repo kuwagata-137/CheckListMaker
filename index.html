@@ -1485,6 +1485,10 @@
     // ブロック要素(div等)に入った <img>」を無視するため、<li><div class="print-imgs">
     // 構造だと画像が全て消える（<li> 内の表も同リスク）。そこで docx 用には
     // ul/li を使わず、見出し・段落・表・画像を全てトップレベルに並べたHTMLを組む。
+    // 社内様式「操作説明書様式」のデザインに寄せた docx 用 HTML を組む。
+    // 表題と目次は html-to-docx では表現できないため、マーカー入りの段落を置いておき、
+    // メインプロセスの後処理（docx-postprocess.js）が様式の OOXML に置換する。
+    // 戻り値は { html, meta }。meta のマーカーを後処理に渡す。
     function renderDocxView(checklist) {
       const isTemplate = checklist.type === MODES.TEMPLATE;
       const totalMin = isTemplate
@@ -1492,24 +1496,80 @@
         : 0;
       let stepNo = 0;
       const parts = [];
-      // タイトルは <h1> にしない: html-to-docx が見出し1（アウトラインレベル付き）に
-      // マップしてしまうため、通常段落＋16pt 太字で出す（Word の手順書要件）。
-      parts.push(
-        `<p><span style="font-size:16pt"><strong>${escapeHtml(checklist.title)}</strong></span></p>`
-      );
-      // 種別（テンプレート/ToDo）・進捗・日付は Word の手順書には不要なので出さない。
-      // 所要時間は手順書の情報として残す。
-      if (totalMin) parts.push(`<p>総所要 約${totalMin}分</p>`);
+      const meta = { isTemplate, markerTitle: '', markerToc: '' };
+      const pageBreak = '<div class="page-break" style="page-break-after: always;"></div>';
+      if (isTemplate) {
+        // マーカーは英数字トークン（正規表現エスケープ不要な文字種のみ）。
+        meta.markerTitle = '@@DXTITLE' + Math.random().toString(36).slice(2, 10) + '@@';
+        meta.markerToc = '@@DXTOC' + Math.random().toString(36).slice(2, 10) + '@@';
+        const cover = checklist.coverPage;
+        if (cover && cover.enabled) {
+          // 簡易表紙: 表題（様式スタイルは後処理で付与）・副題・メタ表・改訂履歴 → 改ページ
+          parts.push(`<p>${meta.markerTitle}${escapeHtml(cover.title || checklist.title)}</p>`);
+          if (cover.subtitle) {
+            parts.push(`<p style="text-align:center">${escapeHtml(cover.subtitle)}</p>`);
+          }
+          const metaRows = [
+            ['作成者', cover.author],
+            ['作成日', cover.date],
+            ['版', cover.version],
+            ['文書番号', cover.docNumber],
+          ].filter((r) => r[1]);
+          if (metaRows.length) {
+            parts.push(
+              '<table><tbody>' +
+                metaRows
+                  .map((r) => `<tr><td>${r[0]}</td><td>${escapeHtml(String(r[1]))}</td></tr>`)
+                  .join('') +
+                '</tbody></table>'
+            );
+          }
+          const revs = (Array.isArray(cover.revisions) ? cover.revisions : []).filter(
+            (r) => r && (r.version || r.date || r.author || r.note)
+          );
+          if (revs.length) {
+            parts.push('<p><strong>改訂履歴</strong></p>');
+            parts.push(
+              '<table><thead><tr><th>版</th><th>日付</th><th>作成者</th><th>内容</th></tr></thead><tbody>' +
+                revs
+                  .map(
+                    (r) =>
+                      `<tr><td>${escapeHtml(r.version || '')}</td><td>${escapeHtml(r.date || '')}</td>` +
+                      `<td>${escapeHtml(r.author || '')}</td><td>${escapeHtml(r.note || '')}</td></tr>`
+                  )
+                  .join('') +
+                '</tbody></table>'
+            );
+          }
+          parts.push(pageBreak);
+          parts.push(`<p>${meta.markerToc}</p>`);
+          parts.push(pageBreak);
+        } else {
+          // 表紙なし: 表題 → 目次 → 改ページ → 本文（完成イメージと同じ流れ）
+          parts.push(`<p>${meta.markerTitle}${escapeHtml(checklist.title)}</p>`);
+          parts.push(`<p>${meta.markerToc}</p>`);
+          parts.push(pageBreak);
+        }
+        // 所要時間は手順書の情報として残す（種別・進捗・出力日付は出さない）。
+        if (totalMin) parts.push(`<p>総所要 約${totalMin}分</p>`);
+      } else {
+        // ToDo 型は従来どおり（表紙・目次・表題装飾なし。16pt 太字の表題のみ）。
+        parts.push(
+          `<p><span style="font-size:16pt"><strong>${escapeHtml(checklist.title)}</strong></span></p>`
+        );
+      }
       checklist.sections.forEach((s) => {
         const mins = isTemplate ? sumMinutes(s.items) : 0;
         const heading = `${escapeHtml(s.title)}${mins ? `（⏱${mins}分）` : ''}`;
+        // h2 → Heading2（後処理で様式「見出し1」の帯デザインに差し替わる）
         if (heading) parts.push(`<h2>${heading}</h2>`);
         s.items.forEach((it) => {
           if (isTemplate) {
-            // 手順書にチェックボックス記号（☐/☑）は出さない
+            // 手順名は h4 → Heading4（様式「見出し4」＝太字＋点線下罫線。目次にも載る）。
+            // スタイルが太字を持つので <strong> は不要。☐/☑ は手順書には出さない。
             stepNo += 1;
             const time = it.time ? `　⏱${escapeHtml(String(it.time))}分` : '';
-            parts.push(`<p><strong>${stepNo}.</strong> ${escapeHtml(it.text)}${time}</p>`);
+            parts.push(`<h4>${stepNo}. ${escapeHtml(it.text)}${time}</h4>`);
             const bodyClean = sanitizeBodyHtml(it.body || '');
             if (bodyClean) parts.push(bodyClean);
             if (it.note) parts.push(`<p>（メモ）${escapeHtml(it.note)}</p>`);
@@ -1526,21 +1586,21 @@
           });
         });
       });
-      return parts.join('\n');
+      return { html: parts.join('\n'), meta };
     }
     function buildStaticHtmlForDocx(checklist) {
-      const body = renderDocxView(checklist);
+      const { html: body, meta } = renderDocxView(checklist);
       // アプリの <style> 全文は渡さない（html-to-docx はほぼ無視する上、巨大になる）。
       // 表の罫線など docx 側で効く最小限のスタイルだけ付ける。
       const styleCss =
         'table { border-collapse: collapse; } ' +
         'th, td { border: 1px solid #555555; padding: 4px 8px; } ' +
         'thead th { background-color: #e9eef5; }';
-      return (
+      const html =
         '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8" />' +
         '<title>' + escapeHtml(checklist.title || '') + '</title>' +
-        '<style>' + styleCss + '</style></head><body>' + body + '</body></html>'
-      );
+        '<style>' + styleCss + '</style></head><body>' + body + '</body></html>';
+      return { html, meta };
     }
     async function saveDocxViaElectron(checklist) {
       if (!window.docxAPI || !window.docxAPI.save) {
@@ -1548,10 +1608,11 @@
         return;
       }
       try {
-        const html = buildStaticHtmlForDocx(checklist);
+        const { html, meta } = buildStaticHtmlForDocx(checklist);
         const res = await window.docxAPI.save({
           title: sanitizeFilename(checklist.title || 'checklist'),
           html,
+          meta,
         });
         if (res && res.error) alert('.docx の出力に失敗しました: ' + res.error);
       } catch (e) {

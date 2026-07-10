@@ -584,7 +584,7 @@ function onMouseUp(e) {
 // レンダラー(index.html)から受け取った静的HTMLを .docx に変換し、
 // ネイティブ保存ダイアログで書き出す。html-to-docx はネイティブ依存なしの純JS。
 async function saveDocx(event, payload) {
-  const { title, html } = payload || {};
+  const { title, html, meta } = payload || {};
   if (!html) return { error: 'HTML が空です。' };
   let HTMLtoDOCX;
   try {
@@ -621,8 +621,20 @@ async function saveDocx(event, payload) {
         gutter: 0,
       },
       table: { row: { cantSplit: true } },
+      // 社内様式に合わせる: フッター（中身は後処理で「PAGE / NUMPAGES」に差し替え）と
+      // 既定フォント（和文ＭＳ Ｐゴシック・10.5pt・日本語）。
+      footer: true,
+      pageNumber: true,
+      font: 'ＭＳ Ｐゴシック',
+      fontSize: 21,
+      complexScriptFontSize: 21,
+      lang: 'ja-JP',
     });
-    fs.writeFileSync(filePath, buffer);
+    // 様式デザインへの後処理（見出しスタイル差し替え・表題/目次の注入・フッター等）。
+    // 失敗したらファイルを書かずにエラーを返す（壊れた docx を残さない）。
+    const { postProcessDocx } = require('./docx-postprocess');
+    const processed = await postProcessDocx(buffer, meta || {});
+    fs.writeFileSync(filePath, processed);
     return { saved: true, filePath };
   } catch (e) {
     return { error: e.message };
