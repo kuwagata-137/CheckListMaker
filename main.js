@@ -621,11 +621,11 @@ async function saveDocx(event, payload) {
         gutter: 0,
       },
       table: { row: { cantSplit: true } },
-      // 社内様式に合わせる: フッター（中身は後処理で「PAGE / NUMPAGES」に差し替え）と
-      // 既定フォント（和文ＭＳ Ｐゴシック・10.5pt・日本語）。
+      // フッター（中身は後処理で「PAGE / NUMPAGES」に差し替え）と
+      // 既定フォント（和文=游明朝・10.5pt・日本語）。docDefaults の eastAsia も後処理で游明朝に固定する。
       footer: true,
       pageNumber: true,
-      font: 'ＭＳ Ｐゴシック',
+      font: '游明朝',
       fontSize: 21,
       complexScriptFontSize: 21,
       lang: 'ja-JP',

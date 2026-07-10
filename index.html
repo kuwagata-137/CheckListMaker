@@ -767,6 +767,30 @@
   .print-cols-1 .print-img { width: auto; max-width: 100%; max-height: 160mm; }
   .print-cols-2 .print-img { max-width: 49%; max-height: 110mm; }
 
+  /* ---- 目次ページ（表紙の「目次を含める」ON のとき、表紙の直後に出す） ---- */
+  .print-toc-title {
+    font-size: 1.4rem;
+    margin: 0 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #000;
+  }
+  .print-toc-list { list-style: none; margin: 0; padding: 0; }
+  .print-toc-sec {
+    font-weight: 700;
+    font-size: 1.05rem;
+    margin: 10px 0 2px;
+    break-inside: avoid;
+  }
+  .print-toc-meta { font-weight: 400; font-size: 0.85rem; color: #555; margin-left: 6px; }
+  .print-toc-steps { list-style: none; margin: 2px 0 0; padding: 0 0 0 1.7em; }
+  .print-toc-step {
+    font-weight: 400;
+    font-size: 0.95rem;
+    color: #333;
+    padding: 1px 0;
+    word-break: break-word;
+  }
+
   /* ---- 印刷プレビュー（モーダル） ---- */
   .modal.print-preview { max-width: min(900px, 96vw); display: flex; flex-direction: column; }
   .print-preview-bar {
@@ -987,6 +1011,8 @@
     @page coverpage { margin: 0; }
     .print-cover { page: coverpage; break-after: page; overflow: hidden; }
     .print-cover .cover { width: 794px; height: 1123px; }
+    /* 目次は通常余白ページで独立させ、本文を次ページから始める */
+    .print-toc { break-after: page; }
   }
   /* 単体文書モード（出力した .html を単体で開いたとき）は一覧へ戻る導線を隠す */
   .clm-standalone [data-action="home"] { display: none; }
@@ -1048,6 +1074,7 @@
     function createCoverPage() {
       return {
         enabled: true,
+        includeToc: true,
         preset: 'centered',
         accent: '#3b6ea5',
         title: '',
@@ -1489,66 +1516,40 @@
     // 表題と目次は html-to-docx では表現できないため、マーカー入りの段落を置いておき、
     // メインプロセスの後処理（docx-postprocess.js）が様式の OOXML に置換する。
     // 戻り値は { html, meta }。meta のマーカーを後処理に渡す。
-    function renderDocxView(checklist) {
+    function renderDocxView(checklist, opts = {}) {
       const isTemplate = checklist.type === MODES.TEMPLATE;
       const totalMin = isTemplate
         ? checklist.sections.reduce((a, s) => a + sumMinutes(s.items), 0)
         : 0;
       let stepNo = 0;
       const parts = [];
-      const meta = { isTemplate, markerTitle: '', markerToc: '' };
+      // accent は表紙の差し色に連動（表紙が無くても既定色でモダン様式に使う）。後処理が見出し等に流す。
+      const accent = (checklist.coverPage && checklist.coverPage.accent) || '#3b6ea5';
+      const meta = { isTemplate, markerTitle: '', markerToc: '', accent };
       const pageBreak = '<div class="page-break" style="page-break-after: always;"></div>';
       if (isTemplate) {
         // マーカーは英数字トークン（正規表現エスケープ不要な文字種のみ）。
         meta.markerTitle = '@@DXTITLE' + Math.random().toString(36).slice(2, 10) + '@@';
         meta.markerToc = '@@DXTOC' + Math.random().toString(36).slice(2, 10) + '@@';
         const cover = checklist.coverPage;
-        if (cover && cover.enabled) {
-          // 簡易表紙: 表題（様式スタイルは後処理で付与）・副題・メタ表・改訂履歴 → 改ページ
-          parts.push(`<p>${meta.markerTitle}${escapeHtml(cover.title || checklist.title)}</p>`);
-          if (cover.subtitle) {
-            parts.push(`<p style="text-align:center">${escapeHtml(cover.subtitle)}</p>`);
-          }
-          const metaRows = [
-            ['作成者', cover.author],
-            ['作成日', cover.date],
-            ['版', cover.version],
-            ['文書番号', cover.docNumber],
-          ].filter((r) => r[1]);
-          if (metaRows.length) {
-            parts.push(
-              '<table><tbody>' +
-                metaRows
-                  .map((r) => `<tr><td>${r[0]}</td><td>${escapeHtml(String(r[1]))}</td></tr>`)
-                  .join('') +
-                '</tbody></table>'
-            );
-          }
-          const revs = (Array.isArray(cover.revisions) ? cover.revisions : []).filter(
-            (r) => r && (r.version || r.date || r.author || r.note)
-          );
-          if (revs.length) {
-            parts.push('<p><strong>改訂履歴</strong></p>');
-            parts.push(
-              '<table><thead><tr><th>版</th><th>日付</th><th>作成者</th><th>内容</th></tr></thead><tbody>' +
-                revs
-                  .map(
-                    (r) =>
-                      `<tr><td>${escapeHtml(r.version || '')}</td><td>${escapeHtml(r.date || '')}</td>` +
-                      `<td>${escapeHtml(r.author || '')}</td><td>${escapeHtml(r.note || '')}</td></tr>`
-                  )
-                  .join('') +
-                '</tbody></table>'
-            );
-          }
+        const coverImage = opts.coverImage;
+        if (cover && cover.enabled && coverImage) {
+          // 表紙: アプリの表紙作成機能で作った表紙を画像として 1 ページ目に埋め込む
+          // （デザイン忠実再現）。表題は画像に含まれるため表題マーカーは出さない。
+          // 605x856px ≒ 本文幅160mm・A4縦比。
+          parts.push(`<p><img src="${coverImage}" width="605" height="856" /></p>`);
           parts.push(pageBreak);
-          parts.push(`<p>${meta.markerToc}</p>`);
-          parts.push(pageBreak);
+          meta.markerTitle = '';
+          if (cover.includeToc !== false) {
+            parts.push(`<p>${meta.markerToc}</p>`);
+            parts.push(pageBreak);
+          } else {
+            meta.markerToc = '';
+          }
         } else {
-          // 表紙なし: 表題 → 目次 → 改ページ → 本文（完成イメージと同じ流れ）
+          // 表紙なし: 表題のみ（目次は表紙機能のオプションのため出さない）。
           parts.push(`<p>${meta.markerTitle}${escapeHtml(checklist.title)}</p>`);
-          parts.push(`<p>${meta.markerToc}</p>`);
-          parts.push(pageBreak);
+          meta.markerToc = '';
         }
         // 所要時間は手順書の情報として残す（種別・進捗・出力日付は出さない）。
         if (totalMin) parts.push(`<p>総所要 約${totalMin}分</p>`);
@@ -1560,15 +1561,17 @@
       }
       checklist.sections.forEach((s) => {
         const mins = isTemplate ? sumMinutes(s.items) : 0;
-        const heading = `${escapeHtml(s.title)}${mins ? `（⏱${mins}分）` : ''}`;
-        // h2 → Heading2（後処理で様式「見出し1」の帯デザインに差し替わる）
+        // 所要時間は @@DXTAB@@（後処理で右タブに置換）で見出し行末に右詰めする。
+        const heading = `${escapeHtml(s.title)}${mins ? `@@DXTAB@@⏱${mins}分` : ''}`;
+        // h2 → Heading2（後処理でモダン様式の見出しに差し替わる）
         if (heading) parts.push(`<h2>${heading}</h2>`);
         s.items.forEach((it) => {
           if (isTemplate) {
             // 手順名は h4 → Heading4（様式「見出し4」＝太字＋点線下罫線。目次にも載る）。
             // スタイルが太字を持つので <strong> は不要。☐/☑ は手順書には出さない。
             stepNo += 1;
-            const time = it.time ? `　⏱${escapeHtml(String(it.time))}分` : '';
+            // 所要時間は @@DXTAB@@（後処理で右タブに置換）で手順名の行末に右詰めする。
+            const time = it.time ? `@@DXTAB@@⏱${escapeHtml(String(it.time))}分` : '';
             parts.push(`<h4>${stepNo}. ${escapeHtml(it.text)}${time}</h4>`);
             const bodyClean = sanitizeBodyHtml(it.body || '');
             if (bodyClean) parts.push(bodyClean);
@@ -1588,14 +1591,14 @@
       });
       return { html: parts.join('\n'), meta };
     }
-    function buildStaticHtmlForDocx(checklist) {
-      const { html: body, meta } = renderDocxView(checklist);
+    function buildStaticHtmlForDocx(checklist, opts = {}) {
+      const { html: body, meta } = renderDocxView(checklist, opts);
       // アプリの <style> 全文は渡さない（html-to-docx はほぼ無視する上、巨大になる）。
       // 表の罫線など docx 側で効く最小限のスタイルだけ付ける。
       const styleCss =
         'table { border-collapse: collapse; } ' +
-        'th, td { border: 1px solid #555555; padding: 4px 8px; } ' +
-        'thead th { background-color: #e9eef5; }';
+        'th, td { border: 1px solid #cfd3da; padding: 5px 9px; } ' +
+        'thead th { background-color: #f2f4f7; }';
       const html =
         '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8" />' +
         '<title>' + escapeHtml(checklist.title || '') + '</title>' +
@@ -1608,7 +1611,14 @@
         return;
       }
       try {
-        const { html, meta } = buildStaticHtmlForDocx(checklist);
+        // 表紙有効なテンプレートは、アプリの表紙を画像化して 1 ページ目に埋め込む。
+        // 画像化に失敗したら出力は中止する（簡易表紙にフォールバックしない＝仕様どおり）。
+        const opts = {};
+        const cover = checklist.coverPage;
+        if (checklist.type === MODES.TEMPLATE && cover && cover.enabled) {
+          opts.coverImage = await rasterizeCoverToPng(cover, checklist.title);
+        }
+        const { html, meta } = buildStaticHtmlForDocx(checklist, opts);
         const res = await window.docxAPI.save({
           title: sanitizeFilename(checklist.title || 'checklist'),
           html,
@@ -2563,6 +2573,53 @@
       });
     }
 
+    // 表紙(.cover 794x1123)を SVG foreignObject 経由で PNG(dataURL) にラスタライズする。
+    // Word 出力の 1 ページ目に、アプリの表紙作成機能のデザインをそのまま画像として
+    // 埋め込むために使う（依存追加・IPC 不要。Chromium/Electron のレンダリング前提）。
+    // 失敗時は reject し、呼び出し側でエラー表示・出力中止する。
+    function rasterizeCoverToPng(cover, fallbackTitle = '') {
+      return new Promise((resolve, reject) => {
+        try {
+          const W = 794, H = 1123, SCALE = 2; // 2倍(1588x2246)で描く。本文幅160mmで約250dpi相当
+          const coverHtml = renderCoverHtml(cover, fallbackTitle);
+          // アプリの <style> 全文を同梱して .cover 系 CSS（プリセット・差し色）を効かせる。
+          // ただし foreignObject を包む SVG は XML として解析されるため、CSS コメントは除去する
+          // （このスタイルシートのコメントに含まれる "<input>" 等の '<' が XML を壊すため）。
+          const styleEl = document.querySelector('style');
+          const styleText = (styleEl ? styleEl.textContent : '').replace(/\/\*[\s\S]*?\*\//g, '');
+          // foreignObject 内は XHTML。ルート div を 794x1123・白背景で固定する。
+          const svg =
+            `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">` +
+            `<foreignObject x="0" y="0" width="${W}" height="${H}">` +
+            `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${W}px;height:${H}px;background:#fff">` +
+            `<style>${styleText}</style>${coverHtml}` +
+            `</div></foreignObject></svg>`;
+          const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+          const img = new Image();
+          img.width = W; img.height = H;
+          const paint = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = W * SCALE;
+              canvas.height = H * SCALE;
+              const ctx = canvas.getContext('2d');
+              ctx.fillStyle = '#fff';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              resolve(canvas.toDataURL('image/png'));
+            } catch (e) { reject(e); }
+          };
+          img.onload = () => {
+            // フォント・画像の反映を待ってから描く（未反映だと白紙・崩れになる）。
+            if (img.decode) img.decode().then(paint).catch(paint);
+            else paint();
+          };
+          img.onerror = () => reject(new Error('表紙画像の生成に失敗しました'));
+          img.src = url;
+        } catch (e) { reject(e); }
+      });
+    }
+
     // 印刷（ブラウザの印刷→PDF保存を想定）用の読み取り専用ビューを組み立てる。
     // 入力欄は印刷でテキストが折り返せないため、span/li のプレーンな表現で描く。
     function renderPrintView(checklist) {
@@ -2616,12 +2673,35 @@
           return `<section class="print-section">${titleHtml}<ul class="print-items">${itemsHtml}</ul></section>`;
         })
         .join('');
-      const coverHtml =
-        isTemplate && checklist.coverPage && checklist.coverPage.enabled
-          ? `<div class="print-cover">${renderCoverHtml(checklist.coverPage, checklist.title)}</div>`
-          : '';
+      const coverOn = isTemplate && checklist.coverPage && checklist.coverPage.enabled;
+      const coverHtml = coverOn
+        ? `<div class="print-cover">${renderCoverHtml(checklist.coverPage, checklist.title)}</div>`
+        : '';
+      // 目次ページ: 表紙が有効かつ「目次を含める」ON のときだけ、表紙の直後に置く。
+      // セクション名（⏱分付き）＋配下の手順名（連番・インデント）。ページ番号は出さない。
+      let tocHtml = '';
+      if (coverOn && checklist.coverPage.includeToc !== false) {
+        let tocNo = 0;
+        const tocItems = checklist.sections
+          .map((s) => {
+            const mins = sumMinutes(s.items);
+            const secMeta = mins ? `<span class="print-toc-meta">（⏱${mins}分）</span>` : '';
+            const secTitle = escapeHtml(s.title) || '（無題のセクション）';
+            const steps = s.items
+              .map((it) => {
+                tocNo += 1;
+                return `<li class="print-toc-step">${tocNo}. ${escapeHtml(it.text)}</li>`;
+              })
+              .join('');
+            const stepsHtml = steps ? `<ol class="print-toc-steps">${steps}</ol>` : '';
+            return `<li class="print-toc-sec">${secTitle}${secMeta}${stepsHtml}</li>`;
+          })
+          .join('');
+        tocHtml = `<div class="print-toc"><h2 class="print-toc-title">目次</h2><ol class="print-toc-list">${tocItems}</ol></div>`;
+      }
       return `
         ${coverHtml}
+        ${tocHtml}
         <div class="print-header">
           <h1>${escapeHtml(checklist.title)}</h1>
           <div class="print-meta">
@@ -3126,6 +3206,11 @@
             <span>この手順書に表紙を付ける</span>
             <small>— オフにすると印刷・プレビューに出ません</small>
           </div>
+          <div class="ce-enable">
+            <span class="ce-switch" data-ce="toc-toggle"></span>
+            <span>目次を含める</span>
+            <small>— 印刷/PDF に目次ページ、Word 出力に目次（Word で開き更新すると生成）を入れます。表紙がオフだと出ません</small>
+          </div>
           <div class="ce-body">
             <div class="ce-form">
               <div class="ce-grp">
@@ -3211,6 +3296,9 @@
         const tg = $('[data-ce="toggle"]');
         tg.classList.toggle('on', !!draft.enabled);
         tg.style.setProperty('--cover-accent', draft.accent || '#3b6ea5');
+        const tgToc = $('[data-ce="toc-toggle"]');
+        tgToc.classList.toggle('on', draft.includeToc !== false);
+        tgToc.style.setProperty('--cover-accent', draft.accent || '#3b6ea5');
         $('[data-ce="note"]').innerHTML = `選択中: <b>${COVER_PRESET_NAMES[draft.preset] || ''}</b><br>印刷/PDF では、この表紙が先頭ページになります。`;
         scaleCoverStages(overlay);
       }
@@ -3229,6 +3317,7 @@
         const sw = e.target.closest('.ce-swatch[data-color]');
         if (sw) { draft.accent = sw.dataset.color; persist(); refresh(); return; }
         if (e.target.closest('[data-ce="toggle"]')) { draft.enabled = !draft.enabled; persist(); refresh(); return; }
+        if (e.target.closest('[data-ce="toc-toggle"]')) { draft.includeToc = !(draft.includeToc !== false); persist(); refresh(); return; }
         if (e.target.closest('[data-ce="logo-pick"]')) { pickCoverLogo(); return; }
         if (e.target.closest('[data-ce="logo-del"]')) { draft.logo = ''; persist(); refresh(); return; }
         if (e.target.closest('[data-ce="rev-add"]')) {
