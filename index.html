@@ -1523,7 +1523,9 @@
         : 0;
       let stepNo = 0;
       const parts = [];
-      const meta = { isTemplate, markerTitle: '', markerToc: '' };
+      // accent は表紙の差し色に連動（表紙が無くても既定色でモダン様式に使う）。後処理が見出し等に流す。
+      const accent = (checklist.coverPage && checklist.coverPage.accent) || '#3b6ea5';
+      const meta = { isTemplate, markerTitle: '', markerToc: '', accent };
       const pageBreak = '<div class="page-break" style="page-break-after: always;"></div>';
       if (isTemplate) {
         // マーカーは英数字トークン（正規表現エスケープ不要な文字種のみ）。
@@ -1559,15 +1561,17 @@
       }
       checklist.sections.forEach((s) => {
         const mins = isTemplate ? sumMinutes(s.items) : 0;
-        const heading = `${escapeHtml(s.title)}${mins ? `（⏱${mins}分）` : ''}`;
-        // h2 → Heading2（後処理で様式「見出し1」の帯デザインに差し替わる）
+        // 所要時間は @@DXTAB@@（後処理で右タブに置換）で見出し行末に右詰めする。
+        const heading = `${escapeHtml(s.title)}${mins ? `@@DXTAB@@⏱${mins}分` : ''}`;
+        // h2 → Heading2（後処理でモダン様式の見出しに差し替わる）
         if (heading) parts.push(`<h2>${heading}</h2>`);
         s.items.forEach((it) => {
           if (isTemplate) {
             // 手順名は h4 → Heading4（様式「見出し4」＝太字＋点線下罫線。目次にも載る）。
             // スタイルが太字を持つので <strong> は不要。☐/☑ は手順書には出さない。
             stepNo += 1;
-            const time = it.time ? `　⏱${escapeHtml(String(it.time))}分` : '';
+            // 所要時間は @@DXTAB@@（後処理で右タブに置換）で手順名の行末に右詰めする。
+            const time = it.time ? `@@DXTAB@@⏱${escapeHtml(String(it.time))}分` : '';
             parts.push(`<h4>${stepNo}. ${escapeHtml(it.text)}${time}</h4>`);
             const bodyClean = sanitizeBodyHtml(it.body || '');
             if (bodyClean) parts.push(bodyClean);
@@ -1593,8 +1597,8 @@
       // 表の罫線など docx 側で効く最小限のスタイルだけ付ける。
       const styleCss =
         'table { border-collapse: collapse; } ' +
-        'th, td { border: 1px solid #555555; padding: 4px 8px; } ' +
-        'thead th { background-color: #e9eef5; }';
+        'th, td { border: 1px solid #cfd3da; padding: 5px 9px; } ' +
+        'thead th { background-color: #f2f4f7; }';
       const html =
         '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8" />' +
         '<title>' + escapeHtml(checklist.title || '') + '</title>' +
