@@ -767,6 +767,30 @@
   .print-cols-1 .print-img { width: auto; max-width: 100%; max-height: 160mm; }
   .print-cols-2 .print-img { max-width: 49%; max-height: 110mm; }
 
+  /* ---- 目次ページ（表紙の「目次を含める」ON のとき、表紙の直後に出す） ---- */
+  .print-toc-title {
+    font-size: 1.4rem;
+    margin: 0 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #000;
+  }
+  .print-toc-list { list-style: none; margin: 0; padding: 0; }
+  .print-toc-sec {
+    font-weight: 700;
+    font-size: 1.05rem;
+    margin: 10px 0 2px;
+    break-inside: avoid;
+  }
+  .print-toc-meta { font-weight: 400; font-size: 0.85rem; color: #555; margin-left: 6px; }
+  .print-toc-steps { list-style: none; margin: 2px 0 0; padding: 0 0 0 1.7em; }
+  .print-toc-step {
+    font-weight: 400;
+    font-size: 0.95rem;
+    color: #333;
+    padding: 1px 0;
+    word-break: break-word;
+  }
+
   /* ---- 印刷プレビュー（モーダル） ---- */
   .modal.print-preview { max-width: min(900px, 96vw); display: flex; flex-direction: column; }
   .print-preview-bar {
@@ -987,6 +1011,8 @@
     @page coverpage { margin: 0; }
     .print-cover { page: coverpage; break-after: page; overflow: hidden; }
     .print-cover .cover { width: 794px; height: 1123px; }
+    /* 目次は通常余白ページで独立させ、本文を次ページから始める */
+    .print-toc { break-after: page; }
   }
   /* 単体文書モード（出力した .html を単体で開いたとき）は一覧へ戻る導線を隠す */
   .clm-standalone [data-action="home"] { display: none; }
@@ -1048,6 +1074,7 @@
     function createCoverPage() {
       return {
         enabled: true,
+        includeToc: true,
         preset: 'centered',
         accent: '#3b6ea5',
         title: '',
@@ -2642,12 +2669,35 @@
           return `<section class="print-section">${titleHtml}<ul class="print-items">${itemsHtml}</ul></section>`;
         })
         .join('');
-      const coverHtml =
-        isTemplate && checklist.coverPage && checklist.coverPage.enabled
-          ? `<div class="print-cover">${renderCoverHtml(checklist.coverPage, checklist.title)}</div>`
-          : '';
+      const coverOn = isTemplate && checklist.coverPage && checklist.coverPage.enabled;
+      const coverHtml = coverOn
+        ? `<div class="print-cover">${renderCoverHtml(checklist.coverPage, checklist.title)}</div>`
+        : '';
+      // 目次ページ: 表紙が有効かつ「目次を含める」ON のときだけ、表紙の直後に置く。
+      // セクション名（⏱分付き）＋配下の手順名（連番・インデント）。ページ番号は出さない。
+      let tocHtml = '';
+      if (coverOn && checklist.coverPage.includeToc !== false) {
+        let tocNo = 0;
+        const tocItems = checklist.sections
+          .map((s) => {
+            const mins = sumMinutes(s.items);
+            const secMeta = mins ? `<span class="print-toc-meta">（⏱${mins}分）</span>` : '';
+            const secTitle = escapeHtml(s.title) || '（無題のセクション）';
+            const steps = s.items
+              .map((it) => {
+                tocNo += 1;
+                return `<li class="print-toc-step">${tocNo}. ${escapeHtml(it.text)}</li>`;
+              })
+              .join('');
+            const stepsHtml = steps ? `<ol class="print-toc-steps">${steps}</ol>` : '';
+            return `<li class="print-toc-sec">${secTitle}${secMeta}${stepsHtml}</li>`;
+          })
+          .join('');
+        tocHtml = `<div class="print-toc"><h2 class="print-toc-title">目次</h2><ol class="print-toc-list">${tocItems}</ol></div>`;
+      }
       return `
         ${coverHtml}
+        ${tocHtml}
         <div class="print-header">
           <h1>${escapeHtml(checklist.title)}</h1>
           <div class="print-meta">
@@ -3152,6 +3202,11 @@
             <span>この手順書に表紙を付ける</span>
             <small>— オフにすると印刷・プレビューに出ません</small>
           </div>
+          <div class="ce-enable">
+            <span class="ce-switch" data-ce="toc-toggle"></span>
+            <span>目次を含める</span>
+            <small>— 印刷/PDF に目次ページ、Word 出力に目次（Word で開き更新すると生成）を入れます。表紙がオフだと出ません</small>
+          </div>
           <div class="ce-body">
             <div class="ce-form">
               <div class="ce-grp">
@@ -3237,6 +3292,9 @@
         const tg = $('[data-ce="toggle"]');
         tg.classList.toggle('on', !!draft.enabled);
         tg.style.setProperty('--cover-accent', draft.accent || '#3b6ea5');
+        const tgToc = $('[data-ce="toc-toggle"]');
+        tgToc.classList.toggle('on', draft.includeToc !== false);
+        tgToc.style.setProperty('--cover-accent', draft.accent || '#3b6ea5');
         $('[data-ce="note"]').innerHTML = `選択中: <b>${COVER_PRESET_NAMES[draft.preset] || ''}</b><br>印刷/PDF では、この表紙が先頭ページになります。`;
         scaleCoverStages(overlay);
       }
@@ -3255,6 +3313,7 @@
         const sw = e.target.closest('.ce-swatch[data-color]');
         if (sw) { draft.accent = sw.dataset.color; persist(); refresh(); return; }
         if (e.target.closest('[data-ce="toggle"]')) { draft.enabled = !draft.enabled; persist(); refresh(); return; }
+        if (e.target.closest('[data-ce="toc-toggle"]')) { draft.includeToc = !(draft.includeToc !== false); persist(); refresh(); return; }
         if (e.target.closest('[data-ce="logo-pick"]')) { pickCoverLogo(); return; }
         if (e.target.closest('[data-ce="logo-del"]')) { draft.logo = ''; persist(); refresh(); return; }
         if (e.target.closest('[data-ce="rev-add"]')) {
