@@ -1479,34 +1479,36 @@
     // 構造だと画像が全て消える（<li> 内の表も同リスク）。そこで docx 用には
     // ul/li を使わず、見出し・段落・表・画像を全てトップレベルに並べたHTMLを組む。
     function renderDocxView(checklist) {
-      const p = progress(checklist);
       const isTemplate = checklist.type === MODES.TEMPLATE;
-      const dateStr = new Date().toLocaleDateString('ja-JP');
       const totalMin = isTemplate
         ? checklist.sections.reduce((a, s) => a + sumMinutes(s.items), 0)
         : 0;
       let stepNo = 0;
       const parts = [];
-      parts.push(`<h1>${escapeHtml(checklist.title)}</h1>`);
+      // タイトルは <h1> にしない: html-to-docx が見出し1（アウトラインレベル付き）に
+      // マップしてしまうため、通常段落＋16pt 太字で出す（Word の手順書要件）。
       parts.push(
-        `<p>${modeLabel(checklist.type)} ／ ${p.done} / ${p.total} 完了（${p.percent}%）${
-          totalMin ? ` ・ 総所要 約${totalMin}分` : ''
-        } ／ ${dateStr}</p>`
+        `<p><span style="font-size:16pt"><strong>${escapeHtml(checklist.title)}</strong></span></p>`
       );
+      // 種別（テンプレート/ToDo）・進捗・日付は Word の手順書には不要なので出さない。
+      // 所要時間は手順書の情報として残す。
+      if (totalMin) parts.push(`<p>総所要 約${totalMin}分</p>`);
       checklist.sections.forEach((s) => {
         const mins = isTemplate ? sumMinutes(s.items) : 0;
         const heading = `${escapeHtml(s.title)}${mins ? `（⏱${mins}分）` : ''}`;
         if (heading) parts.push(`<h2>${heading}</h2>`);
         s.items.forEach((it) => {
-          const box = it.done ? '☑' : '☐';
           if (isTemplate) {
+            // 手順書にチェックボックス記号（☐/☑）は出さない
             stepNo += 1;
             const time = it.time ? `　⏱${escapeHtml(String(it.time))}分` : '';
-            parts.push(`<p><strong>${stepNo}.</strong> ${box} ${escapeHtml(it.text)}${time}</p>`);
+            parts.push(`<p><strong>${stepNo}.</strong> ${escapeHtml(it.text)}${time}</p>`);
             const bodyClean = sanitizeBodyHtml(it.body || '');
             if (bodyClean) parts.push(bodyClean);
             if (it.note) parts.push(`<p>（メモ）${escapeHtml(it.note)}</p>`);
           } else {
+            // ToDo 型はチェック状態が本体情報なので従来通り記号を出す
+            const box = it.done ? '☑' : '☐';
             parts.push(`<p>${box} ${escapeHtml(it.text)}</p>`);
           }
           (Array.isArray(it.images) ? it.images : []).forEach((src) => {
