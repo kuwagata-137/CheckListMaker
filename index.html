@@ -1489,7 +1489,7 @@
     // 表題と目次は html-to-docx では表現できないため、マーカー入りの段落を置いておき、
     // メインプロセスの後処理（docx-postprocess.js）が様式の OOXML に置換する。
     // 戻り値は { html, meta }。meta のマーカーを後処理に渡す。
-    function renderDocxView(checklist) {
+    function renderDocxView(checklist, opts = {}) {
       const isTemplate = checklist.type === MODES.TEMPLATE;
       const totalMin = isTemplate
         ? checklist.sections.reduce((a, s) => a + sumMinutes(s.items), 0)
@@ -1503,52 +1503,24 @@
         meta.markerTitle = '@@DXTITLE' + Math.random().toString(36).slice(2, 10) + '@@';
         meta.markerToc = '@@DXTOC' + Math.random().toString(36).slice(2, 10) + '@@';
         const cover = checklist.coverPage;
-        if (cover && cover.enabled) {
-          // 簡易表紙: 表題（様式スタイルは後処理で付与）・副題・メタ表・改訂履歴 → 改ページ
-          parts.push(`<p>${meta.markerTitle}${escapeHtml(cover.title || checklist.title)}</p>`);
-          if (cover.subtitle) {
-            parts.push(`<p style="text-align:center">${escapeHtml(cover.subtitle)}</p>`);
-          }
-          const metaRows = [
-            ['作成者', cover.author],
-            ['作成日', cover.date],
-            ['版', cover.version],
-            ['文書番号', cover.docNumber],
-          ].filter((r) => r[1]);
-          if (metaRows.length) {
-            parts.push(
-              '<table><tbody>' +
-                metaRows
-                  .map((r) => `<tr><td>${r[0]}</td><td>${escapeHtml(String(r[1]))}</td></tr>`)
-                  .join('') +
-                '</tbody></table>'
-            );
-          }
-          const revs = (Array.isArray(cover.revisions) ? cover.revisions : []).filter(
-            (r) => r && (r.version || r.date || r.author || r.note)
-          );
-          if (revs.length) {
-            parts.push('<p><strong>改訂履歴</strong></p>');
-            parts.push(
-              '<table><thead><tr><th>版</th><th>日付</th><th>作成者</th><th>内容</th></tr></thead><tbody>' +
-                revs
-                  .map(
-                    (r) =>
-                      `<tr><td>${escapeHtml(r.version || '')}</td><td>${escapeHtml(r.date || '')}</td>` +
-                      `<td>${escapeHtml(r.author || '')}</td><td>${escapeHtml(r.note || '')}</td></tr>`
-                  )
-                  .join('') +
-                '</tbody></table>'
-            );
-          }
+        const coverImage = opts.coverImage;
+        if (cover && cover.enabled && coverImage) {
+          // 表紙: アプリの表紙作成機能で作った表紙を画像として 1 ページ目に埋め込む
+          // （デザイン忠実再現）。表題は画像に含まれるため表題マーカーは出さない。
+          // 605x856px ≒ 本文幅160mm・A4縦比。
+          parts.push(`<p><img src="${coverImage}" width="605" height="856" /></p>`);
           parts.push(pageBreak);
-          parts.push(`<p>${meta.markerToc}</p>`);
-          parts.push(pageBreak);
+          meta.markerTitle = '';
+          if (cover.includeToc !== false) {
+            parts.push(`<p>${meta.markerToc}</p>`);
+            parts.push(pageBreak);
+          } else {
+            meta.markerToc = '';
+          }
         } else {
-          // 表紙なし: 表題 → 目次 → 改ページ → 本文（完成イメージと同じ流れ）
+          // 表紙なし: 表題のみ（目次は表紙機能のオプションのため出さない）。
           parts.push(`<p>${meta.markerTitle}${escapeHtml(checklist.title)}</p>`);
-          parts.push(`<p>${meta.markerToc}</p>`);
-          parts.push(pageBreak);
+          meta.markerToc = '';
         }
         // 所要時間は手順書の情報として残す（種別・進捗・出力日付は出さない）。
         if (totalMin) parts.push(`<p>総所要 約${totalMin}分</p>`);
@@ -1588,8 +1560,8 @@
       });
       return { html: parts.join('\n'), meta };
     }
-    function buildStaticHtmlForDocx(checklist) {
-      const { html: body, meta } = renderDocxView(checklist);
+    function buildStaticHtmlForDocx(checklist, opts = {}) {
+      const { html: body, meta } = renderDocxView(checklist, opts);
       // アプリの <style> 全文は渡さない（html-to-docx はほぼ無視する上、巨大になる）。
       // 表の罫線など docx 側で効く最小限のスタイルだけ付ける。
       const styleCss =
@@ -1608,7 +1580,14 @@
         return;
       }
       try {
-        const { html, meta } = buildStaticHtmlForDocx(checklist);
+        // 表紙有効なテンプレートは、アプリの表紙を画像化して 1 ページ目に埋め込む。
+        // 画像化に失敗したら出力は中止する（簡易表紙にフォールバックしない＝仕様どおり）。
+        const opts = {};
+        const cover = checklist.coverPage;
+        if (checklist.type === MODES.TEMPLATE && cover && cover.enabled) {
+          opts.coverImage = await rasterizeCoverToPng(cover, checklist.title);
+        }
+        const { html, meta } = buildStaticHtmlForDocx(checklist, opts);
         const res = await window.docxAPI.save({
           title: sanitizeFilename(checklist.title || 'checklist'),
           html,
@@ -2560,6 +2539,53 @@
         st.style.height = (w * 1123 / 794) + 'px';
         const cv = st.querySelector('.cover');
         if (cv) cv.style.transform = 'scale(' + (w / 794) + ')';
+      });
+    }
+
+    // 表紙(.cover 794x1123)を SVG foreignObject 経由で PNG(dataURL) にラスタライズする。
+    // Word 出力の 1 ページ目に、アプリの表紙作成機能のデザインをそのまま画像として
+    // 埋め込むために使う（依存追加・IPC 不要。Chromium/Electron のレンダリング前提）。
+    // 失敗時は reject し、呼び出し側でエラー表示・出力中止する。
+    function rasterizeCoverToPng(cover, fallbackTitle = '') {
+      return new Promise((resolve, reject) => {
+        try {
+          const W = 794, H = 1123, SCALE = 2; // 2倍(1588x2246)で描く。本文幅160mmで約250dpi相当
+          const coverHtml = renderCoverHtml(cover, fallbackTitle);
+          // アプリの <style> 全文を同梱して .cover 系 CSS（プリセット・差し色）を効かせる。
+          // ただし foreignObject を包む SVG は XML として解析されるため、CSS コメントは除去する
+          // （このスタイルシートのコメントに含まれる "<input>" 等の '<' が XML を壊すため）。
+          const styleEl = document.querySelector('style');
+          const styleText = (styleEl ? styleEl.textContent : '').replace(/\/\*[\s\S]*?\*\//g, '');
+          // foreignObject 内は XHTML。ルート div を 794x1123・白背景で固定する。
+          const svg =
+            `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">` +
+            `<foreignObject x="0" y="0" width="${W}" height="${H}">` +
+            `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${W}px;height:${H}px;background:#fff">` +
+            `<style>${styleText}</style>${coverHtml}` +
+            `</div></foreignObject></svg>`;
+          const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+          const img = new Image();
+          img.width = W; img.height = H;
+          const paint = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = W * SCALE;
+              canvas.height = H * SCALE;
+              const ctx = canvas.getContext('2d');
+              ctx.fillStyle = '#fff';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              resolve(canvas.toDataURL('image/png'));
+            } catch (e) { reject(e); }
+          };
+          img.onload = () => {
+            // フォント・画像の反映を待ってから描く（未反映だと白紙・崩れになる）。
+            if (img.decode) img.decode().then(paint).catch(paint);
+            else paint();
+          };
+          img.onerror = () => reject(new Error('表紙画像の生成に失敗しました'));
+          img.src = url;
+        } catch (e) { reject(e); }
       });
     }
 
