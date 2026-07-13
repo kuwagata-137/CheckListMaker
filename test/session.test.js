@@ -123,3 +123,74 @@ test('session.js — 録画セッション形式', async (t) => {
     assert.equal(session.sessionDir(), null);
   });
 });
+
+test('session.js — 取り込みウィザード用の一覧・読み込み・マーク（2-R4）', async (t) => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'clm-import-'));
+  t.after(() => {
+    session.endSession();
+    fs.rmSync(parent, { recursive: true, force: true });
+  });
+
+  // 素材: 完了セッション（2枚・うち1枚は拡大とサイドカー付き）と未完了セッション
+  const t1 = new Date(2026, 6, 13, 9, 0, 0).getTime();
+  const t2 = new Date(2026, 6, 13, 10, 0, 0).getTime();
+  const s1 = session.startSession('点検', parent, { now: t1 });
+  session.recordShot(PNG, { now: t1 + 1000, text: '「保存」ボタンをクリック',
+    zoom: { png: PNG, rect: [0, 0, 480, 320], source: 'element' } });
+  session.recordShot(PNG, { now: t1 + 2000 });
+  session.endSession({ now: t1 + 5000 });
+  const s2 = session.startSession('作業', parent, { now: t2 });
+  session.recordShot(PNG, { now: t2 + 1000 });
+  // s2 はあえて endSession しない（異常終了＝endedAt null の再現。t.after が後始末する）
+
+  await t.test('listSessions — 新しい順・未完了(endedAt null)も列挙・非セッションは無視', () => {
+    fs.mkdirSync(path.join(parent, 'ただのフォルダ'));
+    fs.writeFileSync(path.join(parent, 'ただのファイル.png'), PNG);
+    const list = session.listSessions(parent);
+    assert.equal(list.length, 2);
+    assert.equal(list[0].dir, s2.dir, '新しい順');
+    assert.equal(list[0].name, '作業');
+    assert.equal(list[0].endedAt, null, '未完了の痕跡が読める');
+    assert.equal(list[1].name, '点検');
+    assert.equal(list[1].shots, 2);
+    assert.equal(list[1].importedAt, null);
+    assert.deepEqual(session.listSessions(path.join(parent, '存在しない')), [], '失敗は空配列');
+  });
+
+  await t.test('readSession — 画像スキャン＋サイドカー併読（欠落は最小情報）', () => {
+    const data = session.readSession(s1.dir);
+    assert.equal(data.info.name, '点検');
+    assert.equal(data.steps.length, 2);
+    assert.deepEqual(
+      data.steps[0],
+      {
+        seq: 1, image: '001.png', zoomImage: '001z.png', zoomSource: 'element',
+        text: '「保存」ボタンをクリック',
+        uia: { resolved: false, name: null, controlType: null, rect: null, windowTitle: null, appName: null },
+        click: { button: null, clicks: null, x: null, y: null },
+        time: data.steps[0].time,
+      }
+    );
+    assert.equal(data.steps[1].zoomImage, null);
+    // サイドカーを消しても画像があればステップとして拾える
+    fs.rmSync(path.join(s1.dir, '002.json'));
+    const again = session.readSession(s1.dir);
+    assert.equal(again.steps.length, 2);
+    assert.equal(again.steps[1].text, null);
+    assert.equal(again.steps[1].seq, 2);
+    assert.equal(session.readSession(path.join(parent, 'ただのフォルダ')), null, 'session.json なしは null');
+  });
+
+  await t.test('markImported — importedAt を記録し他フィールドは保持する', () => {
+    const now = new Date(2026, 6, 13, 12, 0, 0).getTime();
+    assert.equal(session.markImported(s1.dir, { now }), true);
+    const info = JSON.parse(fs.readFileSync(path.join(s1.dir, 'session.json'), 'utf8'));
+    assert.equal(info.importedAt, new Date(now).toISOString());
+    assert.equal(info.name, '点検');
+    assert.equal(info.shots, 2);
+    assert.ok(info.endedAt, 'endedAt は保持される');
+    const list = session.listSessions(parent);
+    assert.ok(list.find((s) => s.dir === s1.dir).importedAt, '一覧にも反映される');
+    assert.equal(session.markImported(path.join(parent, 'ただのフォルダ')), false, '非セッションは false');
+  });
+});
