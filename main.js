@@ -4,7 +4,8 @@
 //  - 「録画」開始/停止の制御
 //  - 録画中はグローバルなマウスクリックを監視し、左/右クリックの度に
 //    「クリックしたモニタ」をキャプチャして、ユーザーの「ピクチャ」内の
-//    「CheckListMaker」フォルダへ保存
+//    「CheckListMaker」配下のセッションフォルダへ、クリック情報の JSON と
+//    併記で保存（形式は session.js / docs/spec-2-R1-session-format.md）
 //  - クリック位置に赤い中抜きリングのマーカーを合成
 //  - スクリーンショットに写らないオーバーレイ「ガジェット」窓の表示
 //  - 失敗（権限拒否・フック開始失敗・キャプチャ失敗）はガジェットへ警告通知
@@ -24,6 +25,7 @@ const screenshot = require('screenshot-desktop');
 const { uIOhook } = require('uiohook-napi');
 const { initStorage } = require('./storage');
 const { initErrorLog } = require('./errorlog');
+const session = require('./session');
 
 let mainWin = null;
 let gadgetWin = null;
@@ -110,36 +112,6 @@ function sanitizeName(s) {
     .slice(0, 60);
   return cleaned || '記録';
 }
-function dateStamp(d = new Date()) {
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
-}
-// 正規表現で使う特殊文字をエスケープ（サニタイズ後の名前にも念のため適用）。
-function escapeRegExp(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-// 同名・同日ファイルの「次の番号」を返す。
-// `<名前>_<日付>_<番号>.png` の既存最大番号+1。日付が変われば自然に 1 から。
-// （ファイル名に日付を含むため、日をまたいでも上書きは起きない。）
-function nextSequence(name, stamp) {
-  const dir = screenshotDir();
-  const re = new RegExp(`^${escapeRegExp(name)}_${stamp}_(\\d+)\\.png$`);
-  let max = 0;
-  try {
-    for (const f of fs.readdirSync(dir)) {
-      const m = re.exec(f);
-      if (m) {
-        const n = parseInt(m[1], 10);
-        if (Number.isFinite(n) && n > max) max = n;
-      }
-    }
-  } catch (_) {
-    /* ディレクトリが無い等は max=0 のまま（=1 から開始） */
-  }
-  return max + 1;
-}
-
 // ── ウィンドウ生成 ──────────────────────────────────────────
 function createMainWindow() {
   mainWin = new BrowserWindow({
@@ -252,6 +224,14 @@ function startCapture() {
   pendingCapture = null;
   lastShot = { x: 0, y: 0, t: 0 };
   startTime = Date.now();
+  // 録画1回 = 1セッションフォルダ（2-R1）。作成に失敗しても録画自体は始め、
+  // 各撮影の保存失敗として既存の警告経路（enqueuePersist の catch）に乗せる。
+  try {
+    session.startSession(recordName, screenshotDir(), { now: startTime });
+  } catch (err) {
+    console.error('録画セッションフォルダの作成に失敗しました:', err);
+    warnGadget('保存フォルダを作成できません。保存先を確認してください。');
+  }
   try {
     uIOhook.start();
   } catch (err) {
@@ -285,12 +265,14 @@ function stopRecording() {
   // 開始時に最小化した本体を元に戻して前面へ。
   restoreMainWindow();
   notifyState();
-  // 録画していた場合のみ、保存先フォルダをエクスプローラー（OS のファイル
-  // マネージャ）で開き、撮ったスクリーンショットをすぐ確認できるようにする。
+  // 録画していた場合のみ、セッションを確定して保存先をエクスプローラー（OS の
+  // ファイルマネージャ）で開き、撮ったスクリーンショットをすぐ確認できるようにする。
+  // 0枚のセッションはフォルダごと削除されるため、その場合は親フォルダを開く。
   // ready のまま閉じたときは何も撮っていないので開かない。
   if (wasRecording) {
+    const ended = session.endSession();
     try {
-      const dir = screenshotDir();
+      const dir = ended && !ended.removed ? ended.dir : screenshotDir();
       fs.mkdirSync(dir, { recursive: true });
       shell.openPath(dir);
     } catch (err) {
@@ -482,20 +464,42 @@ async function captureShot(physX, physY) {
   }
 }
 
+// uiohook のボタン番号 → サイドカー用の名前（想定外の番号はそのまま数値で記録）。
+function buttonName(button) {
+  if (button === BTN_LEFT) return 'left';
+  if (button === BTN_RIGHT) return 'right';
+  return button;
+}
+
 // 【保存】離上(mouseup)で保存確定と判定したら呼ぶ。撮影済みバッファにクリック位置の
-// マーカーを合成してファイルへ書き出し、ガジェットを更新する。
+// マーカーを合成し、セッションフォルダへ画像＋メタデータ JSON を併記で書き出して
+// （session.js / 2-R1）、ガジェットを更新する。
 async function persistShot(shot) {
-  const { raw, disp, physX, physY } = shot;
+  const { raw, disp, physX, physY, button, clicks, source } = shot;
   // クリックの物理相対座標（撮影したモニタの左上原点）。
   const relX = physX - disp.bounds.x * disp.scaleFactor;
   const relY = physY - disp.bounds.y * disp.scaleFactor;
   const buf = clickMarkerOn ? await drawMarker(raw, relX, relY, disp.scaleFactor) : raw;
 
-  const stamp = dateStamp();
-  const seq = nextSequence(recordName, stamp);
-  const fileName = `${recordName}_${stamp}_${seq}.png`;
-  const filePath = path.join(screenshotDir(), fileName);
-  fs.writeFileSync(filePath, buf);
+  const { fileName } = session.recordShot(buf, {
+    button: buttonName(button),
+    clicks,
+    x: physX,
+    y: physY,
+    imagePoint: { x: relX, y: relY },
+    display: { id: disp.id, boundsDip: disp.bounds, scaleFactor: disp.scaleFactor },
+    marker: clickMarkerOn
+      ? {
+          drawn: true,
+          x: relX,
+          y: relY,
+          radius: MARKER_RADIUS * disp.scaleFactor,
+          lineWidth: MARKER_LINE_WIDTH * disp.scaleFactor,
+          color: MARKER_COLOR,
+        }
+      : { drawn: false },
+    capture: { source },
+  });
   sessionShots += 1;
 
   let preview = '';
@@ -513,13 +517,14 @@ async function persistShot(shot) {
   }
 }
 
-// 撮影済み Promise を直列キューに積む。採番(nextSequence)と書き込みが重ならないよう
+// 撮影済み Promise を直列キューに積む。セッション内の採番と書き込みが重ならないよう
 // persistChain で1件ずつ順に保存する（撮影自体は押下時に並行で走ってよい）。
-function enqueuePersist(capPromise) {
+// extra には mouseup 時点でしか分からない情報（連続クリック数）を渡す。
+function enqueuePersist(capPromise, extra) {
   persistChain = persistChain
     .then(async () => {
       const shot = await capPromise;
-      if (shot) await persistShot(shot);
+      if (shot) await persistShot({ ...shot, ...extra });
     })
     .catch((err) => {
       console.error('スクリーンショットの保存に失敗しました:', err);
@@ -550,11 +555,15 @@ function onMouseDown(e) {
   // 消えるウインドウも写っている）。無ければ従来どおりこの場で撮影開始。
   const pre = takeFreshPreFrame(e.x, e.y);
   if (pre) {
-    pendingCapture = Promise.resolve({ raw: pre.raw, disp: pre.disp, physX: e.x, physY: e.y });
+    pendingCapture = Promise.resolve({
+      raw: pre.raw, disp: pre.disp, physX: e.x, physY: e.y,
+      button: e.button, source: 'precapture',
+    });
     return;
   }
   captureBusy = true; // ポーリングと衝突させない
   pendingCapture = captureShot(e.x, e.y)
+    .then((shot) => ({ ...shot, button: e.button, source: 'ondemand' }))
     .catch((err) => {
       console.error('スクリーンショットの撮影に失敗しました:', err);
       warnGadget('スクリーンショットを撮影できません。画面収録の許可や保存先を確認してください。');
@@ -579,7 +588,9 @@ function onMouseUp(e) {
   if (shouldDebounce(e.x, e.y)) { console.log('[rec] skip(up): debounce'); return; }
 
   lastShot = { x: e.x, y: e.y, t: Date.now() };
-  enqueuePersist(cap);
+  // clicks（連続クリック数）は mouseup 時点の値。デバウンスにより2回目の撮影は
+  // 集約されるため、ダブルクリックの認識は R2b で操作記録として扱う（spec 参照）。
+  enqueuePersist(cap, { clicks: e.clicks });
 }
 
 // ── .docx 出力 ──────────────────────────────────────────────
@@ -719,9 +730,10 @@ app.whenReady().then(() => {
   ipcMain.handle('rec:setMarker', (_e, on) => { clickMarkerOn = !!on; return { ok: true }; });
   ipcMain.handle('rec:openDir', () => {
     // ガジェットのプレビュークリックから、スクショ保存フォルダを OS の
-    // ファイルマネージャ（エクスプローラー）で開く。
+    // ファイルマネージャ（エクスプローラー）で開く。録画中は今撮っている
+    // セッションのフォルダを開く。
     try {
-      const dir = screenshotDir();
+      const dir = session.sessionDir() || screenshotDir();
       fs.mkdirSync(dir, { recursive: true });
       shell.openPath(dir);
       return { ok: true };
@@ -749,10 +761,16 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// 終了時はフックを確実に止める。
+// 終了時はフックを確実に止め、録画中ならセッションを確定する
+// （通常は stopRecording 経由で確定済み。ここは二重呼び出しでも無害）。
 app.on('before-quit', () => {
   try {
     uIOhook.stop();
+  } catch (_) {
+    /* noop */
+  }
+  try {
+    session.endSession();
   } catch (_) {
     /* noop */
   }
