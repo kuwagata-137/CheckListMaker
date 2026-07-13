@@ -62,9 +62,9 @@ function stop() {
   settleAll();
 }
 
-// クリック座標の要素解決を依頼する。返り値は uia-host の返信オブジェクト or null。
+// uia-host へ解決要求を送る共通処理。返り値は返信オブジェクト or null。
 // 決して reject しない（呼び出し側の保存処理を止めないため）。
-function resolve(x, y) {
+function request(payload) {
   if (!child) return Promise.resolve(null);
   const id = nextId++;
   return new Promise((res) => {
@@ -79,7 +79,7 @@ function resolve(x, y) {
       },
     });
     try {
-      child.postMessage({ id, x, y });
+      child.postMessage({ id, ...payload });
     } catch (_) {
       clearTimeout(timer);
       pending.delete(id);
@@ -88,8 +88,18 @@ function resolve(x, y) {
   });
 }
 
+// クリック座標の要素解決（2-R2）。
+function resolve(x, y) {
+  return request({ x, y });
+}
+
+// フォーカス要素の解決（2-R2b: 文字入力の対象）。
+function resolveFocused() {
+  return request({ focus: true });
+}
+
 function isActive() {
   return child !== null;
 }
 
-module.exports = { start, stop, resolve, isActive };
+module.exports = { start, stop, resolve, resolveFocused, isActive };
