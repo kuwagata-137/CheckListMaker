@@ -3,6 +3,7 @@
 //  - 録画1回 = 1セッションフォルダ（<親>/<リスト名>_<yyyymmdd>_<hhmmss>/）の作成
 //  - 撮影画像の連番保存（001.png〜）と1クリック分のメタデータ併記（001.json）
 //  - セッション全体のメタデータ（session.json）の管理と終了処理
+//  - 取り込みウィザード用の一覧・読み込み・取り込み済みマーク（2-R4）
 //
 // フォルダ構成・サイドカーのスキーマは docs/spec-2-R1-session-format.md（v1）、
 // docs/spec-2-R2-uia-steptext.md（v2: uia の実データ＋生成文 text を追加）、
@@ -12,7 +13,7 @@
 const path = require('path');
 const fs = require('fs');
 
-const SESSION_VERSION = 1;
+const SESSION_VERSION = 2; // v2: importedAt（取り込み完了時刻。未取り込みは null）を追加
 const SIDECAR_VERSION = 3;
 
 // UIA 解決なし（非 Windows・タイムアウト・失敗）のときのサイドカー uia 欄。
@@ -47,6 +48,7 @@ function writeInfo(s, endedAt = null) {
     startedAt: s.startedAt.toISOString(),
     endedAt: endedAt ? endedAt.toISOString() : null,
     shots: s.seq,
+    importedAt: null, // 取り込みウィザードが markImported() で記録する（2-R4）
   };
   fs.writeFileSync(infoPath(s.dir), JSON.stringify(info, null, 2));
 }
@@ -165,4 +167,106 @@ function endSession(opts = {}) {
   return { dir: s.dir, shots: s.seq, removed: false };
 }
 
-module.exports = { startSession, recordShot, endSession, isActive, sessionDir };
+// ── 取り込みウィザード用（2-R4）──────────────────────────────
+// 以下は録画中の状態（current）に依存しない読み取り系。過去のセッションにも使える。
+
+// session.json を読む（壊れていれば null）。
+function readInfo(dir) {
+  try {
+    const info = JSON.parse(fs.readFileSync(infoPath(dir), 'utf8'));
+    if (!info || info.type !== 'checklistmaker-recording') return null;
+    return info;
+  } catch (_) {
+    return null;
+  }
+}
+
+// 親フォルダ直下のセッションフォルダを新しい順（startedAt 降順）に列挙する。
+// session.json を持たないフォルダ・壊れた session.json はスキップ。失敗は空配列。
+function listSessions(parentDir) {
+  let names;
+  try {
+    names = fs.readdirSync(parentDir, { withFileTypes: true });
+  } catch (_) {
+    return [];
+  }
+  const out = [];
+  for (const ent of names) {
+    if (!ent.isDirectory()) continue;
+    const dir = path.join(parentDir, ent.name);
+    const info = readInfo(dir);
+    if (!info) continue;
+    out.push({
+      dir,
+      name: info.name != null ? info.name : ent.name,
+      startedAt: info.startedAt || null,
+      endedAt: info.endedAt || null, // null のまま = 異常終了（未完了）の痕跡
+      shots: typeof info.shots === 'number' ? info.shots : 0,
+      importedAt: info.importedAt || null, // v1（フィールドなし）は未取り込み扱い
+    });
+  }
+  out.sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')));
+  return out;
+}
+
+// セッション1件を読み込む。NNN.png の実在をスキャンし（session.json の shots が
+// 更新失敗で欠けていても拾える）、サイドカーは併読できたぶんだけ載せる。
+// サイドカー欠落・壊れは text/uia 等 null のステップになる（画像が主成果物）。
+function readSession(dir) {
+  const info = readInfo(dir);
+  if (!info) return null;
+  let names;
+  try {
+    names = fs.readdirSync(dir);
+  } catch (_) {
+    return null;
+  }
+  const steps = [];
+  for (const n of names) {
+    const m = /^(\d{3,})\.png$/.exec(n);
+    if (!m) continue; // NNNz.png（拡大）はサイドカー経由で辿る
+    const base = m[1];
+    let sc = null;
+    try {
+      sc = JSON.parse(fs.readFileSync(path.join(dir, `${base}.json`), 'utf8'));
+    } catch (_) {
+      /* サイドカーなし・壊れ → 最小情報のステップ */
+    }
+    const zoomImage = sc && sc.zoom && sc.zoom.image && fs.existsSync(path.join(dir, sc.zoom.image))
+      ? sc.zoom.image
+      : null;
+    steps.push({
+      seq: sc && typeof sc.seq === 'number' ? sc.seq : parseInt(base, 10),
+      image: n,
+      zoomImage,
+      zoomSource: (sc && sc.zoom && sc.zoom.source) || null,
+      text: (sc && sc.text) || null,
+      uia: (sc && sc.uia) || null,
+      click: (sc && sc.click) || null,
+      time: (sc && sc.time) || null,
+    });
+  }
+  steps.sort((a, b) => a.seq - b.seq);
+  return { info, dir, steps };
+}
+
+// 取り込み完了を session.json に記録する（read-modify-write。他フィールドは保持）。
+// 成功 true / 失敗 false（取り込み結果には影響させない。呼び出し元は console.error のみ）。
+function markImported(dir, opts = {}) {
+  const info = readInfo(dir);
+  if (!info) return false;
+  const now = opts.now != null ? new Date(opts.now) : new Date();
+  info.importedAt = now.toISOString();
+  if (!info.version || info.version < SESSION_VERSION) info.version = SESSION_VERSION;
+  try {
+    fs.writeFileSync(infoPath(dir), JSON.stringify(info, null, 2));
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+module.exports = {
+  startSession, recordShot, endSession, isActive, sessionDir,
+  listSessions, readSession, markImported,
+};

@@ -703,6 +703,36 @@
   .warn { color: var(--danger); font-size: 0.85rem; }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
+  /* ---- 録画取り込みウィザード（2-R4） ---- */
+  .modal.import-wiz { max-width: 760px; display: flex; flex-direction: column; max-height: 88vh; }
+  .iw-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .iw-badge { font-size: 0.75rem; border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; color: var(--muted); }
+  .iw-badge.warn { color: var(--danger); border-color: var(--danger); }
+  .iw-bulk { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; font-size: 0.85rem; color: var(--muted); }
+  .iw-bulk input { flex: 1; min-width: 0; font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+  .iw-list { overflow-y: auto; flex: 1; min-height: 120px; display: grid; gap: 8px; padding: 2px; align-content: start; }
+  .iw-row { display: flex; gap: 10px; border: 1px solid var(--border); border-radius: 10px; padding: 8px; background: var(--surface); }
+  .iw-thumb { width: 132px; height: 88px; flex: none; border-radius: 6px; background: var(--surface-2); display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--muted); font-size: 0.78rem; }
+  .iw-thumb img { width: 100%; height: 100%; object-fit: contain; }
+  .iw-main { flex: 1; min-width: 0; display: grid; gap: 6px; align-content: start; }
+  .iw-row-head { display: flex; align-items: center; gap: 8px; }
+  .iw-seq { font-weight: 600; color: var(--muted); min-width: 1.6em; }
+  .iw-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .iw-seg button { font: inherit; font-size: 0.78rem; padding: 3px 8px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+  .iw-seg button.active { background: var(--primary); color: #fff; }
+  .iw-seg button:disabled { opacity: 0.4; cursor: default; }
+  .iw-tools { margin-left: auto; display: inline-flex; gap: 4px; }
+  .iw-tools button { font: inherit; font-size: 0.8rem; padding: 3px 7px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; }
+  .iw-tools button:hover:not(:disabled) { background: var(--surface-2); }
+  .iw-tools button:disabled { opacity: 0.35; cursor: default; }
+  .iw-text { width: 100%; font: inherit; font-size: 0.9rem; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); resize: vertical; }
+  .iw-dest { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: 0.85rem; color: var(--muted); flex-wrap: wrap; }
+  .iw-dest select, .iw-dest input { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+  .iw-dest input { flex: 1; min-width: 140px; }
+  .iw-sessions { display: grid; gap: 8px; max-height: 60vh; overflow-y: auto; }
+  .iw-session { text-align: left; font: inherit; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: inherit; cursor: pointer; }
+  .iw-session:hover { border-color: var(--primary); background: var(--surface-2); }
+
   /* ---- 印刷用ビュー ----
      画面では隠し、印刷時だけ #app / #topbar と入れ替えて表示する。
      編集用の <input> は印刷でテキストが折り返せず欠けてしまうため、
@@ -1055,6 +1085,7 @@
         <circle cx="10" cy="10" r="5" fill="#ef4444" />
       </svg>
     </button>
+    <button class="icon" data-action="import-rec" title="録画を取り込む（過去のセッション一覧から選択）">📥</button>
   </div>
 
   <main id="app"></main>
@@ -3181,8 +3212,326 @@
       } else {
         const c = currentChecklist();
         const name = c && c.title ? c.title : '記録';
+        recordChecklistId = c ? c.id : null; // 取り込み先の既定として覚えておく
         window.recorderAPI.startRecording(name);
       }
+    }
+
+    // ---- 録画取り込みウィザード（2-R4） ----
+    // 録画セッション（セッションフォルダの素材: 全景・拡大・生成文）をステップ一覧
+    // として編集し、チェックリストの新セクションへ取り込む。
+    // 仕様は docs/spec-2-R4-import-wizard.md 参照。
+    let recordChecklistId = null; // 録画開始時に開いていたリスト（取り込み先の既定）
+
+    // -- 純関数（テスト対象。window.__test__ に公開） --
+    // 既定の添付画像: 要素矩形が採用できたステップは拡大、それ以外は全景
+    //（フォールバック文「図の位置をクリック」は赤丸の写った全景とセットで読む文言のため）。
+    function wizardDefaultChoice(step) {
+      return step.zoomImage && step.zoomSource === 'element' ? 'zoom' : 'full';
+    }
+    // readSession の結果 → ウィザードのステップモデル。
+    // 「統合」で複数ショットが1ステップに束ねられるため shots は配列で持つ。
+    function wizardStepsFrom(sessionData) {
+      const src = sessionData && Array.isArray(sessionData.steps) ? sessionData.steps : [];
+      return src.map((s) => ({
+        text: s.text || '',
+        shots: [{ seq: s.seq, image: s.image, zoomImage: s.zoomImage || null, choice: wizardDefaultChoice(s) }],
+      }));
+    }
+    // index のステップを直前のステップへ統合（文は「、」連結・ショットは結合）。
+    function wizardMergeUp(steps, index) {
+      if (index <= 0 || index >= steps.length) return steps;
+      const prev = steps[index - 1];
+      const cur = steps[index];
+      prev.text = prev.text && cur.text ? `${prev.text}、${cur.text}` : prev.text || cur.text;
+      prev.shots = prev.shots.concat(cur.shots);
+      steps.splice(index, 1);
+      return steps;
+    }
+    // 全ステップの文へ一括置換（単純文字列置換）。置換した箇所数を返す。
+    function wizardBulkReplace(steps, find, replace) {
+      if (!find) return 0;
+      let count = 0;
+      for (const st of steps) {
+        const parts = String(st.text || '').split(find);
+        if (parts.length > 1) { count += parts.length - 1; st.text = parts.join(replace); }
+      }
+      return count;
+    }
+    // ショットの選択（拡大/全景/両方）→ 添付するファイル名の列（全景→拡大の読み順）。
+    function wizardShotFiles(shot) {
+      if (shot.choice === 'zoom' && shot.zoomImage) return [shot.zoomImage];
+      if (shot.choice === 'both' && shot.zoomImage) return [shot.image, shot.zoomImage];
+      return [shot.image];
+    }
+    // ステップモデル → 取り込むセクション。imagesByStep[i] は i 番目のステップに
+    // 添付する画像（storeImage 済みの参照 or dataURL）の配列。
+    function buildImportSection(title, steps, imagesByStep = []) {
+      const section = M.createSection(title);
+      steps.forEach((st, i) => {
+        const item = M.createItem(String(st.text || '').trim());
+        for (const img of imagesByStep[i] || []) item.images.push(img);
+        section.items.push(item);
+      });
+      return section;
+    }
+
+    // -- UI --
+    function fmtSessionDate(iso) {
+      const d = iso ? new Date(iso) : null;
+      if (!d || isNaN(d)) return '';
+      const p = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+
+    // 過去セッションの一覧から選んでウィザードを開く（📥「録画を取り込む」）。
+    async function openImportPicker() {
+      if (!window.recorderAPI) return;
+      let sessions = [];
+      try { sessions = (await window.recorderAPI.listSessions()) || []; } catch (_) { /* 下の0件表示へ */ }
+      if (!sessions.length) {
+        showToast('取り込める録画セッションがありません。まず録画してください。');
+        return;
+      }
+      const rows = sessions
+        .map((s, i) => {
+          const badges =
+            (s.endedAt ? '' : '<span class="iw-badge warn">未完了</span>') +
+            (s.importedAt ? '<span class="iw-badge">取り込み済み</span>' : '');
+          return `<button class="iw-session" data-i="${i}" type="button">
+            <strong>${escapeHtml(s.name || '')}</strong>
+            <span>${fmtSessionDate(s.startedAt)}</span>
+            <span>${Number(s.shots) || 0}枚</span>${badges}
+          </button>`;
+        })
+        .join('');
+      const overlay = buildModal(`
+        <h3>録画を取り込む</h3>
+        <p>取り込むセッションを選んでください（新しい順）。</p>
+        <div class="iw-sessions">${rows}</div>
+        <div class="modal-actions"><button class="btn" data-close>閉じる</button></div>
+      `);
+      overlay.querySelectorAll('.iw-session').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const s = sessions[Number(btn.dataset.i)];
+          closeModal(overlay);
+          openImportWizard(s.dir);
+        });
+      });
+    }
+
+    // 取り込みウィザード本体。dir はセッションフォルダ（メイン側で検証される）。
+    async function openImportWizard(dir) {
+      if (!window.recorderAPI) return;
+      let data = null;
+      try { data = await window.recorderAPI.loadSession(dir); } catch (_) { /* 下の失敗表示へ */ }
+      if (!data || !Array.isArray(data.steps) || data.steps.length === 0) {
+        showToast('録画セッションを読み込めませんでした。', { type: 'error' });
+        return;
+      }
+      const steps = wizardStepsFrom(data);
+      const defaultTitle = `録画 ${fmtSessionDate(data.info.startedAt)}`.trim();
+
+      // 取り込み先の既定: 録画開始時のリスト → 現在開いているリスト → 先頭のリスト
+      const route = parseHash();
+      const destDefault =
+        [recordChecklistId, route.name === 'editor' ? route.id : null, (store.state.checklists[0] || {}).id]
+          .find((id) => id && M.findChecklist(store.state, id)) || '__new__';
+      const destOptions =
+        store.state.checklists
+          .map((c) => `<option value="${escapeHtml(c.id)}"${c.id === destDefault ? ' selected' : ''}>${escapeHtml(c.title)}</option>`)
+          .join('') +
+        `<option value="__new__"${destDefault === '__new__' ? ' selected' : ''}>（新しいリストを作成）</option>`;
+
+      const badges =
+        (data.info.endedAt ? '' : '<span class="iw-badge warn">未完了（異常終了の記録）</span>') +
+        (data.info.importedAt ? '<span class="iw-badge">取り込み済み</span>' : '');
+      const overlay = buildModal(`
+        <h3>録画の取り込み</h3>
+        <p class="iw-meta">
+          <strong>${escapeHtml(data.info.name || '')}</strong>
+          <span>${fmtSessionDate(data.info.startedAt)}</span>
+          ${badges}
+          <button class="btn" data-iw-open-dir type="button">📂 フォルダを開く</button>
+        </p>
+        <div class="iw-bulk">
+          <input class="iw-find" placeholder="検索する文字列" />→
+          <input class="iw-repl" placeholder="置換後" />
+          <button class="btn" data-iw-replace type="button">一括置換</button>
+        </div>
+        <div class="iw-list"></div>
+        <div class="iw-dest">
+          取り込み先
+          <select class="iw-dest-select">${destOptions}</select>
+          セクション名
+          <input class="iw-title" value="${escapeHtml(defaultTitle)}" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn" data-close type="button">キャンセル</button>
+          <button class="btn primary" data-iw-import type="button">取り込む</button>
+        </div>
+      `);
+      overlay.querySelector('.modal').classList.add('import-wiz');
+      const listEl = overlay.querySelector('.iw-list');
+
+      // サムネイル: 元PNGは大きいため 320px に縮小した dataURL をキャッシュする
+      //（一覧のメモリを抑える。添付用の原寸は取り込み時に読み直す）。
+      const thumbCache = new Map();
+      function thumbFor(file) {
+        if (!thumbCache.has(file)) {
+          thumbCache.set(file, (async () => {
+            const raw = await window.recorderAPI.readImage(dir, file);
+            if (!raw) return null;
+            try { return await compressImage(raw, 320, 0.7); } catch (_) { return raw; }
+          })());
+        }
+        return thumbCache.get(file);
+      }
+
+      function renderList() {
+        listEl.innerHTML = steps
+          .map((st, i) => {
+            const shot = st.shots[0];
+            const canZoom = st.shots.some((sh) => sh.zoomImage);
+            const seg = [['zoom', '拡大'], ['full', '全景'], ['both', '両方']]
+              .map(([val, label]) => {
+                const dis = val !== 'full' && !canZoom ? ' disabled' : '';
+                const act = shot.choice === val ? ' class="active"' : '';
+                return `<button type="button" data-choice="${val}"${act}${dis}>${label}</button>`;
+              })
+              .join('');
+            return `<div class="iw-row" data-i="${i}">
+              <div class="iw-thumb">読込中…</div>
+              <div class="iw-main">
+                <div class="iw-row-head">
+                  <span class="iw-seq">${i + 1}</span>
+                  <span class="iw-seg">${seg}</span>
+                  <span class="iw-tools">
+                    <button type="button" data-iw="up" ${i === 0 ? 'disabled' : ''} title="上へ">↑</button>
+                    <button type="button" data-iw="down" ${i === steps.length - 1 ? 'disabled' : ''} title="下へ">↓</button>
+                    <button type="button" data-iw="merge" ${i === 0 ? 'disabled' : ''} title="上のステップと統合">⇧統合</button>
+                    <button type="button" data-iw="del" title="このステップを取り込まない">✕</button>
+                  </span>
+                </div>
+                <textarea class="iw-text" rows="2" placeholder="手順の文">${escapeHtml(st.text)}</textarea>
+              </div>
+            </div>`;
+          })
+          .join('');
+        // サムネイルを非同期で流し込む（選択中の画像の先頭）
+        listEl.querySelectorAll('.iw-row').forEach((row) => {
+          const st = steps[Number(row.dataset.i)];
+          if (!st) return;
+          const file = wizardShotFiles(st.shots[0])[0];
+          thumbFor(file).then((url) => {
+            const box = row.querySelector('.iw-thumb');
+            if (!box || !box.isConnected) return;
+            box.innerHTML = url ? `<img alt="" src="${url}" />` : '（画像なし）';
+          });
+        });
+      }
+      renderList();
+
+      // 行内の操作（クリック委譲: 画像切替・↑↓・統合・削除）
+      listEl.addEventListener('click', (e) => {
+        const row = e.target.closest('.iw-row');
+        if (!row) return;
+        const i = Number(row.dataset.i);
+        const choiceBtn = e.target.closest('[data-choice]');
+        if (choiceBtn && !choiceBtn.disabled) {
+          steps[i].shots.forEach((sh) => { sh.choice = choiceBtn.dataset.choice; });
+          renderList();
+          return;
+        }
+        const op = e.target.closest('[data-iw]');
+        if (!op || op.disabled) return;
+        const kind = op.dataset.iw;
+        if (kind === 'up' && i > 0) { const [x] = steps.splice(i, 1); steps.splice(i - 1, 0, x); }
+        if (kind === 'down' && i < steps.length - 1) { const [x] = steps.splice(i, 1); steps.splice(i + 1, 0, x); }
+        if (kind === 'merge') wizardMergeUp(steps, i);
+        if (kind === 'del') steps.splice(i, 1);
+        renderList();
+      });
+      // 文の編集は再描画せずモデルへ反映（入力中のフォーカスを奪わない）
+      listEl.addEventListener('input', (e) => {
+        if (!e.target.classList.contains('iw-text')) return;
+        const row = e.target.closest('.iw-row');
+        if (row && steps[Number(row.dataset.i)]) steps[Number(row.dataset.i)].text = e.target.value;
+      });
+
+      overlay.querySelector('[data-iw-open-dir]').addEventListener('click', () => {
+        window.recorderAPI.openShotsDir(dir);
+      });
+      overlay.querySelector('[data-iw-replace]').addEventListener('click', () => {
+        const find = overlay.querySelector('.iw-find').value;
+        const repl = overlay.querySelector('.iw-repl').value;
+        const n = wizardBulkReplace(steps, find, repl);
+        showToast(n ? `${n}箇所を置換しました。` : '置換対象が見つかりませんでした。');
+        if (n) renderList();
+      });
+
+      const importBtn = overlay.querySelector('[data-iw-import]');
+      importBtn.addEventListener('click', async () => {
+        if (!steps.length) { showToast('取り込むステップがありません。', { type: 'error' }); return; }
+        importBtn.disabled = true;
+        try {
+          // 画像を原寸で読み直し → 既存パイプラインで圧縮 → （Electronでは）参照化。
+          // 1枚の失敗はそのステップの画像だけ諦めて続行する（文は取り込む）。
+          const imagesByStep = [];
+          for (const st of steps) {
+            const imgs = [];
+            for (const shot of st.shots) {
+              for (const f of wizardShotFiles(shot)) {
+                try {
+                  const raw = await window.recorderAPI.readImage(dir, f);
+                  if (raw) imgs.push(await storeImage(await compressImage(raw)));
+                } catch (err) {
+                  console.error('画像の取り込みに失敗しました（文のみ取り込みます）:', f, err);
+                }
+              }
+            }
+            imagesByStep.push(imgs);
+            importBtn.textContent = `取り込み中… ${imagesByStep.length}/${steps.length}`;
+          }
+          const title = overlay.querySelector('.iw-title').value.trim() || defaultTitle;
+          const destSel = overlay.querySelector('.iw-dest-select').value;
+          const section = buildImportSection(title, steps, imagesByStep);
+          let destId = destSel;
+          // 1回の commit = Undo 1回で丸ごと取り消せる
+          store.commit((s) => {
+            let c = destSel === '__new__' ? null : M.findChecklist(s, destSel);
+            if (!c) {
+              c = M.createChecklist(M.MODES.TEMPLATE, data.info.name || '録画の取り込み');
+              c.sections = []; // createChecklist が作る空セクションは使わない
+              M.addChecklist(s, c);
+              destId = c.id;
+            }
+            c.sections.push(section);
+            c.updatedAt = Date.now();
+          });
+          if (store.lastSaveOk === false) {
+            store.undo();
+            notifySaveError('保存容量の上限に達したため、取り込めませんでした（変更は取り消しました）。', { force: true });
+            return;
+          }
+          // 取り込み済みマークは結果に影響させない（失敗しても console のみ）
+          window.recorderAPI.markImported(dir).catch(() => {});
+          closeModal(overlay);
+          goEditor(destId);
+          showToast(`${steps.length}件の手順を取り込みました（Ctrl+Z で取り消せます）。`);
+        } finally {
+          importBtn.disabled = false;
+          importBtn.textContent = '取り込む';
+        }
+      });
+    }
+
+    // 📥ボタンの表示制御（ブラウザ単体では非表示・録画中は無効）。
+    function updateImportButton() {
+      const btn = document.querySelector('[data-action="import-rec"]');
+      if (!btn) return;
+      if (!window.recorderAPI) { btn.style.display = 'none'; return; }
+      btn.disabled = isRecording;
     }
 
     function render() {
@@ -3202,6 +3551,7 @@
       document.querySelector('[data-action="undo"]').disabled = !store.canUndo();
       document.querySelector('[data-action="redo"]').disabled = !store.canRedo();
       updateRecordButton();
+      updateImportButton();
     }
     // 所要時間の表示（ヘッダの総所要・セクション別の⏱分）だけを部分更新する。
     // 時間入力の保存は commitInPlace（再描画なし）のため、派生表示はここで追随させる。
@@ -5220,6 +5570,7 @@
         case 'undo': return store.undo();
         case 'redo': return store.redo();
         case 'record': return toggleRecording();
+        case 'import-rec': return openImportPicker();
         case 'home': return goHome();
         case 'new': return openNewDialog();
         case 'open': return goEditor(id);
@@ -5387,9 +5738,22 @@
       window.recorderAPI.onState((d) => {
         isRecording = !!(d && d.recording);
         updateRecordButton();
+        updateImportButton();
+      });
+    }
+    // 録画停止でセッションが確定したら取り込みウィザードを開く（2-R4）。
+    // 0枚（フォルダごと削除済み）はトーストのみ。
+    if (window.recorderAPI && window.recorderAPI.onDone) {
+      window.recorderAPI.onDone((d) => {
+        if (!d || !d.dir || !d.shots) {
+          showToast('撮影された画像がなかったため、取り込みは行いません。');
+          return;
+        }
+        openImportWizard(d.dir);
       });
     }
     updateRecordButton();
+    updateImportButton();
     if (IS_STANDALONE) {
       // 単体文書モード: 一覧を隠し、埋め込み1件の editor を直接開く。
       document.body.classList.add('clm-standalone');
@@ -5411,6 +5775,9 @@
         materializeState, absorbChecklistImages, resolveImageSync, storeImage,
         showToast, notifySaveError,
         STORAGE_KEY, MIGRATED_KEY,
+        // 録画取り込みウィザードの純関数（2-R4）
+        wizardDefaultChoice, wizardStepsFrom, wizardMergeUp, wizardBulkReplace,
+        wizardShotFiles, buildImportSection,
       });
     }
   })();

@@ -21,12 +21,28 @@ contextBridge.exposeInMainWorld('recorderAPI', {
   // クリック位置の赤丸（〇マーカー）合成の ON/OFF。
   setMarker: (on) => ipcRenderer.invoke('rec:setMarker', !!on),
   // スクショ保存フォルダを OS のファイルマネージャで開く（プレビュークリック）。
-  openShotsDir: () => ipcRenderer.invoke('rec:openDir'),
+  // dir（セッションフォルダ）を渡すとそのフォルダを開く（メイン側で検証される）。
+  openShotsDir: (dir) => ipcRenderer.invoke('rec:openDir', dir),
   // 録画状態の変化通知（true=録画中 / false=停止）。ボタン表示の同期に使う。
   onState: (cb) => {
     ipcRenderer.removeAllListeners('rec:state');
     ipcRenderer.on('rec:state', (_e, data) => cb(data));
   },
+
+  // ── 取り込みウィザード（index.html）用（2-R4）─────────────────
+  // 録画停止でセッション確定後に届く通知 { dir, shots }（0枚は dir:null, shots:0）。
+  onDone: (cb) => {
+    ipcRenderer.removeAllListeners('rec:done');
+    ipcRenderer.on('rec:done', (_e, data) => cb(data));
+  },
+  // ピクチャ配下のセッション一覧（新しい順）。
+  listSessions: () => ipcRenderer.invoke('rec:sessions'),
+  // セッション1件の読み込み { info, dir, steps } / 不正・失敗は null。
+  loadSession: (dir) => ipcRenderer.invoke('rec:session', dir),
+  // セッション内の画像1枚を dataURL で取得（失敗は null）。
+  readImage: (dir, name) => ipcRenderer.invoke('rec:image', dir, name),
+  // 取り込み完了を session.json に記録する。
+  markImported: (dir) => ipcRenderer.invoke('rec:markImported', dir),
 
   // ── ガジェット窓（gadget.html）用 ────────────────────────────
   // 起動時の初期情報（開始時刻・録画名）。

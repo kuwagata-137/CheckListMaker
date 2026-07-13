@@ -107,6 +107,17 @@ function screenshotDir() {
     return path.join(baseDir(), 'CheckListMaker');
   }
 }
+// レンダラーから受け取るセッションフォルダ引数の検証（2-R4）。
+// 「ピクチャ配下 CheckListMaker」の直下に解決されるパスだけを許可する
+// （レンダラー侵害時に任意のフォルダ・ファイルへ触らせないため）。不正は null。
+function resolveSessionDirArg(dir) {
+  if (typeof dir !== 'string' || !dir) return null;
+  const resolved = path.resolve(dir);
+  return path.dirname(resolved) === path.resolve(screenshotDir()) ? resolved : null;
+}
+// セッション内の画像ファイル名（001.png / 001z.png 形式）だけを許可する。
+const SESSION_IMAGE_RE = /^\d{3,}z?\.png$/;
+
 // Windows/macOS/Linux で使えないファイル名文字を除去する。
 function sanitizeName(s) {
   const cleaned = String(s || '')
@@ -271,10 +282,11 @@ function stopRecording() {
   // 開始時に最小化した本体を元に戻して前面へ。
   restoreMainWindow();
   notifyState();
-  // 録画していた場合のみ、セッションを確定して保存先をエクスプローラー（OS の
-  // ファイルマネージャ）で開き、撮ったスクリーンショットをすぐ確認できるようにする。
-  // 0枚のセッションはフォルダごと削除されるため、その場合は親フォルダを開く。
-  // ready のまま閉じたときは何も撮っていないので開かない。
+  // 録画していた場合のみ、セッションを確定してレンダラーへ rec:done を通知し、
+  // 取り込みウィザードを開かせる（2-R4。エクスプローラーは自動では開かない——
+  // フォルダはウィザード内の導線から開ける）。0枚のセッションはフォルダごと
+  // 削除されるため shots:0 で通知し、レンダラーはトースト表示のみ行う。
+  // ready のまま閉じたときは何も撮っていないので通知しない。
   // ※ 停止直前のクリックがまだ保存キュー（persistChain）に残っていることがある
   //   （マーカー合成は最大4秒）。確定と UIA 子プロセスの終了はキューの完了を待つ。
   //   recording=false 以降は新規の enqueue が無いため、この時点のチェーンが最終形。
@@ -282,12 +294,19 @@ function stopRecording() {
     persistChain.then(() => {
       uia.stop();
       const ended = session.endSession();
-      try {
-        const dir = ended && !ended.removed ? ended.dir : screenshotDir();
-        fs.mkdirSync(dir, { recursive: true });
-        shell.openPath(dir);
-      } catch (err) {
-        console.error('保存フォルダを開けませんでした:', err);
+      const payload = ended && !ended.removed
+        ? { dir: ended.dir, shots: ended.shots }
+        : { dir: null, shots: 0 };
+      if (mainWin && !mainWin.isDestroyed()) {
+        mainWin.webContents.send('rec:done', payload);
+      } else if (payload.dir) {
+        // 本体が閉じられている等でウィザードを出せないときは、素材が行方不明に
+        // ならないよう従来どおりフォルダを開いておく。
+        try {
+          shell.openPath(payload.dir);
+        } catch (err) {
+          console.error('保存フォルダを開けませんでした:', err);
+        }
       }
     });
   }
@@ -806,12 +825,13 @@ app.whenReady().then(() => {
   ipcMain.handle('rec:begin', () => startCapture());
   ipcMain.handle('rec:stop', () => stopRecording());
   ipcMain.handle('rec:setMarker', (_e, on) => { clickMarkerOn = !!on; return { ok: true }; });
-  ipcMain.handle('rec:openDir', () => {
+  ipcMain.handle('rec:openDir', (_e, dirArg) => {
     // ガジェットのプレビュークリックから、スクショ保存フォルダを OS の
     // ファイルマネージャ（エクスプローラー）で開く。録画中は今撮っている
-    // セッションのフォルダを開く。
+    // セッションのフォルダを開く。取り込みウィザードからはセッションフォルダを
+    // 引数で指定できる（検証を通ったものだけ）。
     try {
-      const dir = session.sessionDir() || screenshotDir();
+      const dir = resolveSessionDirArg(dirArg) || session.sessionDir() || screenshotDir();
       fs.mkdirSync(dir, { recursive: true });
       shell.openPath(dir);
       return { ok: true };
@@ -819,6 +839,29 @@ app.whenReady().then(() => {
       console.error('保存フォルダを開けませんでした:', err);
       return { ok: false };
     }
+  });
+  // ── 取り込みウィザード用（2-R4）。dir は必ず resolveSessionDirArg の検証を通す ──
+  ipcMain.handle('rec:sessions', () => session.listSessions(screenshotDir()));
+  ipcMain.handle('rec:session', (_e, dir) => {
+    const d = resolveSessionDirArg(dir);
+    return d ? session.readSession(d) : null;
+  });
+  ipcMain.handle('rec:image', (_e, dir, name) => {
+    const d = resolveSessionDirArg(dir);
+    if (!d || typeof name !== 'string' || !SESSION_IMAGE_RE.test(name)) return null;
+    try {
+      const buf = fs.readFileSync(path.join(d, name));
+      return 'data:image/png;base64,' + buf.toString('base64');
+    } catch (err) {
+      console.error('セッション画像を読み込めませんでした:', err);
+      return null;
+    }
+  });
+  ipcMain.handle('rec:markImported', (_e, dir) => {
+    const d = resolveSessionDirArg(dir);
+    const ok = d ? session.markImported(d) : false;
+    if (!ok) console.error('取り込み済みマーク(importedAt)を記録できませんでした:', String(dir));
+    return { ok };
   });
   ipcMain.handle('docx:save', (e, payload) => saveDocx(e, payload));
   ipcMain.handle('file:saveHtml', (e, payload) => saveHtmlFile(e, payload));
