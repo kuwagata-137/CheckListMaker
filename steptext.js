@@ -109,5 +109,74 @@ function stepText(uia, opts = {}) {
   }
 }
 
+// ── 2-R2b: 操作種類の拡張（ダブルクリック・入力・キー・ドラッグ）──
+// 仕様は docs/spec-2-R2b-input-ops.md 参照。
+
+// 対象の要素名が文に使えるか（クリック系と同じ判定）。
+function usableName(uia) {
+  const u = uia || {};
+  const name = cleanLabel(u.name);
+  if (!u.resolved || !name || CONTAINER_TYPES.has(u.controlType || '')) return null;
+  return name;
+}
+
+// ダブルクリック文（①）。種類別テンプレートは使わず一律「ダブルクリック」
+//（clicks >= 2 は一律この文言。実クリック数はサイドカーに残る）。
+function dblClickText(uia) {
+  const u = uia || {};
+  const name = usableName(u);
+  if (!name) return fallbackText(u.windowTitle, 'ダブルクリック');
+  if (u.controlType === 'DataItem' && isExcel(u.appName) && CELL_RE.test(name)) {
+    return `セル「${name}」をダブルクリック`;
+  }
+  return `「${name}」をダブルクリック`;
+}
+
+// 文字入力文（②）。uia はフォーカス要素の解決結果。入力内容は文に含めない
+//（そもそも記録しない）。opts.enter = Enter で確定したか。
+// フォーカス要素は Document（Word 本文・メモ帳等）でも入力対象として意味を持つため、
+// コンテナ判定から Document を除いた集合で判定する。
+const INPUT_CONTAINER_TYPES = new Set(['Window', 'Pane', 'TitleBar']);
+function inputText(uia, opts = {}) {
+  const u = uia || {};
+  const suffix = opts.enter ? 'して Enter' : '';
+  const name = cleanLabel(u.name);
+  if (u.resolved && name && !INPUT_CONTAINER_TYPES.has(u.controlType || '')) {
+    return `「${name}」欄に入力${suffix}`;
+  }
+  const wt = cleanLabel(u.windowTitle);
+  return wt ? `ウィンドウ「${wt}」内で文字を入力${suffix}` : `文字を入力${suffix}`;
+}
+
+// キー操作文（③）。combo は keys.js の "Ctrl+S" 形式。既知の操作は名前で言い切る。
+const SHORTCUT_ACTIONS = {
+  'Ctrl+S': '保存', 'Ctrl+C': 'コピー', 'Ctrl+V': '貼り付け', 'Ctrl+X': '切り取り',
+  'Ctrl+Z': '元に戻す', 'Ctrl+Y': 'やり直し', 'Ctrl+P': '印刷', 'Ctrl+F': '検索',
+  'Ctrl+A': 'すべて選択', 'Ctrl+N': '新規作成', 'Ctrl+O': '開く', 'Ctrl+W': '閉じる',
+  'Alt+F4': 'ウィンドウを閉じる', F5: '更新', F2: '名前の変更',
+};
+function keyStepText(combo) {
+  const c = String(combo || '');
+  const action = SHORTCUT_ACTIONS[c];
+  if (action) return `${c} で${action}`;
+  return c ? `${c} キーを押す` : 'キーを押す';
+}
+
+// ドラッグ文（④）。startUia / endUia は始点・終点それぞれの解決結果。
+function dragText(startUia, endUia) {
+  const from = usableName(startUia);
+  const to = usableName(endUia);
+  if (from && to) return `「${from}」から「${to}」へドラッグ`;
+  if (from) return `「${from}」から図の終点位置へドラッグ`;
+  if (to) return `図の始点位置から「${to}」へドラッグ`;
+  const wt = cleanLabel((startUia || {}).windowTitle);
+  return wt
+    ? `ウィンドウ「${wt}」内の図の始点から終点へドラッグ`
+    : `図の始点から終点へドラッグ`;
+}
+
 // CONTAINER_TYPES は zoomcrop.js（2-R3）が矩形の採用判定で同じ集合を使う。
-module.exports = { normalizeUia, stepText, cleanLabel, CONTAINER_TYPES };
+module.exports = {
+  normalizeUia, stepText, cleanLabel, CONTAINER_TYPES,
+  dblClickText, inputText, keyStepText, dragText,
+};
