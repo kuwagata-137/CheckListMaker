@@ -68,6 +68,9 @@ persistShot ──► steptext.js（純関数）で手順文を生成 ──► 
 
 ## サイドカーへの記録（スキーマ v2）
 
+> **2026-07-13 更新**: 2-R3 でスキーマ **v3** となり、拡大画像 `zoom` と
+> `marker.shape` が加わった。→ `docs/spec-2-R3-zoom-highlight.md`
+
 2-R1 の NNN.json に次を追加・変更する（`version: 2`）:
 
 ```json
