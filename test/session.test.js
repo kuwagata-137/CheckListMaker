@@ -60,7 +60,7 @@ test('session.js — 録画セッション形式', async (t) => {
     assert.deepEqual(fs.readFileSync(path.join(dir, '001.png')), PNG);
 
     const sc = JSON.parse(fs.readFileSync(path.join(dir, '001.json'), 'utf8'));
-    assert.equal(sc.version, 1);
+    assert.equal(sc.version, 2);
     assert.equal(sc.seq, 1);
     assert.equal(sc.image, '001.png');
     assert.equal(sc.elapsedMs, 1500);
@@ -69,18 +69,29 @@ test('session.js — 録画セッション形式', async (t) => {
     assert.equal(sc.display.scaleFactor, 1);
     assert.equal(sc.marker.drawn, true);
     assert.equal(sc.capture.source, 'precapture');
-    // UIA 項目は R2 で埋める雛形（resolved: false・全項目 null）
+    // uia / text 未指定（解決なし）は雛形と null（2-R2）
+    assert.equal(sc.text, null);
     assert.deepEqual(sc.uia, {
       resolved: false, name: null, controlType: null, rect: null, windowTitle: null, appName: null,
     });
 
-    // 2枚目はゼロ埋め連番で、session.json の shots も追随する
-    const r2 = session.recordShot(PNG, { now: start + 3000, button: 'right' });
+    // 2枚目はゼロ埋め連番で、session.json の shots も追随する。
+    // UIA 解決結果と生成文（2-R2）はそのまま記録される。
+    const uiaInfo = {
+      resolved: true, name: '保存', controlType: 'Button', localizedType: 'ボタン',
+      className: 'X', frameworkId: 'Win32', rect: [1, 2, 3, 4],
+      windowTitle: '文書 1 - Word', appName: 'WINWORD.EXE', elapsedMs: 24,
+    };
+    const r2 = session.recordShot(PNG, {
+      now: start + 3000, button: 'right', text: '「保存」を右クリック', uia: uiaInfo,
+    });
     assert.equal(r2.fileName, '002.png');
     const sc2 = JSON.parse(fs.readFileSync(path.join(dir, '002.json'), 'utf8'));
     assert.equal(sc2.click.button, 'right');
     assert.equal(sc2.click.clicks, null, '未指定の項目は null で記録される');
     assert.equal(sc2.marker.drawn, false, 'marker 未指定は drawn:false');
+    assert.equal(sc2.text, '「保存」を右クリック');
+    assert.deepEqual(sc2.uia, uiaInfo);
     const info = JSON.parse(fs.readFileSync(path.join(dir, 'session.json'), 'utf8'));
     assert.equal(info.shots, 2);
 
