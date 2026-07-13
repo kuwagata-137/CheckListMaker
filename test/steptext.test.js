@@ -212,6 +212,7 @@ test('keyStepText — キー操作文（2-R2b ③）', async (t) => {
     assert.equal(keyStepText('Ctrl+S'), 'Ctrl+S で保存');
     assert.equal(keyStepText('Ctrl+V'), 'Ctrl+V で貼り付け');
     assert.equal(keyStepText('Alt+F4'), 'Alt+F4 でウィンドウを閉じる');
+    assert.equal(keyStepText('Alt+Tab'), 'Alt+Tab でアプリを切り替え');
     assert.equal(keyStepText('F5'), 'F5 で更新');
   });
   await t.test('未知のコンボ・単独 Enter は「キーを押す」', () => {

@@ -153,7 +153,7 @@ const SHORTCUT_ACTIONS = {
   'Ctrl+S': '保存', 'Ctrl+C': 'コピー', 'Ctrl+V': '貼り付け', 'Ctrl+X': '切り取り',
   'Ctrl+Z': '元に戻す', 'Ctrl+Y': 'やり直し', 'Ctrl+P': '印刷', 'Ctrl+F': '検索',
   'Ctrl+A': 'すべて選択', 'Ctrl+N': '新規作成', 'Ctrl+O': '開く', 'Ctrl+W': '閉じる',
-  'Alt+F4': 'ウィンドウを閉じる', F5: '更新', F2: '名前の変更',
+  'Alt+F4': 'ウィンドウを閉じる', 'Alt+Tab': 'アプリを切り替え', F5: '更新', F2: '名前の変更',
 };
 function keyStepText(combo) {
   const c = String(combo || '');
