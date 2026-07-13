@@ -3224,19 +3224,27 @@
     let recordChecklistId = null; // 録画開始時に開いていたリスト（取り込み先の既定）
 
     // -- 純関数（テスト対象。window.__test__ に公開） --
-    // 既定の添付画像: 要素矩形が採用できたステップは拡大、それ以外は全景
-    //（フォールバック文「図の位置をクリック」は赤丸の写った全景とセットで読む文言のため）。
+    // 既定の添付画像: 要素矩形が採用できたステップは拡大、それ以外は全景。
+    //（フォールバック文「図の位置をクリック」は赤丸の写った全景とセットで読む文言のため）
+    // ドラッグ（2-R2b）は終点画像があれば「両方」（始点→終点で操作が読めるため）。
     function wizardDefaultChoice(step) {
+      if ((step.kind || 'click') === 'drag') return step.drag && step.drag.endImage ? 'both' : 'full';
       return step.zoomImage && step.zoomSource === 'element' ? 'zoom' : 'full';
     }
     // readSession の結果 → ウィザードのステップモデル。
     // 「統合」で複数ショットが1ステップに束ねられるため shots は配列で持つ。
+    // ドラッグは終点画像を「拡大」スロットへ載せて既存の画像切替 UI を流用する
+    //（wizardShotFiles の「全景→拡大」の並びが「始点→終点」の読み順と一致する）。
     function wizardStepsFrom(sessionData) {
       const src = sessionData && Array.isArray(sessionData.steps) ? sessionData.steps : [];
-      return src.map((s) => ({
-        text: s.text || '',
-        shots: [{ seq: s.seq, image: s.image, zoomImage: s.zoomImage || null, choice: wizardDefaultChoice(s) }],
-      }));
+      return src.map((s) => {
+        const kind = s.kind || 'click';
+        const zoomImage = kind === 'drag' ? (s.drag && s.drag.endImage) || null : s.zoomImage || null;
+        return {
+          text: s.text || '',
+          shots: [{ seq: s.seq, kind, image: s.image, zoomImage, choice: wizardDefaultChoice(s) }],
+        };
+      });
     }
     // index のステップを直前のステップへ統合（文は「、」連結・ショットは結合）。
     function wizardMergeUp(steps, index) {
@@ -3393,7 +3401,11 @@
           .map((st, i) => {
             const shot = st.shots[0];
             const canZoom = st.shots.some((sh) => sh.zoomImage);
-            const seg = [['zoom', '拡大'], ['full', '全景'], ['both', '両方']]
+            // ドラッグは「拡大」スロットに終点画像が入っているため、表示だけ読み替える。
+            const isDrag = st.shots.some((sh) => sh.kind === 'drag');
+            const seg = (isDrag
+              ? [['full', '始点'], ['zoom', '終点'], ['both', '両方']]
+              : [['zoom', '拡大'], ['full', '全景'], ['both', '両方']])
               .map(([val, label]) => {
                 const dis = val !== 'full' && !canZoom ? ' disabled' : '';
                 const act = shot.choice === val ? ' class="active"' : '';
