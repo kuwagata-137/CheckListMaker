@@ -26,6 +26,8 @@ const { uIOhook } = require('uiohook-napi');
 const { initStorage } = require('./storage');
 const { initErrorLog } = require('./errorlog');
 const session = require('./session');
+const uia = require('./uia');
+const { normalizeUia, stepText } = require('./steptext');
 
 let mainWin = null;
 let gadgetWin = null;
@@ -232,6 +234,8 @@ function startCapture() {
     console.error('録画セッションフォルダの作成に失敗しました:', err);
     warnGadget('保存フォルダを作成できません。保存先を確認してください。');
   }
+  // UIA 要素解決の子プロセスを起動（Windows のみ・失敗してもフォールバック文で録画継続）。
+  uia.start();
   try {
     uIOhook.start();
   } catch (err) {
@@ -269,15 +273,21 @@ function stopRecording() {
   // ファイルマネージャ）で開き、撮ったスクリーンショットをすぐ確認できるようにする。
   // 0枚のセッションはフォルダごと削除されるため、その場合は親フォルダを開く。
   // ready のまま閉じたときは何も撮っていないので開かない。
+  // ※ 停止直前のクリックがまだ保存キュー（persistChain）に残っていることがある
+  //   （マーカー合成は最大4秒）。確定と UIA 子プロセスの終了はキューの完了を待つ。
+  //   recording=false 以降は新規の enqueue が無いため、この時点のチェーンが最終形。
   if (wasRecording) {
-    const ended = session.endSession();
-    try {
-      const dir = ended && !ended.removed ? ended.dir : screenshotDir();
-      fs.mkdirSync(dir, { recursive: true });
-      shell.openPath(dir);
-    } catch (err) {
-      console.error('保存フォルダを開けませんでした:', err);
-    }
+    persistChain.then(() => {
+      uia.stop();
+      const ended = session.endSession();
+      try {
+        const dir = ended && !ended.removed ? ended.dir : screenshotDir();
+        fs.mkdirSync(dir, { recursive: true });
+        shell.openPath(dir);
+      } catch (err) {
+        console.error('保存フォルダを開けませんでした:', err);
+      }
+    });
   }
   return { ok: true };
 }
@@ -475,15 +485,22 @@ function buttonName(button) {
 // マーカーを合成し、セッションフォルダへ画像＋メタデータ JSON を併記で書き出して
 // （session.js / 2-R1）、ガジェットを更新する。
 async function persistShot(shot) {
-  const { raw, disp, physX, physY, button, clicks, source } = shot;
+  const { raw, disp, physX, physY, button, clicks, source, uiaPromise } = shot;
   // クリックの物理相対座標（撮影したモニタの左上原点）。
   const relX = physX - disp.bounds.x * disp.scaleFactor;
   const relY = physY - disp.bounds.y * disp.scaleFactor;
   const buf = clickMarkerOn ? await drawMarker(raw, relX, relY, disp.scaleFactor) : raw;
 
+  // mousedown で並行キックした UIA 解決と合流し、手順文を生成する（2-R2）。
+  // uia.resolve はタイムアウト込みで必ず解決するため、ここで詰まることはない。
+  const uiaInfo = normalizeUia(uiaPromise ? await uiaPromise : null);
+  const text = stepText(uiaInfo, { button: buttonName(button) });
+
   const { fileName } = session.recordShot(buf, {
     button: buttonName(button),
     clicks,
+    text,
+    uia: uiaInfo,
     x: physX,
     y: physY,
     imagePoint: { x: relX, y: relY },
@@ -553,17 +570,21 @@ function onMouseDown(e) {
   if (shouldDebounce(e.x, e.y)) { console.log('[rec] skip(down): debounce'); return; }
   // 事前キャプチャがあればそれを使う（＝クリックより前の画面。クリックで
   // 消えるウインドウも写っている）。無ければ従来どおりこの場で撮影開始。
+  // UIA 要素解決を撮影と並行して非同期キックする（2-R2）。クリックで消える
+  // メニュー等も、押下の瞬間に依頼することで消える前に解決できる。
+  // 決して reject せず、失敗・タイムアウト・非対応環境は null（フォールバック文）。
+  const uiaPromise = uia.resolve(e.x, e.y);
   const pre = takeFreshPreFrame(e.x, e.y);
   if (pre) {
     pendingCapture = Promise.resolve({
       raw: pre.raw, disp: pre.disp, physX: e.x, physY: e.y,
-      button: e.button, source: 'precapture',
+      button: e.button, source: 'precapture', uiaPromise,
     });
     return;
   }
   captureBusy = true; // ポーリングと衝突させない
   pendingCapture = captureShot(e.x, e.y)
-    .then((shot) => ({ ...shot, button: e.button, source: 'ondemand' }))
+    .then((shot) => ({ ...shot, button: e.button, source: 'ondemand', uiaPromise }))
     .catch((err) => {
       console.error('スクリーンショットの撮影に失敗しました:', err);
       warnGadget('スクリーンショットを撮影できません。画面収録の許可や保存先を確認してください。');
@@ -769,6 +790,7 @@ app.on('before-quit', () => {
   } catch (_) {
     /* noop */
   }
+  uia.stop();
   try {
     session.endSession();
   } catch (_) {

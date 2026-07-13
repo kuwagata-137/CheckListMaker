@@ -4,15 +4,20 @@
 //  - 撮影画像の連番保存（001.png〜）と1クリック分のメタデータ併記（001.json）
 //  - セッション全体のメタデータ（session.json）の管理と終了処理
 //
-// フォルダ構成・サイドカーのスキーマは docs/spec-2-R1-session-format.md 参照。
-// UIA 項目（uia.*）は R2 で埋める枠として null の雛形のみ書く。
+// フォルダ構成・サイドカーのスキーマは docs/spec-2-R1-session-format.md（v1）と
+// docs/spec-2-R2-uia-steptext.md（v2: uia の実データ＋生成文 text を追加）参照。
 'use strict';
 
 const path = require('path');
 const fs = require('fs');
 
 const SESSION_VERSION = 1;
-const SIDECAR_VERSION = 1;
+const SIDECAR_VERSION = 2;
+
+// UIA 解決なし（非 Windows・タイムアウト・失敗）のときのサイドカー uia 欄。
+const UIA_EMPTY = Object.freeze({
+  resolved: false, name: null, controlType: null, rect: null, windowTitle: null, appName: null,
+});
 
 let current = null; // { dir, name, startedAt(Date), seq } — 録画は同時に1つ
 
@@ -89,6 +94,8 @@ function recordShot(pngBuffer, meta = {}) {
     image: fileName,
     time: now.toISOString(),
     elapsedMs: Math.max(0, now.getTime() - current.startedAt.getTime()),
+    // テンプレート文法で生成した手順文（steptext.js / 2-R2）。R4 が項目文の初期値に使う。
+    text: meta.text != null ? meta.text : null,
     click: {
       button: meta.button != null ? meta.button : null,
       clicks: meta.clicks != null ? meta.clicks : null,
@@ -99,8 +106,8 @@ function recordShot(pngBuffer, meta = {}) {
     display: meta.display || null,
     marker: meta.marker || { drawn: false },
     capture: meta.capture || null,
-    // R2（UIA 要素解決）で埋める枠。R1 では雛形のみ。
-    uia: { resolved: false, name: null, controlType: null, rect: null, windowTitle: null, appName: null },
+    // UIA 要素解決の結果（steptext.normalizeUia 済み / 2-R2）。解決なしは雛形。
+    uia: meta.uia || UIA_EMPTY,
   };
   try {
     fs.writeFileSync(path.join(current.dir, `${base}.json`), JSON.stringify(sidecar, null, 2));
