@@ -16,3 +16,8 @@ out/
 .DS_Store
 Thumbs.db
 *.log
+
+# 2-R0 UIA検証スパイクの計測結果（機密になり得るため commit しない）
+tools/uia-spike/results-*.jsonl
+tools/uia-spike/summary-*.json
+tools/uia-spike/package-lock.json
