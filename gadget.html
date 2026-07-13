@@ -147,7 +147,7 @@
       <div class="cell"><img alt="" hidden /></div>
       <div class="cell"><img alt="" hidden /></div>
     </div>
-    <label class="opt"><input type="checkbox" id="marker" checked />クリック位置に赤丸を付ける</label>
+    <label class="opt"><input type="checkbox" id="marker" checked />クリック位置を赤で強調する</label>
     <button class="toggle" id="toggle">● 録画開始</button>
     <div class="warn" id="warn" hidden></div>
   </div>
@@ -240,7 +240,7 @@
         });
         // プレビュー（グリッド）クリックで保存フォルダをエクスプローラーで開く
         elGrid.addEventListener('click', () => api.openShotsDir());
-        // クリック位置の赤丸 ON/OFF
+        // クリック位置のハイライト（要素枠／赤丸）ON/OFF
         elMarker.addEventListener('change', () => api.setMarker(elMarker.checked));
       }
       // ✕: ウインドウを閉じる。録画中ならメイン側の closed ハンドラが停止処理を行う。

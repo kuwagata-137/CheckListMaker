@@ -4,8 +4,10 @@
 //  - 「録画」開始/停止の制御
 //  - 録画中はグローバルなマウスクリックを監視し、左/右クリックの度に
 //    「クリックしたモニタ」をキャプチャして、ユーザーの「ピクチャ」内の
-//    「CheckListMaker」フォルダへ保存
-//  - クリック位置に赤い中抜きリングのマーカーを合成
+//    「CheckListMaker」配下のセッションフォルダへ、クリック情報の JSON と
+//    併記で保存（形式は session.js / docs/spec-2-R1-session-format.md）
+//  - クリック箇所のハイライト合成（UIA 要素枠。取れなければ赤い中抜きリング）と
+//    拡大画像（NNNz.png）の自動生成（zoomcrop.js / 2-R3）
 //  - スクリーンショットに写らないオーバーレイ「ガジェット」窓の表示
 //  - 失敗（権限拒否・フック開始失敗・キャプチャ失敗）はガジェットへ警告通知
 //  - 上記とレンダラー間の IPC 仲介
@@ -24,6 +26,10 @@ const screenshot = require('screenshot-desktop');
 const { uIOhook } = require('uiohook-napi');
 const { initStorage } = require('./storage');
 const { initErrorLog } = require('./errorlog');
+const session = require('./session');
+const uia = require('./uia');
+const { normalizeUia, stepText } = require('./steptext');
+const { planShot } = require('./zoomcrop');
 
 let mainWin = null;
 let gadgetWin = null;
@@ -101,6 +107,17 @@ function screenshotDir() {
     return path.join(baseDir(), 'CheckListMaker');
   }
 }
+// レンダラーから受け取るセッションフォルダ引数の検証（2-R4）。
+// 「ピクチャ配下 CheckListMaker」の直下に解決されるパスだけを許可する
+// （レンダラー侵害時に任意のフォルダ・ファイルへ触らせないため）。不正は null。
+function resolveSessionDirArg(dir) {
+  if (typeof dir !== 'string' || !dir) return null;
+  const resolved = path.resolve(dir);
+  return path.dirname(resolved) === path.resolve(screenshotDir()) ? resolved : null;
+}
+// セッション内の画像ファイル名（001.png / 001z.png 形式）だけを許可する。
+const SESSION_IMAGE_RE = /^\d{3,}z?\.png$/;
+
 // Windows/macOS/Linux で使えないファイル名文字を除去する。
 function sanitizeName(s) {
   const cleaned = String(s || '')
@@ -110,36 +127,6 @@ function sanitizeName(s) {
     .slice(0, 60);
   return cleaned || '記録';
 }
-function dateStamp(d = new Date()) {
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
-}
-// 正規表現で使う特殊文字をエスケープ（サニタイズ後の名前にも念のため適用）。
-function escapeRegExp(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-// 同名・同日ファイルの「次の番号」を返す。
-// `<名前>_<日付>_<番号>.png` の既存最大番号+1。日付が変われば自然に 1 から。
-// （ファイル名に日付を含むため、日をまたいでも上書きは起きない。）
-function nextSequence(name, stamp) {
-  const dir = screenshotDir();
-  const re = new RegExp(`^${escapeRegExp(name)}_${stamp}_(\\d+)\\.png$`);
-  let max = 0;
-  try {
-    for (const f of fs.readdirSync(dir)) {
-      const m = re.exec(f);
-      if (m) {
-        const n = parseInt(m[1], 10);
-        if (Number.isFinite(n) && n > max) max = n;
-      }
-    }
-  } catch (_) {
-    /* ディレクトリが無い等は max=0 のまま（=1 から開始） */
-  }
-  return max + 1;
-}
-
 // ── ウィンドウ生成 ──────────────────────────────────────────
 function createMainWindow() {
   mainWin = new BrowserWindow({
@@ -252,6 +239,16 @@ function startCapture() {
   pendingCapture = null;
   lastShot = { x: 0, y: 0, t: 0 };
   startTime = Date.now();
+  // 録画1回 = 1セッションフォルダ（2-R1）。作成に失敗しても録画自体は始め、
+  // 各撮影の保存失敗として既存の警告経路（enqueuePersist の catch）に乗せる。
+  try {
+    session.startSession(recordName, screenshotDir(), { now: startTime });
+  } catch (err) {
+    console.error('録画セッションフォルダの作成に失敗しました:', err);
+    warnGadget('保存フォルダを作成できません。保存先を確認してください。');
+  }
+  // UIA 要素解決の子プロセスを起動（Windows のみ・失敗してもフォールバック文で録画継続）。
+  uia.start();
   try {
     uIOhook.start();
   } catch (err) {
@@ -285,17 +282,33 @@ function stopRecording() {
   // 開始時に最小化した本体を元に戻して前面へ。
   restoreMainWindow();
   notifyState();
-  // 録画していた場合のみ、保存先フォルダをエクスプローラー（OS のファイル
-  // マネージャ）で開き、撮ったスクリーンショットをすぐ確認できるようにする。
-  // ready のまま閉じたときは何も撮っていないので開かない。
+  // 録画していた場合のみ、セッションを確定してレンダラーへ rec:done を通知し、
+  // 取り込みウィザードを開かせる（2-R4。エクスプローラーは自動では開かない——
+  // フォルダはウィザード内の導線から開ける）。0枚のセッションはフォルダごと
+  // 削除されるため shots:0 で通知し、レンダラーはトースト表示のみ行う。
+  // ready のまま閉じたときは何も撮っていないので通知しない。
+  // ※ 停止直前のクリックがまだ保存キュー（persistChain）に残っていることがある
+  //   （マーカー合成は最大4秒）。確定と UIA 子プロセスの終了はキューの完了を待つ。
+  //   recording=false 以降は新規の enqueue が無いため、この時点のチェーンが最終形。
   if (wasRecording) {
-    try {
-      const dir = screenshotDir();
-      fs.mkdirSync(dir, { recursive: true });
-      shell.openPath(dir);
-    } catch (err) {
-      console.error('保存フォルダを開けませんでした:', err);
-    }
+    persistChain.then(() => {
+      uia.stop();
+      const ended = session.endSession();
+      const payload = ended && !ended.removed
+        ? { dir: ended.dir, shots: ended.shots }
+        : { dir: null, shots: 0 };
+      if (mainWin && !mainWin.isDestroyed()) {
+        mainWin.webContents.send('rec:done', payload);
+      } else if (payload.dir) {
+        // 本体が閉じられている等でウィザードを出せないときは、素材が行方不明に
+        // ならないよう従来どおりフォルダを開いておく。
+        try {
+          shell.openPath(payload.dir);
+        } catch (err) {
+          console.error('保存フォルダを開けませんでした:', err);
+        }
+      }
+    });
   }
   return { ok: true };
 }
@@ -417,13 +430,22 @@ function takeFreshPreFrame(physX, physY) {
   return f;
 }
 
-// 撮影画像（物理px）にクリック位置の赤い中抜きリングを合成する。
+// 撮影画像（物理px）にハイライトを合成する（2-R3）。
+//   marker.shape === 'rect'  : 要素を囲む角丸の枠（rect = [x,y,w,h] 画像座標・PAD込み）
+//   marker.shape === 'circle': 従来どおりクリック位置の赤い中抜きリング
 // 新規依存を避け、メイン窓 renderer の canvas を executeJavaScript 経由で利用。
 // 失敗時は素の画像（pngBuffer）をそのまま返す。
-async function drawMarker(pngBuffer, relX, relY, scaleFactor) {
+async function drawMarker(pngBuffer, marker, scaleFactor) {
   if (!mainWin || mainWin.isDestroyed()) return pngBuffer;
-  const radius = MARKER_RADIUS * scaleFactor;
-  const lineWidth = MARKER_LINE_WIDTH * scaleFactor;
+  const lineWidth = marker.lineWidth;
+  let shape;
+  if (marker.shape === 'rect') {
+    const [rx, ry, rw, rh] = marker.rect;
+    const corner = 6 * scaleFactor; // 枠の角丸半径
+    shape = `ctx.roundRect(${rx}, ${ry}, ${rw}, ${rh}, ${corner});`;
+  } else {
+    shape = `ctx.arc(${marker.x}, ${marker.y}, ${marker.radius}, 0, Math.PI * 2);`;
+  }
   const b64 = pngBuffer.toString('base64');
   // 録画中はメイン窓が最小化（document が hidden）されている。hidden 状態では
   // img.decode() の Promise が解決されず executeJavaScript がハングし、保存・枚数
@@ -441,7 +463,7 @@ async function drawMarker(pngBuffer, relX, relY, scaleFactor) {
     const ctx = c.getContext('2d');
     ctx.drawImage(img, 0, 0);
     ctx.beginPath();
-    ctx.arc(${relX}, ${relY}, ${radius}, 0, Math.PI * 2);
+    ${shape}
     ctx.lineWidth = ${lineWidth};
     ctx.strokeStyle = ${JSON.stringify(MARKER_COLOR)};
     ctx.stroke();
@@ -482,20 +504,95 @@ async function captureShot(physX, physY) {
   }
 }
 
+// uiohook のボタン番号 → サイドカー用の名前（想定外の番号はそのまま数値で記録）。
+function buttonName(button) {
+  if (button === BTN_LEFT) return 'left';
+  if (button === BTN_RIGHT) return 'right';
+  return button;
+}
+
 // 【保存】離上(mouseup)で保存確定と判定したら呼ぶ。撮影済みバッファにクリック位置の
-// マーカーを合成してファイルへ書き出し、ガジェットを更新する。
+// マーカーを合成し、セッションフォルダへ画像＋メタデータ JSON を併記で書き出して
+// （session.js / 2-R1）、ガジェットを更新する。
 async function persistShot(shot) {
-  const { raw, disp, physX, physY } = shot;
+  const { raw, disp, physX, physY, button, clicks, source, uiaPromise } = shot;
   // クリックの物理相対座標（撮影したモニタの左上原点）。
   const relX = physX - disp.bounds.x * disp.scaleFactor;
   const relY = physY - disp.bounds.y * disp.scaleFactor;
-  const buf = clickMarkerOn ? await drawMarker(raw, relX, relY, disp.scaleFactor) : raw;
 
-  const stamp = dateStamp();
-  const seq = nextSequence(recordName, stamp);
-  const fileName = `${recordName}_${stamp}_${seq}.png`;
-  const filePath = path.join(screenshotDir(), fileName);
-  fs.writeFileSync(filePath, buf);
+  // mousedown で並行キックした UIA 解決と合流し、手順文を生成する（2-R2）。
+  // uia.resolve はタイムアウト込みで必ず解決するため、ここで詰まることはない。
+  const uiaInfo = normalizeUia(uiaPromise ? await uiaPromise : null);
+  const text = stepText(uiaInfo, { button: buttonName(button) });
+
+  // ハイライト（要素枠 or 赤丸）と拡大画像の切り出し範囲を決める（2-R3）。
+  let imageSize = null;
+  try {
+    const s = nativeImage.createFromBuffer(raw).getSize();
+    if (s.width > 0 && s.height > 0) imageSize = { w: s.width, h: s.height };
+  } catch (_) {
+    /* サイズ不明なら拡大なし・赤丸フォールバックで続行 */
+  }
+  const plan = planShot({
+    uia: uiaInfo,
+    click: { x: relX, y: relY },
+    imageSize,
+    displayOrigin: { x: disp.bounds.x * disp.scaleFactor, y: disp.bounds.y * disp.scaleFactor },
+    scale: disp.scaleFactor,
+  });
+
+  // 全景にハイライトを合成（トグル OFF なら素のまま）。
+  let marker = { drawn: false };
+  if (clickMarkerOn) {
+    marker = plan.frame
+      ? {
+          drawn: true,
+          shape: 'rect',
+          rect: plan.frame,
+          lineWidth: MARKER_LINE_WIDTH * disp.scaleFactor,
+          color: MARKER_COLOR,
+        }
+      : {
+          drawn: true,
+          shape: 'circle',
+          x: relX,
+          y: relY,
+          radius: MARKER_RADIUS * disp.scaleFactor,
+          lineWidth: MARKER_LINE_WIDTH * disp.scaleFactor,
+          color: MARKER_COLOR,
+        };
+  }
+  const buf = marker.drawn ? await drawMarker(raw, marker, disp.scaleFactor) : raw;
+
+  // 拡大画像 = ハイライト合成後の全景から切り出し（全景と見た目が必ず一致する）。
+  // 生成失敗は撮影を止めない（サイドカーの zoom が null になるだけ）。
+  let zoom = null;
+  if (plan.zoom) {
+    try {
+      const [zx, zy, zw, zh] = plan.zoom.rect;
+      const png = nativeImage
+        .createFromBuffer(buf)
+        .crop({ x: zx, y: zy, width: zw, height: zh })
+        .toPNG();
+      if (png && png.length > 0) zoom = { png, rect: plan.zoom.rect, source: plan.zoom.source };
+    } catch (err) {
+      console.error('拡大画像の生成に失敗しました（全景のみ保存します）:', err);
+    }
+  }
+
+  const { fileName } = session.recordShot(buf, {
+    button: buttonName(button),
+    clicks,
+    text,
+    uia: uiaInfo,
+    x: physX,
+    y: physY,
+    imagePoint: { x: relX, y: relY },
+    display: { id: disp.id, boundsDip: disp.bounds, scaleFactor: disp.scaleFactor },
+    marker,
+    zoom,
+    capture: { source },
+  });
   sessionShots += 1;
 
   let preview = '';
@@ -513,13 +610,14 @@ async function persistShot(shot) {
   }
 }
 
-// 撮影済み Promise を直列キューに積む。採番(nextSequence)と書き込みが重ならないよう
+// 撮影済み Promise を直列キューに積む。セッション内の採番と書き込みが重ならないよう
 // persistChain で1件ずつ順に保存する（撮影自体は押下時に並行で走ってよい）。
-function enqueuePersist(capPromise) {
+// extra には mouseup 時点でしか分からない情報（連続クリック数）を渡す。
+function enqueuePersist(capPromise, extra) {
   persistChain = persistChain
     .then(async () => {
       const shot = await capPromise;
-      if (shot) await persistShot(shot);
+      if (shot) await persistShot({ ...shot, ...extra });
     })
     .catch((err) => {
       console.error('スクリーンショットの保存に失敗しました:', err);
@@ -548,13 +646,21 @@ function onMouseDown(e) {
   if (shouldDebounce(e.x, e.y)) { console.log('[rec] skip(down): debounce'); return; }
   // 事前キャプチャがあればそれを使う（＝クリックより前の画面。クリックで
   // 消えるウインドウも写っている）。無ければ従来どおりこの場で撮影開始。
+  // UIA 要素解決を撮影と並行して非同期キックする（2-R2）。クリックで消える
+  // メニュー等も、押下の瞬間に依頼することで消える前に解決できる。
+  // 決して reject せず、失敗・タイムアウト・非対応環境は null（フォールバック文）。
+  const uiaPromise = uia.resolve(e.x, e.y);
   const pre = takeFreshPreFrame(e.x, e.y);
   if (pre) {
-    pendingCapture = Promise.resolve({ raw: pre.raw, disp: pre.disp, physX: e.x, physY: e.y });
+    pendingCapture = Promise.resolve({
+      raw: pre.raw, disp: pre.disp, physX: e.x, physY: e.y,
+      button: e.button, source: 'precapture', uiaPromise,
+    });
     return;
   }
   captureBusy = true; // ポーリングと衝突させない
   pendingCapture = captureShot(e.x, e.y)
+    .then((shot) => ({ ...shot, button: e.button, source: 'ondemand', uiaPromise }))
     .catch((err) => {
       console.error('スクリーンショットの撮影に失敗しました:', err);
       warnGadget('スクリーンショットを撮影できません。画面収録の許可や保存先を確認してください。');
@@ -579,7 +685,9 @@ function onMouseUp(e) {
   if (shouldDebounce(e.x, e.y)) { console.log('[rec] skip(up): debounce'); return; }
 
   lastShot = { x: e.x, y: e.y, t: Date.now() };
-  enqueuePersist(cap);
+  // clicks（連続クリック数）は mouseup 時点の値。デバウンスにより2回目の撮影は
+  // 集約されるため、ダブルクリックの認識は R2b で操作記録として扱う（spec 参照）。
+  enqueuePersist(cap, { clicks: e.clicks });
 }
 
 // ── .docx 出力 ──────────────────────────────────────────────
@@ -717,11 +825,13 @@ app.whenReady().then(() => {
   ipcMain.handle('rec:begin', () => startCapture());
   ipcMain.handle('rec:stop', () => stopRecording());
   ipcMain.handle('rec:setMarker', (_e, on) => { clickMarkerOn = !!on; return { ok: true }; });
-  ipcMain.handle('rec:openDir', () => {
+  ipcMain.handle('rec:openDir', (_e, dirArg) => {
     // ガジェットのプレビュークリックから、スクショ保存フォルダを OS の
-    // ファイルマネージャ（エクスプローラー）で開く。
+    // ファイルマネージャ（エクスプローラー）で開く。録画中は今撮っている
+    // セッションのフォルダを開く。取り込みウィザードからはセッションフォルダを
+    // 引数で指定できる（検証を通ったものだけ）。
     try {
-      const dir = screenshotDir();
+      const dir = resolveSessionDirArg(dirArg) || session.sessionDir() || screenshotDir();
       fs.mkdirSync(dir, { recursive: true });
       shell.openPath(dir);
       return { ok: true };
@@ -729,6 +839,29 @@ app.whenReady().then(() => {
       console.error('保存フォルダを開けませんでした:', err);
       return { ok: false };
     }
+  });
+  // ── 取り込みウィザード用（2-R4）。dir は必ず resolveSessionDirArg の検証を通す ──
+  ipcMain.handle('rec:sessions', () => session.listSessions(screenshotDir()));
+  ipcMain.handle('rec:session', (_e, dir) => {
+    const d = resolveSessionDirArg(dir);
+    return d ? session.readSession(d) : null;
+  });
+  ipcMain.handle('rec:image', (_e, dir, name) => {
+    const d = resolveSessionDirArg(dir);
+    if (!d || typeof name !== 'string' || !SESSION_IMAGE_RE.test(name)) return null;
+    try {
+      const buf = fs.readFileSync(path.join(d, name));
+      return 'data:image/png;base64,' + buf.toString('base64');
+    } catch (err) {
+      console.error('セッション画像を読み込めませんでした:', err);
+      return null;
+    }
+  });
+  ipcMain.handle('rec:markImported', (_e, dir) => {
+    const d = resolveSessionDirArg(dir);
+    const ok = d ? session.markImported(d) : false;
+    if (!ok) console.error('取り込み済みマーク(importedAt)を記録できませんでした:', String(dir));
+    return { ok };
   });
   ipcMain.handle('docx:save', (e, payload) => saveDocx(e, payload));
   ipcMain.handle('file:saveHtml', (e, payload) => saveHtmlFile(e, payload));
@@ -749,10 +882,17 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// 終了時はフックを確実に止める。
+// 終了時はフックを確実に止め、録画中ならセッションを確定する
+// （通常は stopRecording 経由で確定済み。ここは二重呼び出しでも無害）。
 app.on('before-quit', () => {
   try {
     uIOhook.stop();
+  } catch (_) {
+    /* noop */
+  }
+  uia.stop();
+  try {
+    session.endSession();
   } catch (_) {
     /* noop */
   }

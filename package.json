@@ -15,6 +15,7 @@
   "license": "MIT",
   "dependencies": {
     "html-to-docx": "^1.8.0",
+    "koffi": "^2.9.0",
     "screenshot-desktop": "^1.15.0",
     "uiohook-napi": "^1.5.4"
   },
@@ -36,13 +37,19 @@
       "preload.js",
       "storage.js",
       "errorlog.js",
+      "session.js",
+      "uia.js",
+      "uia-host.js",
+      "steptext.js",
+      "zoomcrop.js",
       "docx-postprocess.js",
       "gadget.html",
       "package.json"
     ],
     "asarUnpack": [
       "**/node_modules/uiohook-napi/**",
-      "**/node_modules/screenshot-desktop/**"
+      "**/node_modules/screenshot-desktop/**",
+      "**/node_modules/koffi/**"
     ],
     "win": {
       "target": [
