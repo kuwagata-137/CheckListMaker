@@ -46,6 +46,23 @@ contextBridge.exposeInMainWorld('recorderAPI', {
   },
 });
 
+// ファイル保存基盤（Electron 版のみ・ロードマップ 1-1）。state 本体は
+// <userData>/data/checklists.json、画像は images/ に1枚1ファイルで保存する。
+// 素のブラウザでは window.storageAPI が undefined → 従来の localStorage 保存。
+contextBridge.exposeInMainWorld('storageAPI', {
+  available: true,
+  // state 全体の読み込み。戻り値 { ok, json:string|null } / { ok:false, error }。
+  load: () => ipcRenderer.invoke('storage:load'),
+  // state 全体（JSON文字列）のアトミック書き込み。戻り値 { ok } / { ok:false, error }。
+  save: (json) => ipcRenderer.invoke('storage:save', json),
+  // 画像 dataURL を個別ファイルへ保存し参照 'img:<uuid>.<ext>' を返す。
+  imageSave: (dataUrl) => ipcRenderer.invoke('image:save', dataUrl),
+  // 参照から dataURL を復元する。戻り値 { ok, dataUrl } / { ok:false, error }。
+  imageGet: (ref) => ipcRenderer.invoke('image:get', ref),
+  // 参照先ファイルの削除（通常フローでは未使用。GC は起動時にメイン側で実施）。
+  imageDelete: (ref) => ipcRenderer.invoke('image:delete', ref),
+});
+
 // .docx 出力（Electron 版のみ）。レンダラーから静的HTMLを受け取り、メインプロセスで
 // .docx に変換・ネイティブ保存ダイアログで書き出す。素のブラウザでは window.docxAPI は undefined。
 contextBridge.exposeInMainWorld('docxAPI', {
