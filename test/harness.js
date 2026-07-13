@@ -45,11 +45,13 @@ function createMainStorage() {
 }
 
 // index.html を起動する。
-//   storage      … createMainStorage() の戻り値。渡すと Electron モード
-//                  （window.storageAPI あり）として起動する。省略時はブラウザモード。
+//   storage      … createMainStorage() の戻り値（.ipc を持てば自作スタブも可）。
+//                  渡すと Electron モード（window.storageAPI あり）として起動する。
+//                  省略時はブラウザモード。
 //   localStorage … 起動前に localStorage へ入れる { key: value }
+//   logs         … 配列を渡すと window.appLogAPI をスタブし、logError の記録を集める
 // 戻り値の api() は window.__test__（起動完了後に埋まる）を待って返す。
-function bootApp({ storage = null, localStorage = null, url = 'https://localhost/app/index.html', html = HTML } = {}) {
+function bootApp({ storage = null, localStorage = null, logs = null, url = 'https://localhost/app/index.html', html = HTML } = {}) {
   const vc = new VirtualConsole();
   vc.on('error', () => {});
   vc.on('jsdomError', () => {});
@@ -64,6 +66,11 @@ function bootApp({ storage = null, localStorage = null, url = 'https://localhost
       if (!window.CSS) window.CSS = { escape: (s) => String(s).replace(/([^a-zA-Z0-9_-])/g, '\\$1') };
       if (localStorage) {
         for (const [k, v] of Object.entries(localStorage)) window.localStorage.setItem(k, v);
+      }
+      if (logs) {
+        window.appLogAPI = {
+          error: (entry) => { logs.push(entry); return Promise.resolve({ ok: true }); },
+        };
       }
       if (storage) {
         window.storageAPI = {
