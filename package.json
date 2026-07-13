@@ -6,6 +6,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "test": "node --test",
     "rebuild": "electron-rebuild -f -w uiohook-napi",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --win --publish never"
@@ -20,7 +21,8 @@
   "devDependencies": {
     "@electron/rebuild": "^3.6.0",
     "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "jsdom": "^24.1.0"
   },
   "build": {
     "appId": "com.kuwagata.checklistmaker",

@@ -5324,6 +5324,18 @@
       if (maybeImportShare()) return;
       render();
     });
+
+    // ---- テスト専用フック ----
+    // test/harness.js が起動前に window.__test__ = {} を用意したときだけ、
+    // 内部 API を書き込む。本番・ブラウザでは __test__ が未定義のため何もしない。
+    if (window.__test__) {
+      Object.assign(window.__test__, {
+        M, store, Store, LocalStorageAdapter, MemoryAdapter, FileAdapter,
+        encodeShareLink, readShareFromHash, buildStandaloneHtml,
+        materializeState, absorbChecklistImages, resolveImageSync, storeImage,
+        STORAGE_KEY, MIGRATED_KEY,
+      });
+    }
   })();
   </script>
 </body>
