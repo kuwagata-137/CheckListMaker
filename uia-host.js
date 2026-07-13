@@ -55,6 +55,7 @@ try {
 }
 
 const WindowFromPoint = user32.func('void * __stdcall WindowFromPoint(POINT pt)');
+const GetForegroundWindow = user32.func('void * __stdcall GetForegroundWindow()');
 const GetAncestor = user32.func('void * __stdcall GetAncestor(void *hwnd, uint32 flags)');
 const GetWindowTextW = user32.func('int __stdcall GetWindowTextW(void *hwnd, uint8 *buf, int max)');
 const GetWindowThreadProcessId = user32.func(
@@ -180,13 +181,22 @@ function initUia() {
 }
 
 // IUIAutomation vtable: 0-2 IUnknown, ..., 5 GetRootElement, 6 ElementFromHandle,
-// 7 ElementFromPoint, ...
+// 7 ElementFromPoint, 8 GetFocusedElement, ...
 function elementFromPoint(x, y) {
   const fn = comMethod(uia, 7,
     'long __stdcall UIA_ElementFromPoint(void *self, POINT pt, _Out_ void **el)');
   const out = [null];
   const hr = fn(uia, { x, y }, out);
   if (hr !== 0 || !out[0]) throw new Error('ElementFromPoint failed: 0x' + (hr >>> 0).toString(16));
+  return out[0];
+}
+// フォーカス中の要素（文字入力の対象。2-R2b）。
+function focusedElement() {
+  const fn = comMethod(uia, 8,
+    'long __stdcall UIA_GetFocusedElement(void *self, _Out_ void **el)');
+  const out = [null];
+  const hr = fn(uia, out);
+  if (hr !== 0 || !out[0]) throw new Error('GetFocusedElement failed: 0x' + (hr >>> 0).toString(16));
   return out[0];
 }
 
@@ -201,10 +211,9 @@ function elementProp(el, propId) {
 }
 
 // ── ウィンドウタイトル・アプリ名（Win32 直接。UIA が失敗しても取れる系統）──
-function windowInfoAt(x, y) {
+function windowInfoFor(hwnd) {
   const info = { windowTitle: '', appName: '', pid: 0 };
   try {
-    const hwnd = WindowFromPoint({ x, y });
     if (!hwnd) return info;
     const root = GetAncestor(hwnd, 2 /* GA_ROOT */) || hwnd;
     const tbuf = Buffer.alloc(512 * 2);
@@ -226,9 +235,17 @@ function windowInfoAt(x, y) {
   } catch (_) { /* ウィンドウ情報の失敗は空のまま */ }
   return info;
 }
+function windowInfoAt(x, y) {
+  try {
+    return windowInfoFor(WindowFromPoint({ x, y }));
+  } catch (_) {
+    return { windowTitle: '', appName: '', pid: 0 };
+  }
+}
 
-// ── 1クリック分の解決（uia.js への返信ペイロード）────────────
-function resolveAt(x, y) {
+// ── 1操作分の解決（uia.js への返信ペイロード）────────────────
+// getElement で要素を取り、windowInfo（Win32 系統）と合成する共通処理。
+function resolveWith(getElement, windowInfo) {
   const t0 = Date.now();
   const rec = {
     ok: false,
@@ -244,11 +261,11 @@ function resolveAt(x, y) {
     elapsedMs: 0,
     error: '',
   };
-  Object.assign(rec, windowInfoAt(x, y));
+  Object.assign(rec, windowInfo);
   delete rec.pid;
   let el = null;
   try {
-    el = elementFromPoint(x, y);
+    el = getElement();
     rec.ok = true;
     const name = elementProp(el, PROP.Name);
     rec.name = typeof name === 'string' ? name : '';
@@ -272,6 +289,19 @@ function resolveAt(x, y) {
   return rec;
 }
 
+function resolveAt(x, y) {
+  return resolveWith(() => elementFromPoint(x, y), windowInfoAt(x, y));
+}
+
+// フォーカス要素の解決（2-R2b: 文字入力の対象）。ウィンドウ情報は前面ウィンドウから。
+function resolveFocused() {
+  let winInfo = { windowTitle: '', appName: '', pid: 0 };
+  try {
+    winInfo = windowInfoFor(GetForegroundWindow());
+  } catch (_) { /* 空のまま */ }
+  return resolveWith(() => focusedElement(), winInfo);
+}
+
 // ── メイン: 親からの要求に応答 ───────────────────────────────
 try {
   initUia();
@@ -287,7 +317,8 @@ port.on('message', (e) => {
   if (!msg || typeof msg.id !== 'number') return;
   let reply;
   try {
-    reply = { id: msg.id, ...resolveAt(msg.x, msg.y) };
+    // focus:true はフォーカス要素の解決（2-R2b）、それ以外は座標の解決（2-R2）。
+    reply = { id: msg.id, ...(msg.focus ? resolveFocused() : resolveAt(msg.x, msg.y)) };
   } catch (err) {
     reply = { id: msg.id, ok: false, error: String((err && err.message) || err) };
   }

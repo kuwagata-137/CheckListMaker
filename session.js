@@ -14,7 +14,8 @@ const path = require('path');
 const fs = require('fs');
 
 const SESSION_VERSION = 2; // v2: importedAt（取り込み完了時刻。未取り込みは null）を追加
-const SIDECAR_VERSION = 3;
+// v4: kind（操作種類）・keys・drag・appChange を追加（2-R2b）。kind 欠落は "click" 扱い。
+const SIDECAR_VERSION = 4;
 
 // UIA 解決なし（非 Windows・タイムアウト・失敗）のときのサイドカー uia 欄。
 const UIA_EMPTY = Object.freeze({
@@ -106,10 +107,36 @@ function recordShot(pngBuffer, meta = {}) {
     }
   }
 
+  // ドラッグの終点画像（2-R2b ④）。書き込み失敗は撮影を止めない（始点が主成果物）。
+  let drag = null;
+  if (meta.drag) {
+    const d = meta.drag;
+    let endImage = null;
+    if (d.endPng) {
+      const endName = `${base}e.png`;
+      try {
+        fs.writeFileSync(path.join(current.dir, endName), d.endPng);
+        endImage = endName;
+      } catch (err) {
+        console.error('ドラッグ終点画像の書き込みに失敗しました:', err);
+      }
+    }
+    drag = {
+      from: d.from || null,
+      to: d.to || null,
+      endImage,
+      endImagePoint: d.endImagePoint || null,
+      endMarker: d.endMarker || { drawn: false },
+      endUia: d.endUia || UIA_EMPTY,
+    };
+  }
+
   const now = meta.now != null ? new Date(meta.now) : new Date();
   const sidecar = {
     version: SIDECAR_VERSION,
     seq: current.seq,
+    // 操作種類（2-R2b）: "click"（既定・ダブルクリック含む）/ "input" / "key" / "drag"。
+    kind: meta.kind || 'click',
     image: fileName,
     time: now.toISOString(),
     elapsedMs: Math.max(0, now.getTime() - current.startedAt.getTime()),
@@ -128,10 +155,18 @@ function recordShot(pngBuffer, meta = {}) {
     zoom,
     capture: meta.capture || null,
     // UIA 要素解決の結果（steptext.normalizeUia 済み / 2-R2）。解決なしは雛形。
+    // input ステップではフォーカス要素、drag ステップでは始点の解決結果（2-R2b）。
     uia: meta.uia || UIA_EMPTY,
+    // キーボード操作の内訳（2-R2b ②③）。入力内容（押された文字）は記録しない。
+    keys: meta.keys || null,
+    // ドラッグの終点情報（2-R2b ④）。
+    drag,
+    // 直前ステップから前面アプリが替わった痕跡（2-R2b ⑤。将来のセクション分割用）。
+    appChange: meta.appChange || null,
   };
   try {
     fs.writeFileSync(path.join(current.dir, `${base}.json`), JSON.stringify(sidecar, null, 2));
+    current.last = { base, sidecar }; // ダブルクリック昇格（amendLastShot）用
   } catch (err) {
     console.error('撮影メタデータ(JSON)の書き込みに失敗しました:', err);
   }
@@ -141,6 +176,25 @@ function recordShot(pngBuffer, meta = {}) {
     console.error('session.json の更新に失敗しました:', err);
   }
   return { fileName, seq: current.seq };
+}
+
+// 直前に保存したサイドカーを修正する（2-R2b ①: ダブルクリックの昇格）。
+// mutate(sidecar) がサイドカーを書き換え（または差し替えを返し）、ファイルへ再書き込みする。
+// 失敗しても元のステップは壊さない（修正を諦めて false を返すだけ）。
+function amendLastShot(mutate) {
+  if (!current || !current.last || typeof mutate !== 'function') return false;
+  try {
+    const next = mutate(current.last.sidecar) || current.last.sidecar;
+    fs.writeFileSync(
+      path.join(current.dir, `${current.last.base}.json`),
+      JSON.stringify(next, null, 2)
+    );
+    current.last.sidecar = next;
+    return true;
+  } catch (err) {
+    console.error('サイドカーの修正（ダブルクリック昇格）に失敗しました:', err);
+    return false;
+  }
 }
 
 // セッションを終了する。1枚も撮っていなければ空フォルダごと削除する（ゴミを残さない）。
@@ -224,7 +278,7 @@ function readSession(dir) {
   const steps = [];
   for (const n of names) {
     const m = /^(\d{3,})\.png$/.exec(n);
-    if (!m) continue; // NNNz.png（拡大）はサイドカー経由で辿る
+    if (!m) continue; // NNNz.png（拡大）・NNNe.png（ドラッグ終点）はサイドカー経由で辿る
     const base = m[1];
     let sc = null;
     try {
@@ -235,8 +289,17 @@ function readSession(dir) {
     const zoomImage = sc && sc.zoom && sc.zoom.image && fs.existsSync(path.join(dir, sc.zoom.image))
       ? sc.zoom.image
       : null;
+    // ドラッグの終点画像（2-R2b）。実在を確認できたときだけ載せる。
+    let drag = null;
+    if (sc && sc.drag) {
+      const endImage = sc.drag.endImage && fs.existsSync(path.join(dir, sc.drag.endImage))
+        ? sc.drag.endImage
+        : null;
+      drag = { ...sc.drag, endImage };
+    }
     steps.push({
       seq: sc && typeof sc.seq === 'number' ? sc.seq : parseInt(base, 10),
+      kind: (sc && sc.kind) || 'click', // v3 以前（kind なし）はクリック（2-R2b）
       image: n,
       zoomImage,
       zoomSource: (sc && sc.zoom && sc.zoom.source) || null,
@@ -244,6 +307,9 @@ function readSession(dir) {
       uia: (sc && sc.uia) || null,
       click: (sc && sc.click) || null,
       time: (sc && sc.time) || null,
+      keys: (sc && sc.keys) || null,
+      drag,
+      appChange: (sc && sc.appChange) || null,
     });
   }
   steps.sort((a, b) => a.seq - b.seq);
@@ -267,6 +333,6 @@ function markImported(dir, opts = {}) {
 }
 
 module.exports = {
-  startSession, recordShot, endSession, isActive, sessionDir,
+  startSession, recordShot, amendLastShot, endSession, isActive, sessionDir,
   listSessions, readSession, markImported,
 };

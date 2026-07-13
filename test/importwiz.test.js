@@ -43,7 +43,7 @@ test('importwiz — 取り込みウィザードの純関数', async (t) => {
     });
     assert.equal(steps.length, 2);
     assert.equal(steps[0].text, '「保存」ボタンをクリック');
-    assert.deepEqual(plain(steps[0].shots), [{ seq: 1, image: '001.png', zoomImage: '001z.png', choice: 'zoom' }]);
+    assert.deepEqual(plain(steps[0].shots), [{ seq: 1, kind: 'click', image: '001.png', zoomImage: '001z.png', choice: 'zoom' }]);
     assert.equal(steps[1].text, '');
     assert.equal(steps[1].shots[0].choice, 'full');
     assert.deepEqual(plain(T.wizardStepsFrom(null)), [], 'null でも落ちない');
@@ -109,5 +109,53 @@ test('importwiz — 取り込みウィザードの純関数', async (t) => {
     assert.deepEqual(plain(sec.items[0].images), [PX_JPEG, PX_JPEG]);
     assert.deepEqual(plain(sec.items[1].images), []);
     assert.ok(sec.id && sec.items[0].id, 'セクション・項目とも id が振られる');
+  });
+});
+
+// ── 2-R2b: 操作種類の拡張（kind の追従・ドラッグの画像読み替え）──────
+test('importwiz — 操作種類の拡張の追従（2-R2b）', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+  const plain2 = (v) => JSON.parse(JSON.stringify(v));
+
+  await t.test('drag ステップは終点画像を拡大スロットに載せて既定「両方」', () => {
+    const steps = T.wizardStepsFrom({
+      steps: [{
+        seq: 1, kind: 'drag', image: '001.png', zoomImage: null, zoomSource: null,
+        text: '「A」から「B」へドラッグ', uia: null, click: null, time: null,
+        drag: { endImage: '001e.png' },
+      }],
+    });
+    assert.deepEqual(plain2(steps), [{
+      text: '「A」から「B」へドラッグ',
+      shots: [{ seq: 1, kind: 'drag', image: '001.png', zoomImage: '001e.png', choice: 'both' }],
+    }]);
+  });
+
+  await t.test('drag で終点画像が無ければ始点のみ（full）', () => {
+    const choice = T.wizardDefaultChoice({ kind: 'drag', drag: { endImage: null } });
+    assert.equal(choice, 'full');
+  });
+
+  await t.test('input ステップは既存ロジックのまま（要素採用の拡大あり→zoom）', () => {
+    const steps = T.wizardStepsFrom({
+      steps: [{
+        seq: 2, kind: 'input', image: '002.png', zoomImage: '002z.png', zoomSource: 'element',
+        text: '「ファイル名」欄に入力', uia: null, click: null, time: null, drag: null,
+      }],
+    });
+    assert.equal(steps[0].shots[0].choice, 'zoom');
+    assert.equal(steps[0].shots[0].zoomImage, '002z.png');
+  });
+
+  await t.test('kind 欠落（旧サイドカー）は click として扱われ従来どおり', () => {
+    const steps = T.wizardStepsFrom({
+      steps: [{ seq: 3, image: '003.png', zoomImage: null, zoomSource: null, text: null, uia: null, click: null, time: null }],
+    });
+    assert.deepEqual(plain2(steps), [{
+      text: '',
+      shots: [{ seq: 3, kind: 'click', image: '003.png', zoomImage: null, choice: 'full' }],
+    }]);
   });
 });

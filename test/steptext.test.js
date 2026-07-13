@@ -155,3 +155,84 @@ test('cleanLabel — 名前の正規化', async (t) => {
     assert.ok(t1.includes('…」ボタンをクリック'));
   });
 });
+
+// ── 2-R2b: 操作種類の拡張（ダブルクリック・入力・キー・ドラッグ）──────
+const { dblClickText, inputText, keyStepText, dragText } = require('../steptext');
+
+test('dblClickText — ダブルクリック文（2-R2b ①）', async (t) => {
+  await t.test('名前ありは種類を問わず「◯◯をダブルクリック」', () => {
+    assert.equal(dblClickText(normalizeUia(raw())), '「保存」をダブルクリック');
+    assert.equal(
+      dblClickText(normalizeUia(raw({ name: 'report.xlsx', controlType: 50007, controlTypeName: 'ListItem' }))),
+      '「report.xlsx」をダブルクリック'
+    );
+  });
+  await t.test('Excel のセル番地はセル特化文', () => {
+    assert.equal(
+      dblClickText(normalizeUia(raw({ name: 'B5', controlType: 50029, controlTypeName: 'DataItem', appName: 'EXCEL.EXE' }))),
+      'セル「B5」をダブルクリック'
+    );
+  });
+  await t.test('解決なし・コンテナ止まりはフォールバック文', () => {
+    assert.equal(
+      dblClickText(normalizeUia({ ok: false, windowTitle: '業務システム' })),
+      'ウィンドウ「業務システム」内の図の位置をダブルクリック'
+    );
+    assert.equal(
+      dblClickText(normalizeUia(raw({ controlType: 50033, controlTypeName: 'Pane', name: '業務システム' }))),
+      'ウィンドウ「文書 1 - Word」内の図の位置をダブルクリック'
+    );
+    assert.equal(dblClickText(normalizeUia(null)), '図の位置をダブルクリック');
+  });
+});
+
+test('inputText — 文字入力文（2-R2b ②）', async (t) => {
+  await t.test('フォーカス要素の名前があれば「◯◯欄に入力」', () => {
+    const u = normalizeUia(raw({ name: 'ファイル名', controlType: 50004, controlTypeName: 'Edit' }));
+    assert.equal(inputText(u), '「ファイル名」欄に入力');
+    assert.equal(inputText(u, { enter: true }), '「ファイル名」欄に入力して Enter');
+  });
+  await t.test('Document は入力対象として名前を使う（メモ帳・Word 本文）', () => {
+    const u = normalizeUia(raw({ name: 'テキスト エディター', controlType: 50030, controlTypeName: 'Document' }));
+    assert.equal(inputText(u), '「テキスト エディター」欄に入力');
+  });
+  await t.test('Window/Pane 止まり・解決なしはウィンドウ名のフォールバック', () => {
+    const u = normalizeUia(raw({ controlType: 50033, controlTypeName: 'Pane' }));
+    assert.equal(inputText(u), 'ウィンドウ「文書 1 - Word」内で文字を入力');
+    assert.equal(
+      inputText(normalizeUia({ ok: false, windowTitle: 'メモ帳' }), { enter: true }),
+      'ウィンドウ「メモ帳」内で文字を入力して Enter'
+    );
+    assert.equal(inputText(normalizeUia(null)), '文字を入力');
+  });
+});
+
+test('keyStepText — キー操作文（2-R2b ③）', async (t) => {
+  await t.test('既知のショートカットは操作名で言い切る', () => {
+    assert.equal(keyStepText('Ctrl+S'), 'Ctrl+S で保存');
+    assert.equal(keyStepText('Ctrl+V'), 'Ctrl+V で貼り付け');
+    assert.equal(keyStepText('Alt+F4'), 'Alt+F4 でウィンドウを閉じる');
+    assert.equal(keyStepText('Alt+Tab'), 'Alt+Tab でアプリを切り替え');
+    assert.equal(keyStepText('F5'), 'F5 で更新');
+  });
+  await t.test('未知のコンボ・単独 Enter は「キーを押す」', () => {
+    assert.equal(keyStepText('Ctrl+Shift+K'), 'Ctrl+Shift+K キーを押す');
+    assert.equal(keyStepText('Enter'), 'Enter キーを押す');
+  });
+});
+
+test('dragText — ドラッグ文（2-R2b ④）', async (t) => {
+  const named = (name) => normalizeUia(raw({ name }));
+  const unresolved = normalizeUia({ ok: false, windowTitle: 'エクスプローラー' });
+  await t.test('両端の名前が取れれば「AからBへドラッグ」', () => {
+    assert.equal(dragText(named('report.xlsx'), named('ごみ箱')), '「report.xlsx」から「ごみ箱」へドラッグ');
+  });
+  await t.test('片側フォールバックは図の始点/終点で補う', () => {
+    assert.equal(dragText(named('report.xlsx'), unresolved), '「report.xlsx」から図の終点位置へドラッグ');
+    assert.equal(dragText(unresolved, named('ごみ箱')), '図の始点位置から「ごみ箱」へドラッグ');
+  });
+  await t.test('両側フォールバックは始点のウィンドウ名で包む', () => {
+    assert.equal(dragText(unresolved, unresolved), 'ウィンドウ「エクスプローラー」内の図の始点から終点へドラッグ');
+    assert.equal(dragText(normalizeUia(null), normalizeUia(null)), '図の始点から終点へドラッグ');
+  });
+});

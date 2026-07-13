@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('recorderAPI', {
   beginCapture: () => ipcRenderer.invoke('rec:begin'),
   // クリック位置の赤丸（〇マーカー）合成の ON/OFF。
   setMarker: (on) => ipcRenderer.invoke('rec:setMarker', !!on),
+  // ドラッグ記録（始点終点2枚・2-R2b ④）の ON/OFF。既定 OFF。
+  setDrag: (on) => ipcRenderer.invoke('rec:setDrag', !!on),
   // スクショ保存フォルダを OS のファイルマネージャで開く（プレビュークリック）。
   // dir（セッションフォルダ）を渡すとそのフォルダを開く（メイン側で検証される）。
   openShotsDir: (dir) => ipcRenderer.invoke('rec:openDir', dir),
