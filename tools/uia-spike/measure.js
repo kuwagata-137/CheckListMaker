@@ -240,11 +240,12 @@ function windowInfoAt(x, y) {
 }
 
 // ── 1クリック分の解決 ────────────────────────────────────────
-function resolveAt(x, y, button) {
+function resolveAt(x, y, button, clicks) {
   const t0 = Date.now();
   const rec = {
     ts: new Date().toISOString(),
     x, y, button,
+    clicks: clicks || 1, // 連続クリック数（ダブルクリックの2打目は 2。R2b の設計材料）
     ok: false,             // UIA で要素を解決できたか
     name: '',              // 要素名（「保存」等）
     controlType: 0,
@@ -341,7 +342,7 @@ function main() {
     // カーソル位置の要素を1回だけ解決して結果を表示（配線の動作確認）。
     const pt = {};
     if (!GetCursorPos(pt)) { console.error('GetCursorPos に失敗しました。'); process.exit(2); }
-    const rec = resolveAt(pt.x, pt.y, 0);
+    const rec = resolveAt(pt.x, pt.y, 0, 1);
     console.log(JSON.stringify(rec, null, 2));
     console.log(rec.ok
       ? '\nセルフテスト成功。`npm run measure` で計測を開始できます。'
@@ -375,10 +376,11 @@ function main() {
     // フックコールバックを速やかに返すため、解決はイベントループへ逃がす。
     setImmediate(() => {
       try {
-        const rec = resolveAt(e.x, e.y, e.button);
+        const rec = resolveAt(e.x, e.y, e.button, e.clicks);
         records.push(rec);
         fs.appendFileSync(outFile, JSON.stringify(rec) + '\n');
-        const label = rec.name ? '「' + rec.name.slice(0, 30) + '」' : '(名前なし)';
+        const label = (rec.name ? '「' + rec.name.slice(0, 30) + '」' : '(名前なし)') +
+          (rec.clicks >= 2 ? ' ×' + rec.clicks : '');
         console.log(
           '[' + String(records.length).padStart(3) + '] ' +
           (rec.appName || '?') + ' | ' + (rec.controlTypeName || '?') + ' | ' + label +
