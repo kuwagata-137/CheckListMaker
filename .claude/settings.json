@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "mcp__github__create_pull_request|mcp__github__merge_pull_request|mcp__github__enable_pr_auto_merge",
+        "matcher": "mcp__github__create_pull_request|mcp__github__enable_pr_auto_merge",
         "hooks": [
           {
             "type": "command",
