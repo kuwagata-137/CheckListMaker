@@ -148,6 +148,7 @@
       <div class="cell"><img alt="" hidden /></div>
     </div>
     <label class="opt"><input type="checkbox" id="marker" checked />クリック位置を赤で強調する</label>
+    <label class="opt"><input type="checkbox" id="drag" />ドラッグを記録する</label>
     <button class="toggle" id="toggle">● 録画開始</button>
     <div class="warn" id="warn" hidden></div>
   </div>
@@ -163,6 +164,7 @@
       const elGrid = document.getElementById('grid');
       const gridImgs = [...elGrid.querySelectorAll('img')];
       const elMarker = document.getElementById('marker');
+      const elDrag = document.getElementById('drag');
       const elWarn = document.getElementById('warn');
       const btnToggle = document.getElementById('toggle');
       const btnClose = document.getElementById('close');
@@ -209,6 +211,7 @@
             elName.title = d.name;
           }
           if (d && typeof d.markerOn === 'boolean') elMarker.checked = d.markerOn;
+          if (d && typeof d.dragOn === 'boolean') elDrag.checked = d.dragOn;
           refreshUI();
         });
         api.onGadgetUpdate((d) => {
@@ -242,6 +245,8 @@
         elGrid.addEventListener('click', () => api.openShotsDir());
         // クリック位置のハイライト（要素枠／赤丸）ON/OFF
         elMarker.addEventListener('change', () => api.setMarker(elMarker.checked));
+        // ドラッグの記録（始点終点2枚・2-R2b ④）ON/OFF。既定 OFF
+        elDrag.addEventListener('change', () => api.setDrag(elDrag.checked));
       }
       // ✕: ウインドウを閉じる。録画中ならメイン側の closed ハンドラが停止処理を行う。
       btnClose.addEventListener('click', () => window.close());
