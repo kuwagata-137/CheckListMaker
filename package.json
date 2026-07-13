@@ -41,6 +41,7 @@
       "uia.js",
       "uia-host.js",
       "steptext.js",
+      "zoomcrop.js",
       "docx-postprocess.js",
       "gadget.html",
       "package.json"

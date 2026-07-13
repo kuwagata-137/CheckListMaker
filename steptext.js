@@ -109,4 +109,5 @@ function stepText(uia, opts = {}) {
   }
 }
 
-module.exports = { normalizeUia, stepText, cleanLabel };
+// CONTAINER_TYPES は zoomcrop.js（2-R3）が矩形の採用判定で同じ集合を使う。
+module.exports = { normalizeUia, stepText, cleanLabel, CONTAINER_TYPES };

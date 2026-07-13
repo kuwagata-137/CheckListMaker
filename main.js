@@ -6,7 +6,8 @@
 //    「クリックしたモニタ」をキャプチャして、ユーザーの「ピクチャ」内の
 //    「CheckListMaker」配下のセッションフォルダへ、クリック情報の JSON と
 //    併記で保存（形式は session.js / docs/spec-2-R1-session-format.md）
-//  - クリック位置に赤い中抜きリングのマーカーを合成
+//  - クリック箇所のハイライト合成（UIA 要素枠。取れなければ赤い中抜きリング）と
+//    拡大画像（NNNz.png）の自動生成（zoomcrop.js / 2-R3）
 //  - スクリーンショットに写らないオーバーレイ「ガジェット」窓の表示
 //  - 失敗（権限拒否・フック開始失敗・キャプチャ失敗）はガジェットへ警告通知
 //  - 上記とレンダラー間の IPC 仲介
@@ -28,6 +29,7 @@ const { initErrorLog } = require('./errorlog');
 const session = require('./session');
 const uia = require('./uia');
 const { normalizeUia, stepText } = require('./steptext');
+const { planShot } = require('./zoomcrop');
 
 let mainWin = null;
 let gadgetWin = null;
@@ -409,13 +411,22 @@ function takeFreshPreFrame(physX, physY) {
   return f;
 }
 
-// 撮影画像（物理px）にクリック位置の赤い中抜きリングを合成する。
+// 撮影画像（物理px）にハイライトを合成する（2-R3）。
+//   marker.shape === 'rect'  : 要素を囲む角丸の枠（rect = [x,y,w,h] 画像座標・PAD込み）
+//   marker.shape === 'circle': 従来どおりクリック位置の赤い中抜きリング
 // 新規依存を避け、メイン窓 renderer の canvas を executeJavaScript 経由で利用。
 // 失敗時は素の画像（pngBuffer）をそのまま返す。
-async function drawMarker(pngBuffer, relX, relY, scaleFactor) {
+async function drawMarker(pngBuffer, marker, scaleFactor) {
   if (!mainWin || mainWin.isDestroyed()) return pngBuffer;
-  const radius = MARKER_RADIUS * scaleFactor;
-  const lineWidth = MARKER_LINE_WIDTH * scaleFactor;
+  const lineWidth = marker.lineWidth;
+  let shape;
+  if (marker.shape === 'rect') {
+    const [rx, ry, rw, rh] = marker.rect;
+    const corner = 6 * scaleFactor; // 枠の角丸半径
+    shape = `ctx.roundRect(${rx}, ${ry}, ${rw}, ${rh}, ${corner});`;
+  } else {
+    shape = `ctx.arc(${marker.x}, ${marker.y}, ${marker.radius}, 0, Math.PI * 2);`;
+  }
   const b64 = pngBuffer.toString('base64');
   // 録画中はメイン窓が最小化（document が hidden）されている。hidden 状態では
   // img.decode() の Promise が解決されず executeJavaScript がハングし、保存・枚数
@@ -433,7 +444,7 @@ async function drawMarker(pngBuffer, relX, relY, scaleFactor) {
     const ctx = c.getContext('2d');
     ctx.drawImage(img, 0, 0);
     ctx.beginPath();
-    ctx.arc(${relX}, ${relY}, ${radius}, 0, Math.PI * 2);
+    ${shape}
     ctx.lineWidth = ${lineWidth};
     ctx.strokeStyle = ${JSON.stringify(MARKER_COLOR)};
     ctx.stroke();
@@ -489,12 +500,66 @@ async function persistShot(shot) {
   // クリックの物理相対座標（撮影したモニタの左上原点）。
   const relX = physX - disp.bounds.x * disp.scaleFactor;
   const relY = physY - disp.bounds.y * disp.scaleFactor;
-  const buf = clickMarkerOn ? await drawMarker(raw, relX, relY, disp.scaleFactor) : raw;
 
   // mousedown で並行キックした UIA 解決と合流し、手順文を生成する（2-R2）。
   // uia.resolve はタイムアウト込みで必ず解決するため、ここで詰まることはない。
   const uiaInfo = normalizeUia(uiaPromise ? await uiaPromise : null);
   const text = stepText(uiaInfo, { button: buttonName(button) });
+
+  // ハイライト（要素枠 or 赤丸）と拡大画像の切り出し範囲を決める（2-R3）。
+  let imageSize = null;
+  try {
+    const s = nativeImage.createFromBuffer(raw).getSize();
+    if (s.width > 0 && s.height > 0) imageSize = { w: s.width, h: s.height };
+  } catch (_) {
+    /* サイズ不明なら拡大なし・赤丸フォールバックで続行 */
+  }
+  const plan = planShot({
+    uia: uiaInfo,
+    click: { x: relX, y: relY },
+    imageSize,
+    displayOrigin: { x: disp.bounds.x * disp.scaleFactor, y: disp.bounds.y * disp.scaleFactor },
+    scale: disp.scaleFactor,
+  });
+
+  // 全景にハイライトを合成（トグル OFF なら素のまま）。
+  let marker = { drawn: false };
+  if (clickMarkerOn) {
+    marker = plan.frame
+      ? {
+          drawn: true,
+          shape: 'rect',
+          rect: plan.frame,
+          lineWidth: MARKER_LINE_WIDTH * disp.scaleFactor,
+          color: MARKER_COLOR,
+        }
+      : {
+          drawn: true,
+          shape: 'circle',
+          x: relX,
+          y: relY,
+          radius: MARKER_RADIUS * disp.scaleFactor,
+          lineWidth: MARKER_LINE_WIDTH * disp.scaleFactor,
+          color: MARKER_COLOR,
+        };
+  }
+  const buf = marker.drawn ? await drawMarker(raw, marker, disp.scaleFactor) : raw;
+
+  // 拡大画像 = ハイライト合成後の全景から切り出し（全景と見た目が必ず一致する）。
+  // 生成失敗は撮影を止めない（サイドカーの zoom が null になるだけ）。
+  let zoom = null;
+  if (plan.zoom) {
+    try {
+      const [zx, zy, zw, zh] = plan.zoom.rect;
+      const png = nativeImage
+        .createFromBuffer(buf)
+        .crop({ x: zx, y: zy, width: zw, height: zh })
+        .toPNG();
+      if (png && png.length > 0) zoom = { png, rect: plan.zoom.rect, source: plan.zoom.source };
+    } catch (err) {
+      console.error('拡大画像の生成に失敗しました（全景のみ保存します）:', err);
+    }
+  }
 
   const { fileName } = session.recordShot(buf, {
     button: buttonName(button),
@@ -505,16 +570,8 @@ async function persistShot(shot) {
     y: physY,
     imagePoint: { x: relX, y: relY },
     display: { id: disp.id, boundsDip: disp.bounds, scaleFactor: disp.scaleFactor },
-    marker: clickMarkerOn
-      ? {
-          drawn: true,
-          x: relX,
-          y: relY,
-          radius: MARKER_RADIUS * disp.scaleFactor,
-          lineWidth: MARKER_LINE_WIDTH * disp.scaleFactor,
-          color: MARKER_COLOR,
-        }
-      : { drawn: false },
+    marker,
+    zoom,
     capture: { source },
   });
   sessionShots += 1;

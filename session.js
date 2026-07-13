@@ -4,15 +4,16 @@
 //  - 撮影画像の連番保存（001.png〜）と1クリック分のメタデータ併記（001.json）
 //  - セッション全体のメタデータ（session.json）の管理と終了処理
 //
-// フォルダ構成・サイドカーのスキーマは docs/spec-2-R1-session-format.md（v1）と
-// docs/spec-2-R2-uia-steptext.md（v2: uia の実データ＋生成文 text を追加）参照。
+// フォルダ構成・サイドカーのスキーマは docs/spec-2-R1-session-format.md（v1）、
+// docs/spec-2-R2-uia-steptext.md（v2: uia の実データ＋生成文 text を追加）、
+// docs/spec-2-R3-zoom-highlight.md（v3: 拡大画像 zoom＋marker.shape を追加）参照。
 'use strict';
 
 const path = require('path');
 const fs = require('fs');
 
 const SESSION_VERSION = 1;
-const SIDECAR_VERSION = 2;
+const SIDECAR_VERSION = 3;
 
 // UIA 解決なし（非 Windows・タイムアウト・失敗）のときのサイドカー uia 欄。
 const UIA_EMPTY = Object.freeze({
@@ -87,6 +88,22 @@ function recordShot(pngBuffer, meta = {}) {
   const fileName = `${base}.png`;
   fs.writeFileSync(path.join(current.dir, fileName), pngBuffer);
 
+  // 拡大画像（2-R3）。書き込み失敗は撮影を止めない（全景 PNG が主成果物）。
+  let zoom = null;
+  if (meta.zoom && meta.zoom.png) {
+    const zoomName = `${base}z.png`;
+    try {
+      fs.writeFileSync(path.join(current.dir, zoomName), meta.zoom.png);
+      zoom = {
+        image: zoomName,
+        rect: meta.zoom.rect != null ? meta.zoom.rect : null,
+        source: meta.zoom.source != null ? meta.zoom.source : null,
+      };
+    } catch (err) {
+      console.error('拡大画像の書き込みに失敗しました:', err);
+    }
+  }
+
   const now = meta.now != null ? new Date(meta.now) : new Date();
   const sidecar = {
     version: SIDECAR_VERSION,
@@ -105,6 +122,8 @@ function recordShot(pngBuffer, meta = {}) {
     imagePoint: meta.imagePoint || null,
     display: meta.display || null,
     marker: meta.marker || { drawn: false },
+    // 拡大画像の記録（zoomcrop.js / 2-R3）。生成なし・書き込み失敗は null。
+    zoom,
     capture: meta.capture || null,
     // UIA 要素解決の結果（steptext.normalizeUia 済み / 2-R2）。解決なしは雛形。
     uia: meta.uia || UIA_EMPTY,
