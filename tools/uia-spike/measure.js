@@ -106,6 +106,8 @@ const IID_IUIAutomation = guidBuf('30cbe57d-d9d0-452a-ab13-7ac5ac4825ee');
 // ── COM vtable 呼び出しヘルパ ────────────────────────────────
 // COM インスタンス（void*）の先頭は vtable へのポインタ。vtable の index 番目の
 // 関数ポインタを prototype 付きで呼び出せる形に復元する。
+// 注: 関数ポインタの復元は koffi.decode(ptr, proto)。koffi.pointer(proto) で
+//     包むとポインタ値(BigInt)が返り "fn is not a function" になる（実測で確認）。
 const protoCache = new Map();
 function comMethod(objPtr, index, signature) {
   let proto = protoCache.get(signature);
@@ -115,7 +117,7 @@ function comMethod(objPtr, index, signature) {
   }
   const vtbl = koffi.decode(objPtr, 'void *');
   const fns = koffi.decode(vtbl, koffi.array('void *', index + 1));
-  return koffi.decode(fns[index], koffi.pointer(proto));
+  return koffi.decode(fns[index], proto);
 }
 function comRelease(objPtr) {
   try {
@@ -143,7 +145,9 @@ function readVariant(buf) {
       if (!psa) return null;
       const out = [null];
       if (SafeArrayAccessData(psa, out) !== 0 || !out[0]) return null;
-      const arr = koffi.decode(out[0], koffi.array('double', 4));
+      // decode は Float64Array を返すため、通常の配列へ変換する
+      //（呼び出し側は Array.isArray で判定している）
+      const arr = Array.from(koffi.decode(out[0], koffi.array('double', 4)));
       SafeArrayUnaccessData(psa);
       return arr; // [left, top, width, height]
     }
