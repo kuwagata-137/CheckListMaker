@@ -1,0 +1,15 @@
+{
+  "name": "uia-spike",
+  "private": true,
+  "version": "0.1.0",
+  "description": "2-R0 UIA検証スパイク — クリックした UI 要素の名前・種類の取得率を実測する計測ツール",
+  "scripts": {
+    "selftest": "node measure.js --selftest",
+    "measure": "node measure.js",
+    "summary": "node summarize.js"
+  },
+  "dependencies": {
+    "koffi": "^2.9.0",
+    "uiohook-napi": "^1.5.4"
+  }
+}

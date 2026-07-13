@@ -1044,7 +1044,7 @@
 
   <!-- アプリ全体を1ファイルに内包（ES Modules不使用 → file:// のダブルクリックで動作） -->
   <script>
-  (function () {
+  (async function () {
     'use strict';
 
     // アプリ自身の <script> 要素を同期実行中に捕捉しておく。
@@ -1331,7 +1331,150 @@
       }
     }
 
+    // Electron 版のファイル保存アダプタ（ロードマップ 1-1）。
+    // load() は起動時に await 済みの初期 state を返す（Store の同期IFを変えない）。
+    // save() は JSON を直列キューで storage:save へ流し、楽観的に true を返す。
+    // 失敗は console＋1回だけの alert（本格的な可視化は 1-3 で実装）。
+    class FileAdapter {
+      constructor(initialState) {
+        this.initialState = initialState || null;
+        this.queue = Promise.resolve();
+        this.lastError = null;
+      }
+      load() {
+        return this.initialState;
+      }
+      save(state) {
+        const json = JSON.stringify(state);
+        this.queue = this.queue
+          .then(() => window.storageAPI.save(json))
+          .then((res) => {
+            if (!res || !res.ok) throw new Error((res && res.error) || '不明なエラー');
+            this.lastError = null;
+          })
+          .catch((e) => {
+            this.lastError = e;
+            console.error('ファイルへの保存に失敗しました:', e);
+            notifyFileSaveError(e);
+          });
+        return true;
+      }
+    }
+    // 保存失敗の通知はセッション中1回だけ（毎コミットの alert 連打を防ぐ）
+    let fileSaveErrorNotified = false;
+    function notifyFileSaveError(e) {
+      if (fileSaveErrorNotified) return;
+      fileSaveErrorNotified = true;
+      alert('データのファイル保存に失敗しました: ' + (e.message || e) +
+        '\nディスク容量・アクセス権を確認してください。アプリを閉じる前に JSON エクスポートでの退避を推奨します。');
+    }
+
     const clone = (obj) => JSON.parse(JSON.stringify(obj));
+
+    // -------------------------------------------------------------------------
+    // 画像の参照化レイヤ（Electron のみ。仕様は docs/spec-file-storage-migration.md）
+    //   item.images[] と item.imageEdits[].base/.strokes を 'img:<uuid>.<ext>' の
+    //   参照で持ち、実体は <userData>/data/images/ の個別ファイルに置く。
+    //   ブラウザ単体・単体HTMLは従来どおり dataURL 直持ち（下の関数は素通し）。
+    // -------------------------------------------------------------------------
+    const IMG_REF_PREFIX = 'img:';
+    const HAS_FILE_IMAGES = !!(window.storageAPI && !window.__CLM_STANDALONE__);
+    const isImgRef = (s) => typeof s === 'string' && s.startsWith(IMG_REF_PREFIX);
+    // 読み込み中プレースホルダ（薄いグレーの矩形）
+    const IMG_PLACEHOLDER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120"><rect width="100%" height="100%" fill="#e5e7eb"/></svg>');
+    const imageCache = new Map(); // ref -> dataURL（セッション中キャッシュ）
+    const imageFetching = new Set();
+
+    // 同期 render 用: キャッシュ済みなら dataURL、未取得ならプレースホルダを返しつつ
+    // 非同期取得を発火する。取得後は再描画せず該当 <img> の src を直接差し替える
+    // （全再描画すると編集中のフォーカスが壊れるため）。
+    function resolveImageSync(src) {
+      if (!isImgRef(src)) return src;
+      if (imageCache.has(src)) return imageCache.get(src);
+      fetchImageRef(src);
+      return IMG_PLACEHOLDER;
+    }
+    function fetchImageRef(ref) {
+      if (imageFetching.has(ref) || imageCache.has(ref)) return;
+      imageFetching.add(ref);
+      window.storageAPI.imageGet(ref)
+        .then((res) => {
+          const url = res && res.ok ? res.dataUrl : '';
+          if (url) {
+            imageCache.set(ref, url);
+            document.querySelectorAll(`img[data-img-ref="${CSS.escape(ref)}"]`)
+              .forEach((el) => { el.src = url; });
+          } else {
+            // 破損参照はプレースホルダのまま固定（無限リトライしない）
+            imageCache.set(ref, IMG_PLACEHOLDER);
+            console.warn('画像を読み込めませんでした:', ref, res && res.error);
+          }
+        })
+        .catch((e) => console.warn('画像の取得に失敗しました:', ref, e))
+        .finally(() => imageFetching.delete(ref));
+    }
+    async function resolveImageAsync(src) {
+      if (!isImgRef(src)) return src;
+      if (imageCache.has(src)) return imageCache.get(src);
+      const res = await window.storageAPI.imageGet(src);
+      if (res && res.ok && res.dataUrl) {
+        imageCache.set(src, res.dataUrl);
+        return res.dataUrl;
+      }
+      console.warn('画像を読み込めませんでした:', src, res && res.error);
+      return ''; // 破損参照は空（<img src=""> は表示されないだけ）
+    }
+    // dataURL を個別ファイルへ保存して参照を返す（ブラウザモードは素通し）
+    async function storeImage(dataUrl) {
+      if (!HAS_FILE_IMAGES || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+        return dataUrl;
+      }
+      const res = await window.storageAPI.imageSave(dataUrl);
+      if (res && res.ok && res.ref) {
+        imageCache.set(res.ref, dataUrl);
+        return res.ref;
+      }
+      throw new Error((res && res.error) || '画像の保存に失敗しました');
+    }
+
+    // checklist 内の全画像（images[] / imageEdits[].base / .strokes）へ fn を適用する。
+    // coverPage.logo は対象外（小さく同期参照されるため dataURL 直持ちのまま）。
+    async function mapChecklistImages(checklist, fn) {
+      for (const s of checklist.sections || []) {
+        for (const it of s.items || []) {
+          if (Array.isArray(it.images)) {
+            for (let i = 0; i < it.images.length; i++) it.images[i] = await fn(it.images[i]);
+          }
+          if (Array.isArray(it.imageEdits)) {
+            for (const ed of it.imageEdits) {
+              if (ed && typeof ed === 'object') {
+                if (ed.base) ed.base = await fn(ed.base);
+                if (ed.strokes) ed.strokes = await fn(ed.strokes);
+              }
+            }
+          }
+        }
+      }
+      return checklist;
+    }
+    // 参照 → dataURL（出力用の deep clone を返す。印刷/PDF/Word/HTML/JSON出力の前段）
+    async function materializeChecklist(checklist) {
+      const copy = clone(checklist);
+      if (!HAS_FILE_IMAGES) return copy;
+      return mapChecklistImages(copy, resolveImageAsync);
+    }
+    async function materializeState(state) {
+      const copy = clone(state);
+      if (!HAS_FILE_IMAGES) return copy;
+      for (const c of copy.checklists || []) await mapChecklistImages(c, resolveImageAsync);
+      return copy;
+    }
+    // dataURL → 参照（インポート/マイグレーション時。渡されたオブジェクトを直接書き換える）
+    async function absorbChecklistImages(checklist) {
+      if (!HAS_FILE_IMAGES) return checklist;
+      return mapChecklistImages(checklist, storeImage);
+    }
 
     class Store {
       constructor(adapter) {
@@ -1465,7 +1608,8 @@
     }
     async function saveAsHtml(checklist) {
       const def = sanitizeFilename(checklist.title || 'checklist');
-      const html = buildStandaloneHtml(checklist);
+      // 画像参照を dataURL に戻してから埋め込む（単体HTMLは自己完結が仕様）
+      const html = buildStandaloneHtml(await materializeChecklist(checklist));
       // Electron 版: window.prompt() が使えない（例外になる）ため、
       // ファイル名の入力ごとネイティブの保存ダイアログに任せる。
       if (window.fileAPI && window.fileAPI.saveHtml) {
@@ -1611,6 +1755,8 @@
         return;
       }
       try {
+        // 画像参照を dataURL に戻す（html-to-docx は実データが必要）
+        checklist = await materializeChecklist(checklist);
         // 表紙有効なテンプレートは、アプリの表紙を画像化して 1 ページ目に埋め込む。
         // 画像化に失敗したら出力は中止する（簡易表紙にフォールバックしない＝仕様どおり）。
         const opts = {};
@@ -1801,7 +1947,8 @@
         .map(
           (src, idx) => `
           <span class="thumb-wrap">
-            <img class="thumb" src="${src}" alt="添付画像 ${idx + 1}" draggable="false"
+            <img class="thumb" src="${resolveImageSync(src)}"${isImgRef(src) ? ` data-img-ref="${src}"` : ''}
+                 alt="添付画像 ${idx + 1}" draggable="false"
                  data-action="edit-image" data-section="${sectionId}"
                  data-item="${item.id}" data-index="${idx}" title="クリックで編集" />
             <button class="thumb-del" title="画像を削除" data-action="delete-image"
@@ -2882,9 +3029,43 @@
       }
       return null;
     }
-    const store = IS_STANDALONE
-      ? new Store(new MemoryAdapter(readEmbeddedState()))
-      : new Store(new LocalStorageAdapter());
+    // アダプタの自動選択: Electron → FileAdapter（ファイル保存）／
+    // ブラウザ単体 → LocalStorageAdapter／単体HTML → MemoryAdapter（従来どおり）。
+    // Electron 初回起動時は localStorage の既存データをファイルへ移行する
+    // （移行手順は docs/spec-file-storage-migration.md）。
+    const MIGRATED_KEY = STORAGE_KEY + '.migratedToFile';
+    async function createAppStore() {
+      if (IS_STANDALONE) return new Store(new MemoryAdapter(readEmbeddedState()));
+      if (!window.storageAPI) return new Store(new LocalStorageAdapter());
+      try {
+        const res = await window.storageAPI.load();
+        if (!res || !res.ok) throw new Error((res && res.error) || 'storage:load に失敗しました');
+        if (res.json != null) return new Store(new FileAdapter(JSON.parse(res.json)));
+        // ファイル未作成（初回）。localStorage に旧データがあれば一括移行する。
+        let legacy = null;
+        try {
+          if (!localStorage.getItem(MIGRATED_KEY)) legacy = localStorage.getItem(STORAGE_KEY);
+        } catch (_) { /* localStorage 不可の環境は新規開始 */ }
+        if (legacy) {
+          const state = JSON.parse(legacy);
+          for (const c of state.checklists || []) await absorbChecklistImages(c);
+          const adapter = new FileAdapter(state);
+          adapter.save(state);
+          await adapter.queue; // 書き込み完了を待って成否を確認
+          if (adapter.lastError) throw adapter.lastError;
+          // 完了マーカーを書く。元の localStorage データは切り戻し用に消さない。
+          try { localStorage.setItem(MIGRATED_KEY, new Date().toISOString()); } catch (_) { /* noop */ }
+          return new Store(adapter);
+        }
+        return new Store(new FileAdapter(null));
+      } catch (e) {
+        // ファイル保存を初期化できない場合は従来の localStorage で続行
+        //（移行マーカーは書いていないので、次回起動時に再試行される）。
+        console.error('ファイル保存を初期化できないため localStorage で続行します:', e);
+        return new Store(new LocalStorageAdapter());
+      }
+    }
+    const store = await createAppStore();
     const app = document.getElementById('app');
     const fileInput = document.getElementById('file-input');
 
@@ -3117,7 +3298,9 @@
     // 印刷プレビュー。紙面の見た目を画面内で確認してから 印刷 / PDF保存 する。
     // Electron の window.print() は OS のダイアログだけでプレビューが無いため、
     // アプリ内でプレビューを出す（@media print で .modal-overlay は紙面から除外済み）。
-    function openPrintPreview(checklist) {
+    async function openPrintPreview(checklist) {
+      // 画像参照を dataURL に戻した複製で印刷/PDF ビューを組む
+      checklist = await materializeChecklist(checklist);
       const overlay = buildModal(`
         <h3>印刷プレビュー</h3>
         <div class="print-preview-bar">
@@ -3415,8 +3598,10 @@
     async function addImageFromBlob(c, sectionId, itemId, blob, openEditor) {
       try {
         const compressed = await compressImage(await blobToDataUrl(blob));
+        // Electron では個別ファイルへ保存して参照を state に持つ（ブラウザは素通し）
+        const stored = await storeImage(compressed);
         const ok = commitImage((s) =>
-          M.addItemImage(M.findChecklist(s, c.id), sectionId, itemId, compressed)
+          M.addItemImage(M.findChecklist(s, c.id), sectionId, itemId, stored)
         );
         if (ok && openEditor) {
           const item = findItemLive(c.id, sectionId, itemId);
@@ -3500,16 +3685,18 @@
 
     // ペイント編集モーダル。矢印/四角/丸・ペン・ハイライト・テキスト・モザイク・
     // トリミングに対応。Undo は標準搭載。保存時に JPEG 圧縮して item に書き戻す。
-    function openImageEditor(c, sectionId, itemId, index) {
+    async function openImageEditor(c, sectionId, itemId, index) {
       const item = findItemLive(c.id, sectionId, itemId);
       if (!item || !Array.isArray(item.images) || item.images[index] === undefined) return;
-      const srcUrl = item.images[index];
+      // 参照化されている場合は実データ（dataURL）に解決してから編集を開く
+      const srcUrl = await resolveImageAsync(item.images[index]);
       // 分離保存された編集ソース（v1）。あれば元画像＋手描き線＋オブジェクトを
       // 復元して「保存後も消せる・再編集できる」を実現する。無ければ旧形式
       // （焼き込み済み JPEG）としてそのまま base に読む。
       const savedEdit = Array.isArray(item.imageEdits) ? item.imageEdits[index] : null;
       const isV1 = !!(savedEdit && savedEdit.v === 1);
-      const baseSrc = (isV1 && savedEdit.base) ? savedEdit.base : srcUrl;
+      const baseSrc = (isV1 && savedEdit.base) ? await resolveImageAsync(savedEdit.base) : srcUrl;
+      const strokesSrc = (isV1 && savedEdit.strokes) ? await resolveImageAsync(savedEdit.strokes) : '';
 
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
@@ -3866,11 +4053,11 @@
         setLayerSize(baseImg.naturalWidth, baseImg.naturalHeight);
         baseCtx.drawImage(baseImg, 0, 0);
         // 分離保存された手描き線（ペン・ハイライト）のラスター層を復元
-        if (isV1 && savedEdit.strokes) {
+        if (strokesSrc) {
           const si = new Image();
           si.onload = () => { annoCtx.drawImage(si, 0, 0); recomposite(); };
           si.onerror = () => recomposite();
-          si.src = savedEdit.strokes;
+          si.src = strokesSrc;
         }
         recomposite();
         // 枠のレイアウト確定後にフィット（=100%=全体表示）。以後ユーザーが自由に拡大可。
@@ -4849,7 +5036,7 @@
           return true;
         } catch (_) { return false; }
       }
-      overlay.querySelector('.ie-save').addEventListener('click', () => {
+      overlay.querySelector('.ie-save').addEventListener('click', async () => {
         commitCallout(); // 未確定の吹き出しを確定してから書き出す
         exitCropMode();
         selectedId = null;
@@ -4875,10 +5062,18 @@
           strokes: strokesBlank ? '' : annoCanvas.toDataURL('image/png'),
           objects: cleanObjects,
         };
-        const ok = commitImage((s) =>
-          M.replaceItemImage(M.findChecklist(s, c.id), sectionId, itemId, index, data, edit)
-        );
-        if (ok) close();
+        try {
+          // Electron では合成画像・編集ソースとも個別ファイルへ保存して参照を持つ
+          const storedData = await storeImage(data);
+          if (edit.base) edit.base = await storeImage(edit.base);
+          if (edit.strokes) edit.strokes = await storeImage(edit.strokes);
+          const ok = commitImage((s) =>
+            M.replaceItemImage(M.findChecklist(s, c.id), sectionId, itemId, index, storedData, edit)
+          );
+          if (ok) close();
+        } catch (e) {
+          alert('画像の保存に失敗しました: ' + (e.message || e));
+        }
       });
     }
 
@@ -4953,7 +5148,9 @@
         case 'new': return openNewDialog();
         case 'open': return goEditor(id);
         case 'import': return fileInput.click();
-        case 'export': return exportStateToFile(store.state);
+        case 'export':
+          // 画像参照を dataURL に戻してから書き出す（バックアップの自己完結性を守る）
+          return materializeState(store.state).then(exportStateToFile);
         case 'duplicate':
           return store.commit((s) => M.duplicateChecklist(s, id));
         case 'rename': {
@@ -5071,6 +5268,7 @@
         if (isHtml) {
           // 本アプリ出力の HTML を取り込む。同一IDなら更新、無ければ新規追加。
           const checklist = parseChecklistFromHtml(text);
+          await absorbChecklistImages(checklist); // dataURL → 個別ファイル参照（Electronのみ）
           const existing = M.findChecklist(store.state, checklist.id);
           store.commit((s) => {
             const idx = s.checklists.findIndex((c) => c.id === checklist.id);
@@ -5091,6 +5289,8 @@
           throw new Error('JSON に checklists 配列が見つかりません');
         }
         if (confirm('現在のデータを、読み込んだ内容で置き換えます。よろしいですか？')) {
+          // dataURL → 個別ファイル参照（Electronのみ。ブラウザは素通し）
+          for (const cl of data.checklists) await absorbChecklistImages(cl);
           store.replaceState(data);
           goHome();
         }

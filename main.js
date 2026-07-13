@@ -22,6 +22,7 @@ app.setName('CheckListMaker');
 const fs = require('fs');
 const screenshot = require('screenshot-desktop');
 const { uIOhook } = require('uiohook-napi');
+const { initStorage } = require('./storage');
 
 let mainWin = null;
 let gadgetWin = null;
@@ -731,6 +732,8 @@ app.whenReady().then(() => {
   ipcMain.handle('docx:save', (e, payload) => saveDocx(e, payload));
   ipcMain.handle('file:saveHtml', (e, payload) => saveHtmlFile(e, payload));
   ipcMain.handle('print:pdf', (e, payload) => savePdfFile(e, payload));
+  // ファイル保存基盤（storage:* / image:*）。実装は storage.js（1-1）。
+  initStorage(app, ipcMain);
 
   createMainWindow();
 
