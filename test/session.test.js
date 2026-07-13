@@ -60,7 +60,7 @@ test('session.js — 録画セッション形式', async (t) => {
     assert.deepEqual(fs.readFileSync(path.join(dir, '001.png')), PNG);
 
     const sc = JSON.parse(fs.readFileSync(path.join(dir, '001.json'), 'utf8'));
-    assert.equal(sc.version, 2);
+    assert.equal(sc.version, 3);
     assert.equal(sc.seq, 1);
     assert.equal(sc.image, '001.png');
     assert.equal(sc.elapsedMs, 1500);
@@ -74,6 +74,9 @@ test('session.js — 録画セッション形式', async (t) => {
     assert.deepEqual(sc.uia, {
       resolved: false, name: null, controlType: null, rect: null, windowTitle: null, appName: null,
     });
+    // zoom 未指定（生成なし）は null で、NNNz.png も書かれない（2-R3）
+    assert.equal(sc.zoom, null);
+    assert.equal(fs.existsSync(path.join(dir, '001z.png')), false);
 
     // 2枚目はゼロ埋め連番で、session.json の shots も追随する。
     // UIA 解決結果と生成文（2-R2）はそのまま記録される。
@@ -82,8 +85,10 @@ test('session.js — 録画セッション形式', async (t) => {
       className: 'X', frameworkId: 'Win32', rect: [1, 2, 3, 4],
       windowTitle: '文書 1 - Word', appName: 'WINWORD.EXE', elapsedMs: 24,
     };
+    const ZOOM_PNG = Buffer.from('89504e470d0a1a0a00', 'hex');
     const r2 = session.recordShot(PNG, {
       now: start + 3000, button: 'right', text: '「保存」を右クリック', uia: uiaInfo,
+      zoom: { png: ZOOM_PNG, rect: [1010, 500, 480, 320], source: 'element' },
     });
     assert.equal(r2.fileName, '002.png');
     const sc2 = JSON.parse(fs.readFileSync(path.join(dir, '002.json'), 'utf8'));
@@ -92,6 +97,9 @@ test('session.js — 録画セッション形式', async (t) => {
     assert.equal(sc2.marker.drawn, false, 'marker 未指定は drawn:false');
     assert.equal(sc2.text, '「保存」を右クリック');
     assert.deepEqual(sc2.uia, uiaInfo);
+    // 拡大画像（2-R3）: NNNz.png が書かれ、サイドカーに範囲と根拠が記録される
+    assert.deepEqual(fs.readFileSync(path.join(dir, '002z.png')), ZOOM_PNG);
+    assert.deepEqual(sc2.zoom, { image: '002z.png', rect: [1010, 500, 480, 320], source: 'element' });
     const info = JSON.parse(fs.readFileSync(path.join(dir, 'session.json'), 'utf8'));
     assert.equal(info.shots, 2);
 
