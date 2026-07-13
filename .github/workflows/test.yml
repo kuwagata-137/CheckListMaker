@@ -1,0 +1,23 @@
+# 自動テスト（ロードマップ 1-2）。push / PR で node:test を実行する。
+# 方針: docs/spec-1-2-test-ci.md
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # テストは Electron 本体を使わないため、バイナリのダウンロードを省略する
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: 依存をインストール（lockfile 無しのため npm install）
+        run: npm install --no-audit --no-fund
+      - name: テスト実行
+        run: npm test

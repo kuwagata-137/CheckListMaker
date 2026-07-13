@@ -21,3 +21,6 @@ Thumbs.db
 tools/uia-spike/results-*.jsonl
 tools/uia-spike/summary-*.json
 tools/uia-spike/package-lock.json
+
+# lockfile は当面コミットしない（docs/spec-1-2-test-ci.md の決定 5）
+package-lock.json
