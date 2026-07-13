@@ -1021,7 +1021,26 @@
   @media (prefers-reduced-motion: reduce) {
     .card, .item, .btn, .section, .progress-bar { transition: none; }
     .card:hover, .item:hover { transform: none; }
+    .toast { animation: none; }
   }
+
+  /* トースト通知（エラー可視化 1-3）。クリックで閉じる */
+  #toast-host {
+    position: fixed; right: 16px; bottom: 16px; z-index: 9999;
+    display: flex; flex-direction: column; gap: 8px;
+    max-width: min(420px, calc(100vw - 32px));
+  }
+  .toast {
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border); border-left: 4px solid var(--accent);
+    border-radius: 8px; padding: 10px 14px; box-shadow: var(--shadow);
+    font-size: 0.9rem; line-height: 1.5; cursor: pointer;
+    white-space: pre-wrap; word-break: break-word;
+    animation: toast-in 0.18s ease-out;
+  }
+  .toast.error { border-left-color: var(--danger); }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(6px); } }
+  @media print { #toast-host { display: none !important; } }
 </style>
 </head>
 <body>
@@ -1050,6 +1069,67 @@
     // アプリ自身の <script> 要素を同期実行中に捕捉しておく。
     // HTML 出力（自己クローン方式）で、このスクリプト本文をそのまま再パッケージするのに使う。
     const __selfScript = document.currentScript;
+
+    // =========================================================================
+    // エラー可視化（ロードマップ 1-3・仕様は docs/spec-1-3-error-visibility.md）
+    //   グローバルエラー → console＋ローカルログ（Electron のみ・外部送信なし）
+    //   保存失敗 → 右下トースト（30秒に1回まで。force は必ず表示）＋ローカルログ
+    // =========================================================================
+    function showToast(message, { type = 'info', duration = 10000 } = {}) {
+      let host = document.getElementById('toast-host');
+      if (!host) {
+        host = document.createElement('div');
+        host.id = 'toast-host';
+        document.body.appendChild(host);
+      }
+      const el = document.createElement('div');
+      el.className = 'toast' + (type === 'error' ? ' error' : '');
+      el.textContent = message;
+      el.title = 'クリックで閉じる';
+      el.addEventListener('click', () => el.remove());
+      host.appendChild(el);
+      while (host.children.length > 3) host.firstChild.remove(); // 溜めても読めないため最大3件
+      setTimeout(() => el.remove(), duration);
+      return el;
+    }
+
+    // ローカルログへの記録（Electron のみ。エラーループ対策で1セッション最大50件）
+    let errorLogCount = 0;
+    const ERROR_LOG_LIMIT = 50;
+    function logError(kind, message, stack, extra) {
+      if (!window.appLogAPI || errorLogCount >= ERROR_LOG_LIMIT) return;
+      errorLogCount++;
+      try {
+        window.appLogAPI
+          .error({
+            kind,
+            message: String(message || ''),
+            stack: stack ? String(stack) : undefined,
+            extra: extra ? String(extra) : undefined,
+          })
+          .catch(() => {});
+      } catch (_) {
+        /* ログ書き込み失敗でアプリを止めない */
+      }
+    }
+    window.addEventListener('error', (e) => {
+      logError('error', e.message, e.error && e.error.stack,
+        e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : '');
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      const r = e.reason;
+      logError('unhandledrejection', (r && r.message) || r, r && r.stack);
+    });
+
+    // 保存失敗の通知はここに一本化する。表示はスロットル、ログは毎回。
+    let lastSaveErrorShownAt = 0;
+    function notifySaveError(message, { force = false } = {}) {
+      logError('save-failure', message);
+      const now = Date.now();
+      if (!force && now - lastSaveErrorShownAt < 30000) return;
+      lastSaveErrorShownAt = now;
+      showToast(message, { type: 'error' });
+    }
 
     // =========================================================================
     // model — データモデルと純粋な操作関数（副作用なし。永続化やDOMには触れない）
@@ -1334,7 +1414,7 @@
     // Electron 版のファイル保存アダプタ（ロードマップ 1-1）。
     // load() は起動時に await 済みの初期 state を返す（Store の同期IFを変えない）。
     // save() は JSON を直列キューで storage:save へ流し、楽観的に true を返す。
-    // 失敗は console＋1回だけの alert（本格的な可視化は 1-3 で実装）。
+    // 失敗は console＋トースト＋ローカルログ（1-3）。
     class FileAdapter {
       constructor(initialState) {
         this.initialState = initialState || null;
@@ -1355,18 +1435,11 @@
           .catch((e) => {
             this.lastError = e;
             console.error('ファイルへの保存に失敗しました:', e);
-            notifyFileSaveError(e);
+            notifySaveError('データのファイル保存に失敗しました: ' + (e.message || e) +
+              '\nディスク容量・アクセス権を確認してください。アプリを閉じる前に JSON エクスポートでの退避を推奨します。');
           });
         return true;
       }
-    }
-    // 保存失敗の通知はセッション中1回だけ（毎コミットの alert 連打を防ぐ）
-    let fileSaveErrorNotified = false;
-    function notifyFileSaveError(e) {
-      if (fileSaveErrorNotified) return;
-      fileSaveErrorNotified = true;
-      alert('データのファイル保存に失敗しました: ' + (e.message || e) +
-        '\nディスク容量・アクセス権を確認してください。アプリを閉じる前に JSON エクスポートでの退避を推奨します。');
     }
 
     const clone = (obj) => JSON.parse(JSON.stringify(obj));
@@ -1531,6 +1604,9 @@
       persist() {
         // 画像追加などで localStorage 上限に達したか呼び出し側が判定できるよう結果を保持。
         this.lastSaveOk = this.adapter.save(this.state);
+        if (this.lastSaveOk === false) {
+          notifySaveError('データの保存に失敗しました（容量上限の可能性）。\nJSON エクスポートでの退避を推奨します。');
+        }
         return this.lastSaveOk;
       }
     }
@@ -3590,7 +3666,7 @@
       store.commit(mutator);
       if (store.lastSaveOk === false) {
         store.undo();
-        alert('保存容量の上限に達したため保存できませんでした。\n不要な画像やリストを減らすか、JSON エクスポートで退避してください。');
+        notifySaveError('保存容量の上限に達したため、この画像は保存できませんでした（変更は取り消しました）。\n不要な画像やリストを減らすか、JSON エクスポートで退避してください。', { force: true });
         return false;
       }
       return true;
@@ -5333,6 +5409,7 @@
         M, store, Store, LocalStorageAdapter, MemoryAdapter, FileAdapter,
         encodeShareLink, readShareFromHash, buildStandaloneHtml,
         materializeState, absorbChecklistImages, resolveImageSync, storeImage,
+        showToast, notifySaveError,
         STORAGE_KEY, MIGRATED_KEY,
       });
     }

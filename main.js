@@ -23,6 +23,7 @@ const fs = require('fs');
 const screenshot = require('screenshot-desktop');
 const { uIOhook } = require('uiohook-napi');
 const { initStorage } = require('./storage');
+const { initErrorLog } = require('./errorlog');
 
 let mainWin = null;
 let gadgetWin = null;
@@ -734,6 +735,8 @@ app.whenReady().then(() => {
   ipcMain.handle('print:pdf', (e, payload) => savePdfFile(e, payload));
   // ファイル保存基盤（storage:* / image:*）。実装は storage.js（1-1）。
   initStorage(app, ipcMain);
+  // エラーのローカルログ（log:write）。実装は errorlog.js（1-3）。
+  initErrorLog(app, ipcMain);
 
   createMainWindow();
 

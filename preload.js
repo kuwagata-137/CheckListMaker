@@ -63,6 +63,13 @@ contextBridge.exposeInMainWorld('storageAPI', {
   imageDelete: (ref) => ipcRenderer.invoke('image:delete', ref),
 });
 
+// エラーのローカルログ（Electron 版のみ・ロードマップ 1-3）。レンダラーで捕捉した
+// エラーを <userData>/logs/error.log に JSONL で追記する。外部送信はしない。
+contextBridge.exposeInMainWorld('appLogAPI', {
+  // entry: { kind, message, stack?, extra? }。戻り値 { ok } / { ok:false, error }。
+  error: (entry) => ipcRenderer.invoke('log:write', entry),
+});
+
 // .docx 出力（Electron 版のみ）。レンダラーから静的HTMLを受け取り、メインプロセスで
 // .docx に変換・ネイティブ保存ダイアログで書き出す。素のブラウザでは window.docxAPI は undefined。
 contextBridge.exposeInMainWorld('docxAPI', {

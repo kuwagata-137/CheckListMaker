@@ -35,6 +35,7 @@
       "main.js",
       "preload.js",
       "storage.js",
+      "errorlog.js",
       "docx-postprocess.js",
       "gadget.html",
       "package.json"
