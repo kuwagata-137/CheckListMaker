@@ -1991,6 +1991,240 @@
       }
     }
 
+    // ---- Excel(.xlsx) / CSV 出力（Electron 版のみ）----
+    // 仕様は docs/spec-3-A-xlsx-csv.md 参照。レンダラーは「宣言的な出力仕様
+    //（行の配列＋画像の dataURL とピクセル寸法）」を純関数で組んで IPC に渡し、
+    // ワークブックの構築はメインプロセス側の xlsx-export.js が行う。
+    // CSV はここで完成文字列（BOM 込み）まで作り、メインは保存だけ行う。
+
+    // リッチテキスト本文(body)をセル向けのプレーンテキストへ。装飾は落とし、
+    // ブロック要素と <br> は改行、表のセル間はタブに変換する。
+    function htmlToPlainText(html) {
+      if (!html) return '';
+      const BLOCKS = {
+        P: 1, DIV: 1, LI: 1, TR: 1, TABLE: 1, UL: 1, OL: 1,
+        BLOCKQUOTE: 1, PRE: 1, H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1,
+      };
+      const root = document.createElement('div');
+      root.innerHTML = html;
+      let out = '';
+      (function walk(node) {
+        for (const child of node.childNodes) {
+          if (child.nodeType === Node.TEXT_NODE) {
+            out += child.nodeValue;
+            continue;
+          }
+          if (child.nodeType !== Node.ELEMENT_NODE) continue;
+          if (child.tagName === 'BR') {
+            out += '\n';
+            continue;
+          }
+          const isBlock = BLOCKS[child.tagName] === 1;
+          if (isBlock && out && !out.endsWith('\n')) out += '\n';
+          walk(child);
+          if (child.tagName === 'TD' || child.tagName === 'TH') out += '\t';
+          if (isBlock && !out.endsWith('\n')) out += '\n';
+        }
+      })(root);
+      return out
+        .replace(/[ \t]+\n/g, '\n') // セル末尾のタブ・行末空白を除去
+        .replace(/\n{3,}/g, '\n\n') // 3連以上の改行は 2 つに圧縮
+        .trim();
+    }
+    // Excel のシート名制約（31文字以内・: \ / ? * [ ] 不可・前後の ' 不可）に合わせる
+    function excelSheetName(title) {
+      const cleaned = String(title || '')
+        .replace(/[:\\/?*\[\]]/g, '_')
+        .replace(/^'+|'+$/g, '')
+        .trim()
+        .slice(0, 31)
+        .trim();
+      return cleaned || 'チェックリスト';
+    }
+    // RFC 4180: カンマ・引用符・改行を含むフィールドだけ "..." で囲む
+    function csvEscape(value) {
+      const s = String(value == null ? '' : value);
+      return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }
+    // CSV の完成文字列（BOM 付き UTF-8・CRLF）。データ行のみで、タイトル・
+    // メタ・合計行は入れない（フィルタ・ピボット・他システム取込を想定）。
+    // ToDo は画面に無い列（時間・メモ・詳細）を空欄にする。
+    function buildCsvText(checklist) {
+      const isTemplate = checklist.type === MODES.TEMPLATE;
+      const rows = [['セクション', 'No', '項目', 'チェック', '標準時間(分)', 'メモ', '詳細']];
+      let no = 0;
+      checklist.sections.forEach((s) => {
+        s.items.forEach((it) => {
+          no += 1;
+          rows.push([
+            s.title || '',
+            no,
+            it.text || '',
+            it.done ? '✓' : '',
+            isTemplate ? it.time || '' : '',
+            isTemplate ? it.note || '' : '',
+            isTemplate ? htmlToPlainText(it.body || '') : '',
+          ]);
+        });
+      });
+      return '\uFEFF' + rows.map((r) => r.map(csvEscape).join(',')).join('\r\n') + '\r\n';
+    }
+    // 画像はトリミング後の原寸を保持し、印刷幅相当（幅960px）と Excel の
+    // 行高上限（409pt≒545px）を超える分だけ縦横比を保って縮小する。
+    const XLSX_IMG_MAX_W = 960;
+    const XLSX_IMG_MAX_H = 540;
+    function capImageSize(width, height, maxW = XLSX_IMG_MAX_W, maxH = XLSX_IMG_MAX_H) {
+      const w = Math.round(width || 0);
+      const h = Math.round(height || 0);
+      if (w < 1 || h < 1) return { width: 0, height: 0 };
+      const scale = Math.min(1, maxW / w, maxH / h);
+      return { width: Math.max(1, Math.round(w * scale)), height: Math.max(1, Math.round(h * scale)) };
+    }
+    // .xlsx の出力仕様（シート名・表紙・列・行の配列）を組む純関数。
+    // 画像の寸法はここでは 0 のままにし、measureXlsxImages() が後から埋める。
+    // exceljs が扱えない形式（webp 等）の画像はここで除外する。
+    function buildXlsxSheetData(checklist) {
+      const isTemplate = checklist.type === MODES.TEMPLATE;
+      const p = progress(checklist);
+      const totalMin = isTemplate
+        ? checklist.sections.reduce((a, s) => a + sumMinutes(s.items), 0)
+        : 0;
+      const cover =
+        isTemplate && checklist.coverPage && checklist.coverPage.enabled
+          ? checklist.coverPage
+          : null;
+      const metaParts = [
+        modeLabel(checklist.type),
+        `進捗 ${p.done} / ${p.total} 完了（${p.percent}%）`,
+      ];
+      if (totalMin) metaParts.push(`標準時間合計 ${totalMin}分`);
+      metaParts.push(`出力日 ${new Date().toLocaleDateString('ja-JP')}`);
+      if (cover && cover.docNumber) metaParts.push(`文書番号 ${cover.docNumber}`);
+      if (cover && cover.version) metaParts.push(`版数 ${cover.version}`);
+      if (cover && cover.author) metaParts.push(`作成者 ${cover.author}`);
+      const rows = [
+        { kind: 'title', text: checklist.title || '' },
+        { kind: 'meta', text: metaParts.join(' ／ ') },
+        { kind: 'header' },
+      ];
+      let no = 0;
+      checklist.sections.forEach((s, si) => {
+        const mins = isTemplate ? sumMinutes(s.items) : 0;
+        rows.push({
+          kind: 'section',
+          text: `${si + 1}. ${s.title || ''}`,
+          meta: mins ? `⏱${mins}分` : '',
+        });
+        s.items.forEach((it) => {
+          no += 1;
+          rows.push({
+            kind: 'item',
+            no,
+            text: it.text || '',
+            check: it.done ? '✓' : '',
+            time: isTemplate ? it.time || '' : '',
+            note: isTemplate ? it.note || '' : '',
+            detail: isTemplate ? htmlToPlainText(it.body || '') : '',
+          });
+          const imgs = (Array.isArray(it.images) ? it.images : []).filter((src) =>
+            /^data:image\/(png|jpe?g|gif);/i.test(String(src))
+          );
+          if (imgs.length) {
+            rows.push({
+              kind: 'images',
+              images: imgs.map((dataUrl) => ({ dataUrl, width: 0, height: 0 })),
+            });
+          }
+        });
+      });
+      rows.push({ kind: 'total', done: p.done, total: p.total, totalMin });
+      return {
+        sheetName: excelSheetName(checklist.title),
+        cover: cover
+          ? {
+              title: cover.title || checklist.title || '',
+              subtitle: cover.subtitle || null,
+              author: cover.author || null,
+              date: cover.date || null,
+              version: cover.version || null,
+              docNumber: cover.docNumber || null,
+              logo: cover.logo || null,
+              revisions: (Array.isArray(cover.revisions) ? cover.revisions : []).map((r) => ({
+                version: r.version || '',
+                date: r.date || '',
+                author: r.author || '',
+                note: r.note || '',
+              })),
+            }
+          : null,
+        columns: [
+          { header: 'No', width: 6 },
+          { header: '項目', width: 40 },
+          { header: 'チェック', width: 9 },
+          { header: '標準時間(分)', width: 13 },
+          { header: 'メモ', width: 25 },
+          { header: '詳細', width: 50 },
+        ],
+        rows,
+      };
+    }
+    // 画像行の各画像の自然寸法を測って capImageSize 済みの寸法を埋める。
+    // 読めなかった画像は 0x0 のままにし、xlsx-export.js 側でスキップされる。
+    function measureXlsxImages(rows) {
+      const jobs = [];
+      rows.forEach((row) => {
+        if (row.kind !== 'images') return;
+        row.images.forEach((im) => {
+          jobs.push(
+            new Promise((resolve) => {
+              const img = new Image();
+              img.onload = () => {
+                Object.assign(im, capImageSize(img.naturalWidth, img.naturalHeight));
+                resolve();
+              };
+              img.onerror = () => resolve();
+              img.src = im.dataUrl;
+            })
+          );
+        });
+      });
+      return Promise.all(jobs).then(() => rows);
+    }
+    async function saveXlsxViaElectron(checklist) {
+      if (!window.xlsxAPI || !window.xlsxAPI.save) {
+        alert('Excel 出力はデスクトップ版（Electron）でのみ利用できます。');
+        return;
+      }
+      try {
+        // 画像参照を dataURL に戻してから出力仕様を組む
+        const c = await materializeChecklist(checklist);
+        const data = buildXlsxSheetData(c);
+        await measureXlsxImages(data.rows);
+        const res = await window.xlsxAPI.save({
+          title: sanitizeFilename(c.title || 'checklist'),
+          data,
+        });
+        if (res && res.error) alert('Excel の出力に失敗しました: ' + res.error);
+      } catch (e) {
+        alert('Excel の出力に失敗しました: ' + e.message);
+      }
+    }
+    async function saveCsvViaElectron(checklist) {
+      if (!window.csvAPI || !window.csvAPI.save) {
+        alert('CSV 出力はデスクトップ版（Electron）でのみ利用できます。');
+        return;
+      }
+      try {
+        const res = await window.csvAPI.save({
+          title: sanitizeFilename(checklist.title || 'checklist'),
+          text: buildCsvText(checklist),
+        });
+        if (res && res.error) alert('CSV の出力に失敗しました: ' + res.error);
+      } catch (e) {
+        alert('CSV の出力に失敗しました: ' + e.message);
+      }
+    }
+
     function utf8ToBase64(str) {
       return btoa(unescape(encodeURIComponent(str)));
     }
@@ -2119,6 +2353,8 @@
             <button class="btn" data-action="print">🖨 印刷 / PDF</button>
             <button class="btn" data-action="save-html">💾 ${IS_STANDALONE ? '保存（HTML）' : '名前を付けて保存 (HTML)'}</button>
             ${window.docxAPI ? '<button class="btn" data-action="save-docx">📄 Word (.docx)</button>' : ''}
+            ${window.xlsxAPI ? '<button class="btn" data-action="save-xlsx">📊 Excel (.xlsx)</button>' : ''}
+            ${window.csvAPI ? '<button class="btn" data-action="save-csv">📋 CSV</button>' : ''}
           </div>
           ${
             isTemplate && checklist.coverPage && checklist.coverPage.enabled
@@ -6118,6 +6354,10 @@
           return c && saveAsHtml(c);
         case 'save-docx':
           return c && saveDocxViaElectron(c);
+        case 'save-xlsx':
+          return c && saveXlsxViaElectron(c);
+        case 'save-csv':
+          return c && saveCsvViaElectron(c);
       }
     });
 
@@ -6271,6 +6511,8 @@
         // 実行モード（3-R5）とガイド小窓（3-R6）
         playerSteps, playerStartIndex, formatPlayerTime, playerSummary, openPlayer,
         guideStepPayload,
+        // Excel/CSV 出力（3-A）の純関数
+        buildXlsxSheetData, buildCsvText, htmlToPlainText, excelSheetName, capImageSize,
       });
     }
   })();

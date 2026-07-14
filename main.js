@@ -1203,6 +1203,65 @@ async function saveHtmlFile(event, payload) {
   }
 }
 
+// ── Excel(.xlsx) / CSV 保存（3-A） ─────────────────────────────
+// レンダラー(index.html)が組んだ宣言的な出力仕様（行の配列＋画像）から
+// xlsx-export.js がワークブックを構築する。CSV はレンダラーが完成文字列
+//（BOM 込み）まで作るため、ここではダイアログ＋書き込みだけ行う。
+// 仕様は docs/spec-3-A-xlsx-csv.md 参照。
+async function saveXlsx(event, payload) {
+  const { title, data } = payload || {};
+  if (!data || !Array.isArray(data.rows)) return { error: '出力データが空です。' };
+  let ExcelJS;
+  try {
+    ExcelJS = require('exceljs');
+  } catch (e) {
+    return { error: 'exceljs が見つかりません。プロジェクトで npm install を実行してください。' };
+  }
+  const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+  const safe =
+    String(title || 'checklist')
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .slice(0, 120) || 'checklist';
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: 'Excel (.xlsx) として保存',
+    defaultPath: safe + '.xlsx',
+    filters: [{ name: 'Excel ブック', extensions: ['xlsx'] }],
+  });
+  if (canceled || !filePath) return { saved: false, canceled: true };
+  try {
+    const { buildXlsxWorkbook } = require('./xlsx-export');
+    const wb = buildXlsxWorkbook(ExcelJS, data);
+    const buf = await wb.xlsx.writeBuffer();
+    // 失敗したらファイルを書かない（壊れた xlsx を残さない）
+    fs.writeFileSync(filePath, Buffer.from(buf));
+    return { saved: true, filePath };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+async function saveCsv(event, payload) {
+  const { title, text } = payload || {};
+  if (!text) return { error: 'CSV が空です。' };
+  const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+  const safe =
+    String(title || 'checklist')
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .slice(0, 120) || 'checklist';
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: 'CSV として保存',
+    defaultPath: safe + '.csv',
+    filters: [{ name: 'CSV ファイル', extensions: ['csv'] }],
+  });
+  if (canceled || !filePath) return { saved: false, canceled: true };
+  try {
+    fs.writeFileSync(filePath, text, 'utf8');
+    return { saved: true, filePath };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
 // ── PDF 保存（印刷プレビューの「PDFに保存」） ─────────────────
 // レンダラー側で #print-root に印刷ビューを流し込んだ状態で呼ばれる。
 // printToPDF は @media print の CSS で描画されるため、画面と同じ見た目で
@@ -1295,6 +1354,8 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('docx:save', (e, payload) => saveDocx(e, payload));
   ipcMain.handle('file:saveHtml', (e, payload) => saveHtmlFile(e, payload));
+  ipcMain.handle('xlsx:save', (e, payload) => saveXlsx(e, payload));
+  ipcMain.handle('csv:save', (e, payload) => saveCsv(e, payload));
   ipcMain.handle('print:pdf', (e, payload) => savePdfFile(e, payload));
   // ファイル保存基盤（storage:* / image:*）。実装は storage.js（1-1）。
   initStorage(app, ipcMain);
