@@ -2387,6 +2387,7 @@
             ${window.docxAPI ? '<button class="btn" data-action="save-docx">📄 Word (.docx)</button>' : ''}
             ${window.xlsxAPI ? '<button class="btn" data-action="save-xlsx">📊 Excel (.xlsx)</button>' : ''}
             ${window.csvAPI ? '<button class="btn" data-action="save-csv">📋 CSV</button>' : ''}
+            ${window.printAPI ? '<button class="btn" data-action="save-pdf">📕 PDF</button>' : ''}
           </div>
           ${
             isTemplate && checklist.coverPage && checklist.coverPage.enabled
@@ -4471,6 +4472,27 @@
       if (root) { root.innerHTML = ''; root.className = ''; }
     }
 
+    // 印刷ビューを差し込んでワンクリックで PDF 保存する（3-D）。printToPDF は現ページを
+    // @media print の見た目で描画するため、他出力（Word/Excel/CSV/HTML）と同じくツールバー
+    // 直下からも、印刷プレビュー内からも同じこの関数で呼べる。
+    async function savePdfViaElectron(checklist) {
+      if (!window.printAPI || !window.printAPI.savePdf) {
+        alert('PDF 出力はデスクトップ版（Electron）でのみ利用できます。');
+        return;
+      }
+      try {
+        fillPrintRoot(checklist);
+        const res = await window.printAPI.savePdf({
+          title: sanitizeFilename(checklist.title || 'checklist'),
+        });
+        if (res && res.error) alert('PDF の保存に失敗しました: ' + res.error);
+      } catch (e) {
+        alert('PDF の保存に失敗しました: ' + e.message);
+      } finally {
+        clearPrintRoot();
+      }
+    }
+
     // 印刷ビューを差し込んでブラウザの印刷ダイアログを開く。
     // 印刷後（またはキャンセル後）は中身を空にして画面に残らないようにする。
     function printChecklist(checklist) {
@@ -4522,18 +4544,8 @@
       if (pdfBtn) {
         pdfBtn.addEventListener('click', async () => {
           pdfBtn.disabled = true;
-          try {
-            fillPrintRoot(checklist); // printToPDF は @media print の見た目で現ページを描画する
-            const res = await window.printAPI.savePdf({
-              title: sanitizeFilename(checklist.title || 'checklist'),
-            });
-            if (res && res.error) alert('PDF の保存に失敗しました: ' + res.error);
-          } catch (e) {
-            alert('PDF の保存に失敗しました: ' + e.message);
-          } finally {
-            clearPrintRoot();
-            pdfBtn.disabled = false;
-          }
+          try { await savePdfViaElectron(checklist); }
+          finally { pdfBtn.disabled = false; }
         });
       }
     }
@@ -6461,6 +6473,8 @@
           return c && saveXlsxViaElectron(c);
         case 'save-csv':
           return c && saveCsvViaElectron(c);
+        case 'save-pdf':
+          return c && savePdfViaElectron(c);
       }
     });
 
