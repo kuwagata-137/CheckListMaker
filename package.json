@@ -14,6 +14,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "exceljs": "^4.4.0",
     "html-to-docx": "^1.8.0",
     "koffi": "^2.9.0",
     "screenshot-desktop": "^1.15.0",
@@ -44,6 +45,7 @@
       "keys.js",
       "zoomcrop.js",
       "docx-postprocess.js",
+      "xlsx-export.js",
       "gadget.html",
       "guide.html",
       "package.json"

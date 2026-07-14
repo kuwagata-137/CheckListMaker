@@ -126,6 +126,21 @@ contextBridge.exposeInMainWorld('docxAPI', {
   save: (payload) => ipcRenderer.invoke('docx:save', payload),
 });
 
+// Excel(.xlsx) / CSV 出力（Electron 版のみ・3-A）。レンダラーが組んだ出力仕様を
+// メインプロセスに渡し、ワークブック構築（xlsx-export.js）とネイティブ保存
+// ダイアログでの書き出しを行う。素のブラウザ・単体HTMLでは undefined のため
+// ボタン自体が出ない（仕様: docs/spec-3-A-xlsx-csv.md）。
+contextBridge.exposeInMainWorld('xlsxAPI', {
+  available: true,
+  // payload = { title, data }。戻り値 = { saved } / { canceled } / { error }。
+  save: (payload) => ipcRenderer.invoke('xlsx:save', payload),
+});
+contextBridge.exposeInMainWorld('csvAPI', {
+  available: true,
+  // payload = { title, text（BOM込みCSV文字列） }。戻り値 = { saved } / { canceled } / { error }。
+  save: (payload) => ipcRenderer.invoke('csv:save', payload),
+});
+
 // HTML 保存（Electron 版のみ）。window.prompt() が Electron で使えないため、
 // ファイル名の入力ごとネイティブ保存ダイアログに任せる。
 contextBridge.exposeInMainWorld('fileAPI', {
