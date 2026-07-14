@@ -1410,35 +1410,46 @@
     }
     // ---- 画像（スクリーンショット注釈）操作 ----
     // 画像は圧縮済み JPEG の dataURL 文字列として item.images に配列で持つ。
-    // item.imageEdits は images と index を揃えた並行配列で、画像エディタの
-    // 編集ソース（{v:1, base, strokes, objects}）を保持する。null は「編集
-    // データ無し（未編集 or 旧形式の焼き込み済み画像）」。images[index] は
-    // 常に合成済み JPEG のままなので、サムネイル・印刷・Word 出力・共有は
-    // imageEdits を知らなくてよい。
+    // item.imageEdits・item.imagesFull は images と index を揃えた並行配列（3-B）。
+    //  - imageEdits: 画像エディタの編集ソース（{v:1, base, strokes, objects}）。
+    //    null は「編集データ無し（未編集 or 旧形式の焼き込み済み画像）」。
+    //  - imagesFull: 原寸の元画像参照（出力・JSON バックアップ用）。null は「原寸なし
+    //    （既存データ or ブラウザモード）」。出力は imagesFull[i] || images[i] を使う。
+    // images[index] は常に表示用サムネのままなので、表示・render・共有は
+    // imageEdits/imagesFull を知らなくてよい（docs/spec-3-B-image-quality.md）。
     function itemImages(item) {
       if (!Array.isArray(item.images)) item.images = [];
       return item.images;
     }
-    // imageEdits を images と同じ長さに正規化して返す
-    function itemImageEdits(item) {
+    // 並行配列（imageEdits / imagesFull）を images と同じ長さに正規化して返す
+    function normalizeParallel(item, key, fill) {
       const n = itemImages(item).length;
-      if (!Array.isArray(item.imageEdits)) item.imageEdits = [];
-      while (item.imageEdits.length < n) item.imageEdits.push(null);
-      if (item.imageEdits.length > n) item.imageEdits.length = n;
-      return item.imageEdits;
+      if (!Array.isArray(item[key])) item[key] = [];
+      while (item[key].length < n) item[key].push(fill);
+      if (item[key].length > n) item[key].length = n;
+      return item[key];
     }
-    function addItemImage(checklist, sectionId, itemId, dataUrl) {
+    function itemImageEdits(item) { return normalizeParallel(item, 'imageEdits', null); }
+    function itemImagesFull(item) { return normalizeParallel(item, 'imagesFull', null); }
+    function addItemImage(checklist, sectionId, itemId, dataUrl, fullRef) {
       const s = findSection(checklist, sectionId);
       const i = s && s.items.find((x) => x.id === itemId);
-      if (i) { itemImages(i).push(dataUrl); itemImageEdits(i); }
+      if (i) {
+        itemImages(i).push(dataUrl);
+        itemImageEdits(i);
+        itemImagesFull(i)[itemImages(i).length - 1] = fullRef || null;
+      }
       return touch(checklist);
     }
-    function replaceItemImage(checklist, sectionId, itemId, index, dataUrl, edit) {
+    function replaceItemImage(checklist, sectionId, itemId, index, dataUrl, edit, fullRef) {
       const s = findSection(checklist, sectionId);
       const i = s && s.items.find((x) => x.id === itemId);
       if (i && itemImages(i)[index] !== undefined) {
         i.images[index] = dataUrl;
         itemImageEdits(i)[index] = edit || null;
+        // fullRef 未指定（undefined）は「原寸を変更しない」。null 明示で消す。
+        if (fullRef !== undefined) itemImagesFull(i)[index] = fullRef || null;
+        else itemImagesFull(i);
       }
       return touch(checklist);
     }
@@ -1447,6 +1458,7 @@
       const i = s && s.items.find((x) => x.id === itemId);
       if (i && Array.isArray(i.images)) {
         itemImageEdits(i).splice(index, 1); // 先に長さを揃えてから同じ index を消す
+        itemImagesFull(i).splice(index, 1);
         i.images.splice(index, 1);
       }
       return touch(checklist);
@@ -1650,13 +1662,18 @@
       throw new Error((res && res.error) || '画像の保存に失敗しました');
     }
 
-    // checklist 内の全画像（images[] / imageEdits[].base / .strokes）へ fn を適用する。
-    // coverPage.logo は対象外（小さく同期参照されるため dataURL 直持ちのまま）。
+    // checklist 内の全画像（images[] / imagesFull[] / imageEdits[].base / .strokes）へ
+    // fn を適用する。coverPage.logo は対象外（小さく同期参照されるため dataURL 直持ち）。
     async function mapChecklistImages(checklist, fn) {
       for (const s of checklist.sections || []) {
         for (const it of s.items || []) {
           if (Array.isArray(it.images)) {
             for (let i = 0; i < it.images.length; i++) it.images[i] = await fn(it.images[i]);
+          }
+          if (Array.isArray(it.imagesFull)) {
+            for (let i = 0; i < it.imagesFull.length; i++) {
+              if (it.imagesFull[i]) it.imagesFull[i] = await fn(it.imagesFull[i]);
+            }
           }
           if (Array.isArray(it.imageEdits)) {
             for (const ed of it.imageEdits) {
@@ -1670,9 +1687,24 @@
       }
       return checklist;
     }
-    // 参照 → dataURL（出力用の deep clone を返す。印刷/PDF/Word/HTML/JSON出力の前段）
+    // 出力用に「原寸を images へ差し替えて imagesFull を落とす」（3-B）。
+    // 印刷/PDF/Word/Excel/単体HTML はこれを通し、下流は無改修で原寸を受け取る。
+    function swapToFullRes(checklist) {
+      for (const s of checklist.sections || []) {
+        for (const it of s.items || []) {
+          if (!Array.isArray(it.images) || !Array.isArray(it.imagesFull)) { delete it.imagesFull; continue; }
+          for (let i = 0; i < it.images.length; i++) {
+            if (it.imagesFull[i]) it.images[i] = it.imagesFull[i];
+          }
+          delete it.imagesFull;
+        }
+      }
+      return checklist;
+    }
+    // 参照 → dataURL（視覚出力用の deep clone。印刷/PDF/Word/Excel/単体HTMLの前段）。
+    // 原寸(imagesFull)があればそれを使い、無ければサムネ(images)にフォールバックする。
     async function materializeChecklist(checklist) {
-      const copy = clone(checklist);
+      const copy = swapToFullRes(clone(checklist));
       if (!HAS_FILE_IMAGES) return copy;
       return mapChecklistImages(copy, resolveImageAsync);
     }
@@ -3627,7 +3659,14 @@
       const section = M.createSection(title);
       steps.forEach((st, i) => {
         const item = M.createItem(String(st.text || '').trim());
-        for (const img of imagesByStep[i] || []) item.images.push(img);
+        // imagesByStep[i] の各要素は {thumb, full} ペア（原寸 2 段構成・3-B）。
+        // 後方互換で素の参照/dataURL が来た場合は原寸なし(null)として扱う。
+        for (const img of imagesByStep[i] || []) {
+          const isPair = img && typeof img === 'object';
+          item.images.push(isPair ? img.thumb : img);
+          if (!Array.isArray(item.imagesFull)) item.imagesFull = [];
+          item.imagesFull.push(isPair ? (img.full || null) : null);
+        }
         section.items.push(item);
       });
       return section;
@@ -3845,7 +3884,7 @@
               for (const f of wizardShotFiles(shot)) {
                 try {
                   const raw = await window.recorderAPI.readImage(dir, f);
-                  if (raw) imgs.push(await storeImage(await compressImage(raw)));
+                  if (raw) imgs.push(await storeImagePair(raw)); // 原寸＋サムネの2段構成
                 } catch (err) {
                   console.error('画像の取り込みに失敗しました（文のみ取り込みます）:', f, err);
                 }
@@ -4700,8 +4739,27 @@
     // =========================================================================
     // images — スクリーンショットの貼り付け・圧縮保存・ペイント編集
     // =========================================================================
-    const IMG_MAX_EDGE = 1600; // 長辺の上限(px)。これを超える画像は縮小する
-    const IMG_QUALITY = 0.85;  // JPEG 品質
+    const IMG_MAX_EDGE = 1600; // 表示用サムネの長辺上限(px)。これを超える画像は縮小する
+    const IMG_QUALITY = 0.85;  // 表示用サムネの JPEG 品質
+    // 原寸（出力・バックアップ用）。docs/spec-3-B-image-quality.md
+    const IMG_FULL_MAX_EDGE = 2560; // 原寸の長辺上限(px)
+    const IMG_FULL_QUALITY = 0.92;  // 原寸・編集合成の JPEG 品質
+
+    // dataURL の MIME を返す（小文字。判定不能なら ''）
+    function imageMime(dataUrl) {
+      const m = /^data:(image\/[a-z0-9.+-]+)/i.exec(String(dataUrl || ''));
+      return m ? m[1].toLowerCase() : '';
+    }
+    // 原寸の出力形式を決める純関数（canvas 不要・テスト可能）。
+    //  reencode=false … 元 dataURL を無変換で使う（真の無損失）
+    //  reencode=true  … mime へ再符号化（PNG は可逆 PNG、その他は JPEG）
+    function fullImagePlan(srcMime, longEdge, maxEdge = IMG_FULL_MAX_EDGE) {
+      const isPng = srcMime === 'image/png';
+      const isJpeg = srcMime === 'image/jpeg';
+      const oversize = longEdge > maxEdge;
+      if (!oversize && (isPng || isJpeg)) return { reencode: false, mime: srcMime };
+      return { reencode: true, mime: isPng ? 'image/png' : 'image/jpeg' };
+    }
 
     function blobToDataUrl(blob) {
       return new Promise((res, rej) => {
@@ -4729,6 +4787,37 @@
         img.src = srcDataUrl;
       });
     }
+    // 原寸用 dataURL を作る（形式維持・上限2560px・PNG/JPEG以外はJPEG化）。
+    // 上限以内かつ PNG/JPEG は元 dataURL を無変換で返す（真の無損失）。
+    function makeFullImage(srcDataUrl, maxEdge = IMG_FULL_MAX_EDGE, quality = IMG_FULL_QUALITY) {
+      return new Promise((res, rej) => {
+        const mime = imageMime(srcDataUrl);
+        const img = new Image();
+        img.onload = () => {
+          const w0 = img.naturalWidth, h0 = img.naturalHeight;
+          const plan = fullImagePlan(mime, Math.max(w0, h0), maxEdge);
+          if (!plan.reencode) { res(srcDataUrl); return; }
+          const scale = Math.min(1, maxEdge / Math.max(w0, h0));
+          const w = Math.max(1, Math.round(w0 * scale));
+          const h = Math.max(1, Math.round(h0 * scale));
+          const cv = document.createElement('canvas');
+          cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(img, 0, 0, w, h);
+          res(plan.mime === 'image/png' ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => rej(new Error('画像の解析に失敗しました'));
+        img.src = srcDataUrl;
+      });
+    }
+    // 原寸＋表示サムネの2枚を保存し {thumb, full} 参照を返す（3-B）。
+    // ブラウザモード（!HAS_FILE_IMAGES）は state を localStorage に持つため原寸は
+    // 抱えず、従来どおりサムネ1枚のみ（full=null）。
+    async function storeImagePair(srcDataUrl) {
+      const thumb = await storeImage(await compressImage(srcDataUrl));
+      let full = null;
+      if (HAS_FILE_IMAGES) full = await storeImage(await makeFullImage(srcDataUrl));
+      return { thumb, full };
+    }
     function findItemLive(checklistId, sectionId, itemId) {
       const cc = M.findChecklist(store.state, checklistId);
       const sec = cc && cc.sections.find((x) => x.id === sectionId);
@@ -4746,11 +4835,11 @@
     }
     async function addImageFromBlob(c, sectionId, itemId, blob, openEditor) {
       try {
-        const compressed = await compressImage(await blobToDataUrl(blob));
-        // Electron では個別ファイルへ保存して参照を state に持つ（ブラウザは素通し）
-        const stored = await storeImage(compressed);
+        // Electron では原寸＋サムネの2枚を個別ファイルへ保存して参照を state に持つ
+        //（ブラウザはサムネの dataURL を素通し）。
+        const { thumb, full } = await storeImagePair(await blobToDataUrl(blob));
         const ok = commitImage((s) =>
-          M.addItemImage(M.findChecklist(s, c.id), sectionId, itemId, stored)
+          M.addItemImage(M.findChecklist(s, c.id), sectionId, itemId, thumb, full)
         );
         if (ok && openEditor) {
           const item = findItemLive(c.id, sectionId, itemId);
@@ -4839,12 +4928,17 @@
       if (!item || !Array.isArray(item.images) || item.images[index] === undefined) return;
       // 参照化されている場合は実データ（dataURL）に解決してから編集を開く
       const srcUrl = await resolveImageAsync(item.images[index]);
+      // 原寸（3-B）: 原寸があれば編集も原寸解像度で行い、印刷まで鮮明に保つ。
+      const fullRef = Array.isArray(item.imagesFull) ? item.imagesFull[index] : null;
+      const fullUrl = fullRef ? await resolveImageAsync(fullRef) : '';
       // 分離保存された編集ソース（v1）。あれば元画像＋手描き線＋オブジェクトを
-      // 復元して「保存後も消せる・再編集できる」を実現する。無ければ旧形式
-      // （焼き込み済み JPEG）としてそのまま base に読む。
+      // 復元して「保存後も消せる・再編集できる」を実現する。無ければ原寸（あれば）→
+      // サムネの順で base に読む（旧形式は焼き込み済みサムネをそのまま base に）。
       const savedEdit = Array.isArray(item.imageEdits) ? item.imageEdits[index] : null;
       const isV1 = !!(savedEdit && savedEdit.v === 1);
-      const baseSrc = (isV1 && savedEdit.base) ? await resolveImageAsync(savedEdit.base) : srcUrl;
+      const baseSrc = (isV1 && savedEdit.base)
+        ? await resolveImageAsync(savedEdit.base)
+        : (fullUrl || srcUrl);
       const strokesSrc = (isV1 && savedEdit.strokes) ? await resolveImageAsync(savedEdit.strokes) : '';
 
       const overlay = document.createElement('div');
@@ -6190,34 +6284,43 @@
         exitCropMode();
         selectedId = null;
         // 合成結果（crop オーバーレイ無し）を別 canvas に作って書き出す。
-        // images[index] は従来どおりこの合成 JPEG（サムネイル・印刷・Word 出力用）。
+        // baseSrc を原寸で読んでいるため、合成 out も原寸解像度になる（3-B）。
         const out = document.createElement('canvas');
         out.width = canvas.width; out.height = canvas.height;
         const og = out.getContext('2d');
         og.drawImage(baseCanvas, 0, 0);
         og.drawImage(annoCanvas, 0, 0);
         drawObjects(og); // ベクター注釈も焼き込んだ合成を書き出す
-        const data = out.toDataURL('image/jpeg', IMG_QUALITY);
+        // 原寸合成（注釈付き）。ファイル保存モードは q0.92、ブラウザは従来 q0.85。
+        const fullQuality = HAS_FILE_IMAGES ? IMG_FULL_QUALITY : IMG_QUALITY;
+        const composite = out.toDataURL('image/jpeg', fullQuality);
         // 編集ソースは焼き込まずに分離保存する。次回開いたときに手描き線は
-        // 消しゴムで消せて、図形・テキスト・吹き出しは再編集できる。
+        // 消しゴムで消せて、図形・テキスト・吹き出しは再編集できる。base は原寸。
         const strokesBlank = isCanvasBlank(annoCanvas);
         const cleanObjects = JSON.parse(JSON.stringify(objects));
         cleanObjects.forEach((o) => delete o.hidden);
         const edit = {
           v: 1,
           // 線もオブジェクトも無ければ base は合成と同一なので '' で節約
-          //（ロード時に images[index] へフォールバックする）
-          base: (strokesBlank && !cleanObjects.length) ? '' : baseCanvas.toDataURL('image/jpeg', IMG_QUALITY),
+          //（ロード時に原寸→サムネへフォールバックする）
+          base: (strokesBlank && !cleanObjects.length) ? '' : baseCanvas.toDataURL('image/jpeg', fullQuality),
           strokes: strokesBlank ? '' : annoCanvas.toDataURL('image/png'),
           objects: cleanObjects,
         };
         try {
-          // Electron では合成画像・編集ソースとも個別ファイルへ保存して参照を持つ
-          const storedData = await storeImage(data);
           if (edit.base) edit.base = await storeImage(edit.base);
           if (edit.strokes) edit.strokes = await storeImage(edit.strokes);
+          let storedThumb, storedFull;
+          if (HAS_FILE_IMAGES) {
+            // 原寸合成 → imagesFull、その縮小 → images（表示サムネ）
+            storedFull = await storeImage(composite);
+            storedThumb = await storeImage(await compressImage(composite));
+          } else {
+            storedThumb = await storeImage(composite); // ブラウザは従来どおり単一
+            storedFull = null;
+          }
           const ok = commitImage((s) =>
-            M.replaceItemImage(M.findChecklist(s, c.id), sectionId, itemId, index, storedData, edit)
+            M.replaceItemImage(M.findChecklist(s, c.id), sectionId, itemId, index, storedThumb, edit, storedFull)
           );
           if (ok) close();
         } catch (e) {
@@ -6502,7 +6605,9 @@
       Object.assign(window.__test__, {
         M, store, Store, LocalStorageAdapter, MemoryAdapter, FileAdapter,
         encodeShareLink, readShareFromHash, buildStandaloneHtml,
-        materializeState, absorbChecklistImages, resolveImageSync, storeImage,
+        materializeState, materializeChecklist, absorbChecklistImages, resolveImageSync, storeImage,
+        // 原寸2段構成（3-B）
+        imageMime, fullImagePlan, makeFullImage, storeImagePair,
         showToast, notifySaveError,
         STORAGE_KEY, MIGRATED_KEY,
         // 録画取り込みウィザードの純関数（2-R4）
