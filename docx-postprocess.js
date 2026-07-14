@@ -63,7 +63,10 @@ const STYLE_HEADING2 = (accent) =>
   </w:rPr>
 </w:style>`;
 
-// 見出し4 → 手順名（h4 / Heading4）。太字11pt・薄いグレーの細い下罫線。右タブで所要時間を右詰め。
+// 見出し4 → 手順名（h4 / Heading4）。アプリの編集画面の「手順カード」に寄せる:
+// 薄い塗り(F3F6FA)＋左のアクセント太帯＋周囲の細罫のカード。太字11pt、右タブで所要時間を右詰め。
+// 行頭の番号は @@DXNUM@@N@@DXNE@@ マーカーを後処理でアクセント色のバッジ run に変換する。
+// pPr の子要素は OOXML スキーマ順（keepNext → pBdr → shd → tabs → spacing → ind → outlineLvl → rPr）。
 const STYLE_HEADING4 = (accent) =>
 `<w:style w:type="paragraph" w:styleId="Heading4">
   <w:name w:val="heading 4" />
@@ -75,10 +78,14 @@ const STYLE_HEADING4 = (accent) =>
   <w:pPr>
     <w:keepNext />
     <w:pBdr>
-      <w:bottom w:val="single" w:sz="4" w:space="4" w:color="D9D9D9" />
+      <w:top w:val="single" w:sz="4" w:space="6" w:color="E2E8F1" />
+      <w:left w:val="single" w:sz="18" w:space="8" w:color="${accent}" />
+      <w:bottom w:val="single" w:sz="4" w:space="6" w:color="E2E8F1" />
+      <w:right w:val="single" w:sz="4" w:space="6" w:color="E2E8F1" />
     </w:pBdr>
+    <w:shd w:val="clear" w:color="auto" w:fill="F3F6FA" />
     <w:tabs><w:tab w:val="right" w:pos="${RIGHT_TAB}" /></w:tabs>
-    <w:spacing w:before="160" w:after="60" w:line="264" w:lineRule="auto" />
+    <w:spacing w:before="180" w:after="60" w:line="264" w:lineRule="auto" />
     <w:outlineLvl w:val="3" />
   </w:pPr>
   <w:rPr>
@@ -88,6 +95,20 @@ const STYLE_HEADING4 = (accent) =>
     <w:szCs w:val="22" />
   </w:rPr>
 </w:style>`;
+
+// 手順カード行頭の番号バッジ。@@DXNUM@@N@@DXNE@@ をアクセント色地・白抜き太字の run（数字）
+// ＋区切りの小スペース run に変換する。直前の run の <w:t> を閉じ、末尾で手順名用の
+// <w:t> を開いたままにして、続く手順名テキスト（＋@@DXTAB@@）が同段落に流れるようにする。
+const numBadgeReplacement = (accent) =>
+  `</w:t></w:r>` +
+  `<w:r><w:rPr><w:rFonts w:eastAsia="${EA}" /><w:b /><w:color w:val="FFFFFF" />` +
+  `<w:sz w:val="22" /><w:szCs w:val="22" />` +
+  `<w:shd w:val="clear" w:color="auto" w:fill="${accent}" /></w:rPr>` +
+  `<w:t xml:space="preserve"> $1 </w:t></w:r>` +
+  `<w:r><w:rPr><w:rFonts w:eastAsia="${EA}" /><w:b /><w:sz w:val="22" /><w:szCs w:val="22" /></w:rPr>` +
+  `<w:t xml:space="preserve">  </w:t></w:r>` +
+  `<w:r><w:rPr><w:rFonts w:eastAsia="${EA}" /><w:b /><w:sz w:val="22" /><w:szCs w:val="22" /></w:rPr>` +
+  `<w:t xml:space="preserve">`;
 
 // 表題段落（表紙が無効なときのみ document.xml に出る）。箱・灰色地は廃し、
 // 大きめ20pt・中央・下にアクセント色の細ライン。titleXml はXMLエスケープ済みで渡すこと。
@@ -216,6 +237,8 @@ async function postProcessDocx(buffer, meta) {
     if (pM) doc = doc.replace(pM[0], TOC_XML(accent));
     else doc = doc.split(m.markerToc).join('');
   }
+  // 手順番号のバッジ化: @@DXNUM@@N@@DXNE@@ をアクセント色のバッジ run に変換（@@DXTAB@@ より先）。
+  doc = doc.replace(/@@DXNUM@@(\d+)@@DXNE@@/g, numBadgeReplacement(accent));
   // 所要時間の右詰め: @@DXTAB@@ を右タブに変換。見出し run を閉じ、灰色の別 run で
   // タブ＋時間を出す（時間は見出しの太字を継がず、控えめな灰色にしてモダンに見せる）。
   const timeRunPr = `<w:rPr><w:rFonts w:eastAsia="${EA}" /><w:color w:val="808080" /></w:rPr>`;

@@ -52,7 +52,7 @@ const HTML = [
   '<p>@@DXTITLEt@@サンプル手順書</p>',            // 表題マーカー段落
   '<p>@@DXTOCt@@</p>',                            // 目次マーカー段落
   '<h2>準備@@DXTAB@@⏱5分</h2>',                  // セクション見出し＋所要時間（右詰め）
-  '<h4>1. 電源を入れる@@DXTAB@@⏱2分</h4>',        // 手順名＋所要時間（右詰め）
+  '<h4>@@DXNUM@@1@@DXNE@@電源を入れる@@DXTAB@@⏱2分</h4>', // 手順カード（番号バッジ＋手順名＋所要時間）
   '<p>本文テキスト</p>',
   '</body></html>',
 ].join('');
@@ -71,6 +71,12 @@ test('3-C docx 回帰 — 後処理が生成する OOXML 骨格を固定する',
     assert.ok(!out.document.includes('@@'), 'マーカートークンが残らない');
     // 所要時間の @@DXTAB@@ は右タブ run に変換される
     assert.ok(out.document.includes('<w:tab/>'), '@@DXTAB@@ が右タブ run になる');
+    // 手順番号 @@DXNUM@@N@@DXNE@@ はアクセント色地・白抜きのバッジ run になる
+    assert.match(
+      out.document,
+      /<w:color w:val="FFFFFF"[\s\S]*?<w:shd w:val="clear" w:color="auto" w:fill="3B6EA5"[\s\S]*?<w:t xml:space="preserve"> 1 <\/w:t>/,
+      '手順番号がアクセント色のバッジ run になる'
+    );
     // 見出しは Heading2/Heading4 スタイル参照になる
     assert.ok(out.document.includes('<w:pStyle w:val="Heading2"'), 'Heading2 参照');
     assert.ok(out.document.includes('<w:pStyle w:val="Heading4"'), 'Heading4 参照');
@@ -86,6 +92,9 @@ test('3-C docx 回帰 — 後処理が生成する OOXML 骨格を固定する',
     assert.match(out.styles, /Heading2[\s\S]*?w:color w:val="3B6EA5"/, 'Heading2 がアクセント色');
     assert.match(out.styles, /Heading2[\s\S]*?<w:bottom w:val="single"/, 'Heading2 に下罫線');
     assert.match(out.styles, /Heading4[\s\S]*?<w:bottom w:val="single"/, 'Heading4 に下罫線');
+    // Heading4（手順カード）は薄い塗り＋左アクセント太帯のカード様式
+    assert.match(out.styles, /Heading4[\s\S]*?<w:left w:val="single" w:sz="18" w:space="8" w:color="3B6EA5"/, 'Heading4 に左アクセント帯');
+    assert.match(out.styles, /Heading4[\s\S]*?<w:shd w:val="clear" w:color="auto" w:fill="F3F6FA"/, 'Heading4 がカード塗り');
     assert.match(out.styles, /<w:docDefaults>[\s\S]*?w:eastAsia="游明朝"/, 'docDefaults の和文フォントが游明朝');
   });
 

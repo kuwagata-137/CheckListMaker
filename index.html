@@ -1144,9 +1144,11 @@
     .player-overlay { display: none !important; }
     #print-root { display: block !important; }
     body { background: #fff; color: #000; }
-    @page { margin: 16mm; }
+    /* size を明示するのは printToPDF(preferCSSPageSize) に @page を尊重させ、
+       表紙(coverpage=余白0)と本文(16mm)を1ページの A4 に正しく収めるため。 */
+    @page { size: A4; margin: 16mm; }
     /* 表紙は余白なしの専用ページにして 794x1123 を A4 に 1:1 で載せる */
-    @page coverpage { margin: 0; }
+    @page coverpage { size: A4; margin: 0; }
     .print-cover { page: coverpage; break-after: page; overflow: hidden; }
     .print-cover .cover { width: 794px; height: 1123px; }
     /* 目次は通常余白ページで独立させ、本文を次ページから始める */
@@ -1289,6 +1291,31 @@
     function createRevision(version = '', date = '', author = '', note = '') {
       return { id: uid(), version, date, author, note };
     }
+    // ---- 表紙の日付ユーティリティ ----
+    // 表紙の日付は内部的に ISO(yyyy-mm-dd) で持ち（カレンダー入力=<input type="date">の値）、
+    // 表示は「yyyy年m月d日」に整形する（m/d は 0 埋めしない）。
+    function todayIso() {
+      const d = new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    }
+    // 入力値を ISO(yyyy-mm-dd)へ正規化。ISO・yyyy/m/d・yyyy.m.d を受け付け、
+    // 解釈できなければ '' を返す（＝カレンダー入力欄は空表示になる）。
+    function toIsoDate(v) {
+      const s = String(v == null ? '' : v).trim();
+      let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+      if (m) return s;
+      m = /^(\d{4})[/.](\d{1,2})[/.](\d{1,2})$/.exec(s);
+      if (m) return `${m[1]}-${String(+m[2]).padStart(2, '0')}-${String(+m[3]).padStart(2, '0')}`;
+      return '';
+    }
+    // 表示用に「yyyy年m月d日」へ整形。ISO 等に解釈できれば整形、できなければ原文のまま。
+    function formatCoverDate(v) {
+      const iso = toIsoDate(v);
+      if (!iso) return String(v == null ? '' : v);
+      const [y, mo, d] = iso.split('-');
+      return `${+y}年${+mo}月${+d}日`;
+    }
     // テンプレート型の任意の表紙（カバーページ）。初回有効化時に生成する。
     function createCoverPage() {
       return {
@@ -1299,7 +1326,7 @@
         title: '',
         subtitle: '',
         author: '',
-        date: new Date().toLocaleDateString('ja-JP'),
+        date: todayIso(), // ISO(yyyy-mm-dd)。表示は formatCoverDate で「yyyy年m月d日」に整形
         version: '',
         docNumber: '',
         logo: '',
@@ -1958,12 +1985,14 @@
         if (heading) parts.push(`<h2>${heading}</h2>`);
         s.items.forEach((it) => {
           if (isTemplate) {
-            // 手順名は h4 → Heading4（様式「見出し4」＝太字＋点線下罫線。目次にも載る）。
-            // スタイルが太字を持つので <strong> は不要。☐/☑ は手順書には出さない。
+            // 手順名は h4 → Heading4（様式「見出し4」＝編集画面の手順カードに寄せた
+            // 薄塗り＋左アクセント帯のカード）。スタイルが太字を持つので <strong> は不要。
+            // 行頭の番号は @@DXNUM@@N@@DXNE@@（後処理でアクセント色のバッジ run に変換）。
+            // ☐/☑ は手順書には出さない。
             stepNo += 1;
             // 所要時間は @@DXTAB@@（後処理で右タブに置換）で手順名の行末に右詰めする。
             const time = it.time ? `@@DXTAB@@⏱${escapeHtml(String(it.time))}分` : '';
-            parts.push(`<h4>${stepNo}. ${escapeHtml(it.text)}${time}</h4>`);
+            parts.push(`<h4>@@DXNUM@@${stepNo}@@DXNE@@${escapeHtml(it.text)}${time}</h4>`);
             const bodyClean = sanitizeBodyHtml(it.body || '');
             if (bodyClean) parts.push(bodyClean);
             if (it.note) parts.push(`<p>（メモ）${escapeHtml(it.note)}</p>`);
@@ -3167,7 +3196,7 @@
       const preset = COVER_PRESETS.includes(c.preset) ? c.preset : 'centered';
       const accent = /^#[0-9a-fA-F]{3,8}$/.test(c.accent || '') ? c.accent : '#3b6ea5';
       const t = escapeHtml(c.title || fallbackTitle || '');
-      const author = escapeHtml(c.author || ''), date = escapeHtml(c.date || '');
+      const author = escapeHtml(c.author || ''), date = escapeHtml(formatCoverDate(c.date));
       const ver = escapeHtml(c.version || ''), docn = escapeHtml(c.docNumber || '');
       const title = `<h1 class="title">${t}</h1>`;
       const subtitle = c.subtitle ? `<p class="subtitle">${escapeHtml(c.subtitle)}</p>` : '';
@@ -4471,6 +4500,18 @@
       const root = document.getElementById('print-root');
       if (root) { root.innerHTML = ''; root.className = ''; }
     }
+    // 印刷ルート内の <img> がすべてデコード済みになるまで待つ。printToPDF は現在の
+    // 描画をそのまま撮るため、dataURL 画像が未デコードのまま撮ると画像が欠ける。
+    function waitForPrintImages(root) {
+      const imgs = Array.from(root.querySelectorAll('img'));
+      return Promise.all(
+        imgs.map((img) => {
+          if (img.complete && img.naturalWidth) return Promise.resolve();
+          if (img.decode) return img.decode().catch(() => {});
+          return new Promise((res) => { img.onload = img.onerror = () => res(); });
+        })
+      );
+    }
 
     // 印刷ビューを差し込んでワンクリックで PDF 保存する（3-D）。printToPDF は現ページを
     // @media print の見た目で描画するため、他出力（Word/Excel/CSV/HTML）と同じくツールバー
@@ -4481,7 +4522,11 @@
         return;
       }
       try {
-        fillPrintRoot(checklist);
+        // 画像参照を dataURL に戻してから印刷ビューを組む（ツールバー直下から呼ばれた
+        // ときは未 materialize の checklist が渡るため。dataURL は素通しなので二重適用も安全）。
+        checklist = await materializeChecklist(checklist);
+        const root = fillPrintRoot(checklist);
+        await waitForPrintImages(root); // 画像のデコード完了を待ってから撮る（欠け防止）
         const res = await window.printAPI.savePdf({
           title: sanitizeFilename(checklist.title || 'checklist'),
         });
@@ -4621,7 +4666,7 @@
                   <label class="ce-field col2">タイトル（大見出し）<input data-ce-field="title" /></label>
                   <label class="ce-field col2">サブタイトル・説明<input data-ce-field="subtitle" /></label>
                   <label class="ce-field">作成者・組織名<input data-ce-field="author" /></label>
-                  <label class="ce-field">日付<input data-ce-field="date" /></label>
+                  <label class="ce-field">日付<input type="date" data-ce-field="date" /></label>
                   <label class="ce-field">バージョン / 版数<input data-ce-field="version" /></label>
                   <label class="ce-field">文書番号（任意）<input data-ce-field="docNumber" /></label>
                 </div>
@@ -4686,7 +4731,12 @@
         scaleCoverStages(overlay);
       }
 
-      overlay.querySelectorAll('[data-ce-field]').forEach((inp) => { inp.value = draft[inp.dataset.ceField] || ''; });
+      overlay.querySelectorAll('[data-ce-field]').forEach((inp) => {
+        // 日付は <input type="date">。ISO 以外（旧データの yyyy/m/d 等）は正規化して流し込む。
+        inp.value = inp.dataset.ceField === 'date'
+          ? toIsoDate(draft.date)
+          : (draft[inp.dataset.ceField] || '');
+      });
       renderRevRows();
       refresh();
 

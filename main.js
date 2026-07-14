@@ -1280,9 +1280,12 @@ async function savePdfFile(event, payload) {
   });
   if (canceled || !filePath) return { saved: false, canceled: true };
   try {
+    // preferCSSPageSize で CSS の @page（本文=A4/余白16mm、表紙=A4/余白0）を尊重する。
+    // これを付けないと printToPDF は既定余白を全ページに強制し、@page coverpage の
+    // 余白0が効かず、A4 と等寸(794x1123px)の表紙が余白分だけはみ出してしまう。
     const buf = await event.sender.printToPDF({
       printBackground: true,
-      pageSize: 'A4',
+      preferCSSPageSize: true,
     });
     fs.writeFileSync(filePath, buf);
     // 出力結果をすぐ確認できるよう、既定のPDFビューアで開く。
