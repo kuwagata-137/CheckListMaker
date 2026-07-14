@@ -1144,9 +1144,11 @@
     .player-overlay { display: none !important; }
     #print-root { display: block !important; }
     body { background: #fff; color: #000; }
-    @page { margin: 16mm; }
+    /* size を明示するのは printToPDF(preferCSSPageSize) に @page を尊重させ、
+       表紙(coverpage=余白0)と本文(16mm)を1ページの A4 に正しく収めるため。 */
+    @page { size: A4; margin: 16mm; }
     /* 表紙は余白なしの専用ページにして 794x1123 を A4 に 1:1 で載せる */
-    @page coverpage { margin: 0; }
+    @page coverpage { size: A4; margin: 0; }
     .print-cover { page: coverpage; break-after: page; overflow: hidden; }
     .print-cover .cover { width: 794px; height: 1123px; }
     /* 目次は通常余白ページで独立させ、本文を次ページから始める */
@@ -4471,6 +4473,18 @@
       const root = document.getElementById('print-root');
       if (root) { root.innerHTML = ''; root.className = ''; }
     }
+    // 印刷ルート内の <img> がすべてデコード済みになるまで待つ。printToPDF は現在の
+    // 描画をそのまま撮るため、dataURL 画像が未デコードのまま撮ると画像が欠ける。
+    function waitForPrintImages(root) {
+      const imgs = Array.from(root.querySelectorAll('img'));
+      return Promise.all(
+        imgs.map((img) => {
+          if (img.complete && img.naturalWidth) return Promise.resolve();
+          if (img.decode) return img.decode().catch(() => {});
+          return new Promise((res) => { img.onload = img.onerror = () => res(); });
+        })
+      );
+    }
 
     // 印刷ビューを差し込んでワンクリックで PDF 保存する（3-D）。printToPDF は現ページを
     // @media print の見た目で描画するため、他出力（Word/Excel/CSV/HTML）と同じくツールバー
@@ -4481,7 +4495,11 @@
         return;
       }
       try {
-        fillPrintRoot(checklist);
+        // 画像参照を dataURL に戻してから印刷ビューを組む（ツールバー直下から呼ばれた
+        // ときは未 materialize の checklist が渡るため。dataURL は素通しなので二重適用も安全）。
+        checklist = await materializeChecklist(checklist);
+        const root = fillPrintRoot(checklist);
+        await waitForPrintImages(root); // 画像のデコード完了を待ってから撮る（欠け防止）
         const res = await window.printAPI.savePdf({
           title: sanitizeFilename(checklist.title || 'checklist'),
         });
