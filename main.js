@@ -34,6 +34,7 @@ const { planShot } = require('./zoomcrop');
 
 let mainWin = null;
 let gadgetWin = null;
+let guideWin = null; // ガイド小窓（3-R6）
 
 // ── プラットフォーム ─────────────────────────────────────────
 // Linux/X11 では setContentProtection が効かないことがあるため、
@@ -344,6 +345,84 @@ function restoreMainWindow() {
   }
 }
 
+// ── ガイド小窓（3-R6・仕様は docs/spec-3-R6-guide-overlay.md）────────
+// 実行モード（3-R5）の再生用オーバーレイ。録画ガジェットと同じ
+// 「常時最前面・撮影に写らない」小窓で、表示専用（実行状態は本体レンダラー側）。
+function createGuideWindow(payload) {
+  if (guideWin && !guideWin.isDestroyed()) {
+    guideWin.show();
+    sendGuideStep(payload);
+    return;
+  }
+  const display = screen.getPrimaryDisplay();
+  const { width } = display.workAreaSize;
+  guideWin = new BrowserWindow({
+    width: 320,
+    height: 430,
+    x: width - 344,
+    y: 24,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  // 画面キャプチャから除外（決定3）。Linux/X11 で効かない既知事項は
+  // 録画ガジェットと同じ（再生用は撮影と無関係のため隠す代替はしない）。
+  if (!IS_LINUX) guideWin.setContentProtection(true);
+  guideWin.setAlwaysOnTop(true, 'screen-saver');
+  guideWin.loadFile('guide.html');
+  guideWin.webContents.on('did-finish-load', () => sendGuideStep(payload));
+  guideWin.on('closed', () => {
+    guideWin = null;
+    // ✕・OS 操作で閉じられたら本体へ通知（プレイヤーは全画面表示へ戻る）
+    if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('guide:closed');
+  });
+}
+function sendGuideStep(payload) {
+  if (guideWin && !guideWin.isDestroyed() && payload) {
+    guideWin.webContents.send('guide:step', payload);
+  }
+}
+ipcMain.handle('guide:open', (_e, payload) => {
+  createGuideWindow(payload);
+  return { ok: true };
+});
+ipcMain.handle('guide:update', (_e, payload) => {
+  sendGuideStep(payload);
+  return { ok: true };
+});
+ipcMain.handle('guide:close', (_e, opts) => {
+  if (guideWin && !guideWin.isDestroyed()) {
+    const w = guideWin;
+    guideWin = null; // 意図した終了では closed ハンドラの guide:closed を送らない
+    w.removeAllListeners('closed');
+    w.close();
+  }
+  if (opts && opts.focusMain) restoreMainWindow(); // 完走時は本体を前面に（決定2）
+  return { ok: true };
+});
+// 小窓 → 本体: 操作（complete / skip / prev）を中継する
+ipcMain.on('guide:action', (_e, action) => {
+  if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('guide:action', action);
+});
+// 折りたたみ／展開／画像の一時拡大に合わせた小窓のサイズ変更
+ipcMain.on('guide:resize', (_e, size) => {
+  if (!guideWin || guideWin.isDestroyed() || !size) return;
+  const w = Math.max(220, Math.min(560, Math.round(size.width) || 320));
+  const h = Math.max(48, Math.min(720, Math.round(size.height) || 430));
+  try { guideWin.setSize(w, h); } catch (_) { /* noop */ }
+});
+
 function notifyState() {
   if (mainWin && !mainWin.isDestroyed()) {
     mainWin.webContents.send('rec:state', { recording, count: sessionShots });
@@ -378,6 +457,9 @@ function isOnOwnWindow(physX, physY) {
   };
   // ガジェットは常に最前面（alwaysOnTop）なので、座標が重なれば必ず自アプリ扱い。
   if (inBounds(gadgetWin)) return true;
+  // ガイド小窓（3-R6）も同様に常に最前面。録画と同時利用したとき、小窓の
+  // 「完了して次へ」等のクリックが録画に混入しないよう除外する（仕様の決定6）。
+  if (inBounds(guideWin)) return true;
   // メイン窓は「実際に前面（フォーカス）にあるとき」だけ除外する。
   // Electron の isVisible() は他アプリの背後に隠れていても true を返すため、
   // 座標だけで判定すると、Excel 等を最大化して録画したときにメイン窓と座標が
