@@ -2107,6 +2107,7 @@
           </div>
           <div class="editor-toolbar">
             <button class="btn" data-action="play" ${p.total ? '' : 'disabled '}title="1ステップずつ全画面で実行">▶ 実行</button>
+            ${window.guideAPI ? `<button class="btn" data-action="play-guide" ${p.total ? '' : 'disabled '}title="常時最前面の小窓で実行（作業しながら見られる）">🧭 小窓で実行</button>` : ''}
             <button class="btn" data-action="add-section">＋ ${isTemplate ? 'フェーズ' : 'セクション'}</button>
             ${
               isTemplate
@@ -3696,8 +3697,27 @@
       return { total: steps.length, done, skipped, seconds, stdSeconds };
     }
 
+    // ガイド小窓（3-R6）へ送る描画データ。image は null のまま返し、
+    // 呼び出し側が resolveImageAsync で dataURL に解決して埋める。
+    function guideStepPayload(checklist, steps, idx, results) {
+      const st = steps && steps[idx];
+      if (!checklist || !st) return null;
+      return {
+        title: checklist.title || '',
+        sectionTitle: st.sectionTitle || '',
+        index: idx + 1,
+        total: steps.length,
+        text: st.item.text || '',
+        note: st.item.note || '',
+        stdMin: parseInt(st.item.time, 10) || 0,
+        seconds: (results && results[idx] && Number(results[idx].seconds)) || 0,
+        image: null,
+      };
+    }
+
     // プレイヤー本体。checklistId（＋任意で sectionId）を受けて全画面オーバーレイを開く。
-    function openPlayer(checklistId, sectionId = null) {
+    // opts.gadget: true なら開いてすぐガイド小窓モード（3-R6）に入る。
+    function openPlayer(checklistId, sectionId = null, opts = {}) {
       const checklist = M.findChecklist(store.state, checklistId);
       const steps = playerSteps(checklist, sectionId);
       if (!steps.length) {
@@ -3729,9 +3749,52 @@
         if (el) el.textContent = formatPlayerTime(results[idx].seconds);
       }, 1000);
 
+      // ── ガイド小窓モード（3-R6・仕様は docs/spec-3-R6-guide-overlay.md）──
+      // window.guideAPI がある Electron 版のみ。実行状態はこの openPlayer が持ち、
+      // 小窓は表示専用（操作は onAction で受けて同じ complete/skip/prev を呼ぶ）。
+      const canGuide = !!(window.guideAPI && window.guideAPI.available);
+      let guideOn = false;
+      async function guidePayloadWithImage() {
+        const p = guideStepPayload(checklist, steps, idx, results);
+        const imgs = Array.isArray(steps[idx].item.images) ? steps[idx].item.images : [];
+        if (p && imgs.length) {
+          try { p.image = await resolveImageAsync(imgs[0]); } catch (_) { /* 画像なしで続行 */ }
+        }
+        return p;
+      }
+      async function enterGuide() {
+        if (!canGuide || guideOn) return;
+        guideOn = true;
+        overlay.style.display = 'none';
+        window.guideAPI.onAction((action) => {
+          if (!guideOn) return;
+          if (action === 'complete') complete();
+          else if (action === 'skip') skip();
+          else if (action === 'prev') prev();
+        });
+        window.guideAPI.onClosed(() => {
+          // ✕・OS 操作で小窓が閉じられた → 全画面の実行モードに戻る
+          if (!guideOn) return;
+          guideOn = false;
+          overlay.style.display = '';
+          renderPlayer();
+        });
+        await window.guideAPI.open(await guidePayloadWithImage());
+      }
+      function exitGuide({ focusMain = false } = {}) {
+        if (!guideOn) return Promise.resolve();
+        guideOn = false;
+        overlay.style.display = '';
+        return Promise.resolve(window.guideAPI.close({ focusMain }));
+      }
+
       function close() {
         clearInterval(timer);
         document.removeEventListener('keydown', onKey, true);
+        if (guideOn) {
+          guideOn = false;
+          window.guideAPI.close({});
+        }
         overlay.remove();
       }
       // 完了して次へ: 本体のチェック状態へ同期（決定1）。Undo できる通常 commit。
@@ -3779,6 +3842,7 @@
       }
       function onKey(e) {
         if (!overlay.isConnected) return;
+        if (guideOn) return; // 小窓モード中のキーボードは小窓側が受ける（決定5）
         if (e.key === 'Escape') {
           e.preventDefault();
           close();
@@ -3850,6 +3914,7 @@
             <button class="btn" data-pl="prev" type="button" ${idx === 0 ? 'disabled' : ''}>← 戻る</button>
             <button class="btn primary" data-pl="complete" type="button">✓ 完了して次へ</button>
             <button class="btn" data-pl="skip" type="button">スキップ →</button>
+            ${canGuide ? '<button class="btn" data-pl="guide" type="button" title="常時最前面の小窓に切り替えて、作業しながら進める">🧭 小窓に切替</button>' : ''}
             <div class="pl-hints">
               <span><kbd>Space</kbd> 完了して次へ</span>
               <span><kbd>←</kbd><kbd>→</kbd> 移動</span>
@@ -3908,6 +3973,19 @@
           </div>`;
       }
       function renderPlayer() {
+        if (guideOn) {
+          if (view === 'summary') {
+            // 完走: 小窓を閉じ、本体を前面に出してサマリを全画面で表示（決定2）
+            exitGuide({ focusMain: true }).then(() => {
+              overlay.innerHTML = summaryHtml();
+            });
+            return;
+          }
+          guidePayloadWithImage().then((p) => {
+            if (guideOn && p) window.guideAPI.update(p);
+          });
+          return;
+        }
         overlay.innerHTML = view === 'summary' ? summaryHtml() : stepHtml();
       }
       overlay.addEventListener('click', (e) => {
@@ -3924,12 +4002,14 @@
         else if (op === 'complete') complete();
         else if (op === 'skip') skip();
         else if (op === 'prev') prev();
+        else if (op === 'guide') enterGuide();
         else if (op === 'again') {
           initRun();
           renderPlayer();
         }
       });
       renderPlayer();
+      if (opts.gadget) enterGuide(); // 「🧭 小窓で実行」からの起動（3-R6）
       return overlay; // テスト用（本番では未使用）
     }
 
@@ -5980,6 +6060,7 @@
         case 'import-rec': return openImportPicker();
         case 'play': return c && openPlayer(c.id);
         case 'play-section': return c && openPlayer(c.id, sectionId);
+        case 'play-guide': return c && openPlayer(c.id, null, { gadget: true });
         case 'home': return goHome();
         case 'new': return openNewDialog();
         case 'open': return goEditor(id);
@@ -6187,8 +6268,9 @@
         // 録画取り込みウィザードの純関数（2-R4）
         wizardDefaultChoice, wizardStepsFrom, wizardMergeUp, wizardBulkReplace,
         wizardShotFiles, buildImportSection,
-        // 実行モード（3-R5）
+        // 実行モード（3-R5）とガイド小窓（3-R6）
         playerSteps, playerStartIndex, formatPlayerTime, playerSummary, openPlayer,
+        guideStepPayload,
       });
     }
   })();

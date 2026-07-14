@@ -64,6 +64,36 @@ contextBridge.exposeInMainWorld('recorderAPI', {
   },
 });
 
+// ガイド小窓（3-R6・仕様は docs/spec-3-R6-guide-overlay.md）。
+// 実行モード（3-R5）を常時最前面の小窓で進めるための橋渡し。
+// 実行状態は本体（index.html）側にあり、小窓（guide.html）は表示専用。
+contextBridge.exposeInMainWorld('guideAPI', {
+  available: true,
+  // ── 本体（index.html）用 ──────────────────────────────────
+  // 小窓を開く／表示中ステップを更新する。payload の形式は仕様書参照。
+  open: (payload) => ipcRenderer.invoke('guide:open', payload),
+  update: (payload) => ipcRenderer.invoke('guide:update', payload),
+  // 小窓を閉じる。{ focusMain:true } で本体ウィンドウを前面に出す（完走時）。
+  close: (opts) => ipcRenderer.invoke('guide:close', opts),
+  // 小窓からの操作（'complete' | 'skip' | 'prev'）。
+  onAction: (cb) => {
+    ipcRenderer.removeAllListeners('guide:action');
+    ipcRenderer.on('guide:action', (_e, action) => cb(action));
+  },
+  // 小窓が ✕ や OS 操作で閉じられた通知（プレイヤーは全画面表示に戻る）。
+  onClosed: (cb) => {
+    ipcRenderer.removeAllListeners('guide:closed');
+    ipcRenderer.on('guide:closed', () => cb());
+  },
+  // ── 小窓（guide.html）用 ─────────────────────────────────
+  onStep: (cb) => {
+    ipcRenderer.removeAllListeners('guide:step');
+    ipcRenderer.on('guide:step', (_e, data) => cb(data));
+  },
+  sendAction: (action) => ipcRenderer.send('guide:action', action),
+  resize: (size) => ipcRenderer.send('guide:resize', size),
+});
+
 // ファイル保存基盤（Electron 版のみ・ロードマップ 1-1）。state 本体は
 // <userData>/data/checklists.json、画像は images/ に1枚1ファイルで保存する。
 // 素のブラウザでは window.storageAPI が undefined → 従来の localStorage 保存。

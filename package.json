@@ -45,6 +45,7 @@
       "zoomcrop.js",
       "docx-postprocess.js",
       "gadget.html",
+      "guide.html",
       "package.json"
     ],
     "asarUnpack": [

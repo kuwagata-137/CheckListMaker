@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ガイド</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    /* 録画ガジェットと同じ様式: カード全体をドラッグ可能にし、
+       操作部品だけ no-drag でクリックできるようにする。 */
+    .card {
+      -webkit-app-region: drag;
+      box-sizing: border-box;
+      width: 100%;
+      height: 100vh;
+      background: rgba(20, 22, 28, 0.93);
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      border-radius: 14px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+      color: #f3f4f6;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 0.82rem;
+    }
+    .head { display: flex; align-items: center; gap: 6px; color: #cbd5e1; font-size: 0.76rem; }
+    .head .title {
+      max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .head .counter { margin-left: auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .head .counter b { color: #fff; font-size: 0.95rem; }
+    .iconbtn {
+      -webkit-app-region: no-drag;
+      border: none; background: transparent; color: #9ca3af;
+      font: inherit; font-size: 0.9rem; cursor: pointer; padding: 0 3px; line-height: 1;
+    }
+    .iconbtn:hover { color: #f3f4f6; }
+    .bar { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); overflow: hidden; flex: none; }
+    .bar i { display: block; height: 100%; width: 0; background: #4a8dff; transition: width 0.2s; }
+    .shot {
+      -webkit-app-region: no-drag;
+      border-radius: 8px; overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(255, 255, 255, 0.06);
+      cursor: zoom-in; flex: none;
+    }
+    .shot img { display: block; width: 100%; height: 118px; object-fit: contain; background: #fff; }
+    .card.zoomed .shot { cursor: zoom-out; }
+    .card.zoomed .shot img { height: 300px; }
+    .text { font-weight: 700; font-size: 0.95rem; line-height: 1.45; color: #fff; overflow-wrap: anywhere; }
+    .text.empty { color: #9ca3af; font-weight: 400; }
+    .note {
+      font-size: 0.74rem; color: #cbd5e1;
+      background: rgba(255, 255, 255, 0.07); border-radius: 6px; padding: 5px 8px;
+      overflow-wrap: anywhere;
+    }
+    .times { display: flex; gap: 12px; font-size: 0.72rem; color: #9ca3af; font-variant-numeric: tabular-nums; }
+    .times b { color: #e5e7eb; font-weight: 600; }
+    .actions { -webkit-app-region: no-drag; display: flex; gap: 6px; }
+    .gbtn {
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.08);
+      color: #e5e7eb; border-radius: 9px; padding: 7px 9px;
+      font: inherit; font-size: 0.8rem; white-space: nowrap; cursor: pointer;
+    }
+    .gbtn:hover { background: rgba(255, 255, 255, 0.16); }
+    .gbtn:disabled { opacity: 0.4; cursor: default; }
+    .gbtn.primary { flex: 1; background: #2f6feb; border-color: #2f6feb; color: #fff; font-weight: 700; }
+    .gbtn.primary:hover { background: #2861d0; }
+    .foot { -webkit-app-region: no-drag; display: flex; gap: 12px; font-size: 0.72rem; color: #9ca3af; }
+    .foot span { cursor: pointer; }
+    .foot span:hover { color: #e5e7eb; }
+
+    /* ---- 折りたたみ（1行バー） ---- */
+    .card.mini { flex-direction: row; align-items: center; gap: 8px; padding: 8px 12px; }
+    .card.mini .bar, .card.mini .shot, .card.mini .note, .card.mini .times,
+    .card.mini .foot, .card.mini .head .title, .card.mini .btn-prev, .card.mini .btn-skip { display: none; }
+    .card.mini .head { display: contents; }
+    .card.mini .counter { margin-left: 0; font-size: 0.72rem; }
+    .card.mini .text { flex: 1; min-width: 0; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card.mini .actions { display: contents; }
+    .card.mini .btn-complete { flex: none; padding: 5px 10px; }
+    .card.mini .btn-complete .lbl { display: none; }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="head">
+      🧭 <span class="title" id="title" title=""></span>
+      <span class="counter" id="counter"></span>
+      <button class="iconbtn" id="toggle" title="折りたたみ / 展開">▾</button>
+      <button class="iconbtn" id="close" title="小窓を閉じる（全画面の実行モードに戻る）">✕</button>
+    </div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="shot" id="shot" hidden title="クリックで拡大 / 縮小"><img id="img" alt="ステップ画像" /></div>
+    <div class="text" id="text"></div>
+    <div class="note" id="note" hidden></div>
+    <div class="times">
+      <span>実測 <b id="elapsed">0:00</b></span>
+      <span id="stdwrap" hidden>標準 <b id="std"></b></span>
+    </div>
+    <div class="actions">
+      <button class="gbtn btn-prev" id="prev" title="戻る">←</button>
+      <button class="gbtn primary btn-complete" id="complete">✓<span class="lbl"> 完了して次へ</span></button>
+      <button class="gbtn btn-skip" id="skip" title="スキップ（チェックなしで次へ）">→</button>
+    </div>
+    <div class="foot"><span id="fold">▾ 折りたたみ</span></div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+      const $ = (id) => document.getElementById(id);
+      const elCard = $('card');
+      const api = window.guideAPI;
+
+      // 表示専用: 実行状態（steps/results）は本体側にあり、ここはペイロードを
+      // 描画して操作（complete/skip/prev）を送り返すだけ。仕様は
+      // docs/spec-3-R6-guide-overlay.md 参照。
+      let cur = null; // 最新ペイロード
+      let seconds = 0; // 実測表示（ペイロードの秒を種にローカルで進める）
+      let mini = false;
+      let zoomed = false;
+
+      function fmt(sec) {
+        const s = Math.max(0, Math.round(sec || 0));
+        return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+      }
+      function render() {
+        if (!cur) return;
+        $('title').textContent = cur.title || '';
+        $('title').title = cur.title || '';
+        $('counter').innerHTML = 'ステップ <b>' + cur.index + '</b> / ' + cur.total;
+        $('bar').style.width = Math.round(((cur.index - 1) / (cur.total || 1)) * 100) + '%';
+        const hasImg = !!cur.image;
+        $('shot').hidden = !hasImg;
+        if (hasImg) $('img').src = cur.image;
+        $('text').textContent = cur.text || '（無題の手順）';
+        $('text').classList.toggle('empty', !cur.text);
+        $('note').hidden = !cur.note;
+        $('note').textContent = cur.note ? '💬 ' + cur.note : '';
+        $('stdwrap').hidden = !cur.stdMin;
+        $('std').textContent = cur.stdMin ? fmt(cur.stdMin * 60) : '';
+        $('elapsed').textContent = fmt(seconds);
+        $('prev').disabled = cur.index <= 1;
+      }
+      setInterval(() => {
+        if (!cur) return;
+        seconds += 1;
+        $('elapsed').textContent = fmt(seconds);
+      }, 1000);
+
+      // 折りたたみ⇔展開・画像の一時拡大は、カードの見た目と一緒に
+      // ウィンドウの大きさもメイン側で変える（guide:resize）。
+      function applySize() {
+        if (!api) return;
+        if (mini) api.resize({ width: 320, height: 56 });
+        else if (zoomed) api.resize({ width: 420, height: 620 });
+        else api.resize({ width: 320, height: 430 });
+      }
+      function setMini(on) {
+        mini = on;
+        if (mini) zoomed = false;
+        elCard.classList.toggle('mini', mini);
+        elCard.classList.toggle('zoomed', zoomed);
+        $('toggle').textContent = mini ? '▴' : '▾';
+        applySize();
+      }
+      $('toggle').addEventListener('click', () => setMini(!mini));
+      $('fold').addEventListener('click', () => setMini(true));
+      $('shot').addEventListener('click', () => {
+        zoomed = !zoomed;
+        elCard.classList.toggle('zoomed', zoomed);
+        applySize();
+      });
+
+      if (api) {
+        api.onStep((payload) => {
+          if (!payload) return;
+          cur = payload;
+          seconds = Number(payload.seconds) || 0;
+          render();
+        });
+        $('complete').addEventListener('click', () => api.sendAction('complete'));
+        $('skip').addEventListener('click', () => api.sendAction('skip'));
+        $('prev').addEventListener('click', () => api.sendAction('prev'));
+        // キーボードは小窓にフォーカスがあるときだけ（決定5・グローバルフックなし）
+        document.addEventListener('keydown', (e) => {
+          if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); api.sendAction('complete'); }
+          else if (e.key === 'ArrowLeft') { e.preventDefault(); api.sendAction('prev'); }
+          else if (e.key === 'ArrowRight') { e.preventDefault(); api.sendAction('skip'); }
+          else if (e.key === 'Escape') { e.preventDefault(); window.close(); }
+        });
+      }
+      // ✕: 小窓を閉じる。メイン側の closed ハンドラが本体へ guide:closed を送り、
+      // プレイヤーは全画面表示に戻る。
+      $('close').addEventListener('click', () => window.close());
+    })();
+  </script>
+</body>
+</html>
