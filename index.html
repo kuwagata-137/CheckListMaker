@@ -644,6 +644,113 @@
     z-index: 80;
   }
 
+  /* ---- 実行モード（3-R5・仕様は docs/spec-3-R5-player.md） ---- */
+  .player-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 90; /* モーダル(100)の下・アプリの上 */
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+  }
+  .pl-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 18px;
+    flex: none;
+  }
+  .pl-top .pl-list { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pl-top .pl-sec { color: var(--muted); font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pl-counter { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pl-counter b { color: var(--text); font-size: 1.05em; }
+  .pl-progress { height: 5px; background: var(--surface-2); flex: none; }
+  .pl-progress i { display: block; height: 100%; background: var(--primary); border-radius: 0 3px 3px 0; transition: width 0.2s; }
+  .pl-main {
+    flex: 1;
+    overflow: auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(260px, 1fr);
+    gap: 22px;
+    padding: 22px 26px;
+    align-items: start;
+  }
+  .pl-main.no-image { display: block; max-width: 760px; width: 100%; margin: 0 auto; }
+  .pl-shot {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-item);
+    padding: 8px;
+  }
+  .pl-shot .pl-img { display: block; max-width: 100%; max-height: 62vh; margin: 0 auto; border-radius: 6px; }
+  .pl-thumbs { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .pl-thumbs img {
+    width: 64px; height: 48px; object-fit: cover; border-radius: 4px;
+    border: 2px solid transparent; cursor: pointer;
+  }
+  .pl-thumbs img.active { border-color: var(--primary); }
+  .pl-pane { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .pl-text { font-size: 1.3rem; font-weight: 600; line-height: 1.5; margin: 0; overflow-wrap: anywhere; }
+  .pl-text.empty { color: var(--muted); font-weight: 400; }
+  .pl-note {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; color: var(--muted); font-size: 0.92rem; overflow-wrap: anywhere;
+  }
+  .pl-bodyview {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; font-size: 0.95rem; overflow-x: auto;
+  }
+  .pl-bodyview table { border-collapse: collapse; }
+  .pl-bodyview th, .pl-bodyview td { border: 1px solid var(--border-strong); padding: 3px 8px; }
+  .pl-times { display: flex; gap: 20px; font-variant-numeric: tabular-nums; }
+  .pl-times .k { display: block; font-size: 0.72rem; color: var(--muted); letter-spacing: 0.05em; }
+  .pl-times .v { font-size: 1.35rem; font-weight: 600; }
+  .pl-bottom {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface); border-top: 1px solid var(--border);
+    padding: 12px 18px; flex: none; flex-wrap: wrap;
+  }
+  .pl-hints { margin-left: auto; display: flex; gap: 14px; color: var(--muted); font-size: 0.8rem; flex-wrap: wrap; }
+  .pl-hints kbd {
+    font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; font-size: 0.75rem;
+    background: var(--surface-2); border: 1px solid var(--border-strong);
+    border-bottom-width: 2px; border-radius: 4px; padding: 0 5px;
+  }
+  .pl-summary {
+    flex: 1; overflow: auto; padding: 26px;
+    display: flex; flex-direction: column; gap: 18px;
+    max-width: 860px; width: 100%; margin: 0 auto;
+  }
+  .pl-summary h3 { margin: 0; }
+  .pl-stats { display: flex; gap: 12px; flex-wrap: wrap; }
+  .pl-stat {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow-item); padding: 10px 16px; min-width: 120px;
+  }
+  .pl-stat .k { font-size: 0.72rem; color: var(--muted); letter-spacing: 0.05em; }
+  .pl-stat .v { font-size: 1.4rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+  table.pl-table {
+    border-collapse: collapse; width: 100%;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden; font-size: 0.9rem;
+  }
+  table.pl-table th, table.pl-table td {
+    text-align: left; padding: 7px 12px; border-top: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+  }
+  table.pl-table th { border-top: none; background: var(--surface-2); font-size: 0.76rem; color: var(--muted); }
+  table.pl-table td.num { text-align: right; white-space: nowrap; }
+  table.pl-table td.num.over { color: var(--danger); font-weight: 600; }
+  .pl-chip {
+    font-size: 0.72rem; border-radius: 999px; padding: 1px 9px; font-weight: 600;
+    border: 1px solid var(--border-strong); color: var(--muted); white-space: nowrap;
+  }
+  .pl-chip.done { color: var(--primary); border-color: var(--primary); }
+  @media (max-width: 720px) { .pl-main { grid-template-columns: 1fr; } }
+
   /* ---- モーダル ---- */
   .modal-overlay {
     position: fixed;
@@ -1034,6 +1141,7 @@
     #topbar, #app { display: none !important; }
     /* プレビューモーダルを開いたまま印刷/PDF化するため、モーダル類も紙面から除く */
     .modal-overlay { display: none !important; }
+    .player-overlay { display: none !important; }
     #print-root { display: block !important; }
     body { background: #fff; color: #000; }
     @page { margin: 16mm; }
@@ -1998,6 +2106,7 @@
             <small>${p.done} / ${p.total} 完了（${p.percent}%）${timeNote}</small>
           </div>
           <div class="editor-toolbar">
+            <button class="btn" data-action="play" ${p.total ? '' : 'disabled '}title="1ステップずつ全画面で実行">▶ 実行</button>
             <button class="btn" data-action="add-section">＋ ${isTemplate ? 'フェーズ' : 'セクション'}</button>
             ${
               isTemplate
@@ -2038,6 +2147,9 @@
                    placeholder="${isTemplate ? 'フェーズ名（任意）' : 'セクション名（任意）'}"
                    value="${escapeHtml(section.title)}" />
             <small class="section-progress">${meta}</small>
+            <button class="icon" title="このセクションだけ実行"
+                    data-action="play-section" data-section="${section.id}"
+                    ${prog.total ? '' : 'disabled '}>▶</button>
             <button class="icon add" title="${isTemplate ? '手順を追加' : '項目を追加'}"
                     data-action="add-item-btn" data-section="${section.id}">＋</button>
             <button class="icon danger" title="削除"
@@ -3536,6 +3648,289 @@
           importBtn.textContent = '取り込む';
         }
       });
+    }
+
+    // =========================================================================
+    // player — 実行モード（3-R5・仕様は docs/spec-3-R5-player.md）
+    //   1ステップ全画面表示・完了チェック（本体と同期）・キーボード操作・
+    //   実測/標準時間の比較（実測は保存しない）。単体HTMLにも app JS ごと同梱される。
+    // =========================================================================
+    // -- 純関数（テスト対象。window.__test__ に公開） --
+    // 実行対象ステップの平坦化。sectionId を渡すとそのセクションだけを対象にする。
+    function playerSteps(checklist, sectionId = null) {
+      if (!checklist || !Array.isArray(checklist.sections)) return [];
+      const secs = sectionId
+        ? checklist.sections.filter((s) => s.id === sectionId)
+        : checklist.sections;
+      const steps = [];
+      secs.forEach((sec) =>
+        (sec.items || []).forEach((it) =>
+          steps.push({ sectionId: sec.id, sectionTitle: sec.title || '', item: it })
+        )
+      );
+      return steps;
+    }
+    // 開始位置: 未チェックの最初のステップ（全部チェック済み・空なら先頭）
+    function playerStartIndex(steps) {
+      const i = steps.findIndex((st) => !st.item.done);
+      return i >= 0 ? i : 0;
+    }
+    // 秒 → "m:ss"
+    function formatPlayerTime(seconds) {
+      const s = Math.max(0, Math.round(Number(seconds) || 0));
+      return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }
+    // 集計: results[i] = { status: 'pending'|'done'|'skip', seconds }
+    function playerSummary(steps, results) {
+      let done = 0;
+      let skipped = 0;
+      let seconds = 0;
+      let stdSeconds = 0;
+      steps.forEach((st, i) => {
+        const r = results[i] || {};
+        if (r.status === 'done') done += 1;
+        else if (r.status === 'skip') skipped += 1;
+        seconds += Number(r.seconds) || 0;
+        stdSeconds += (parseInt(st.item.time, 10) || 0) * 60;
+      });
+      return { total: steps.length, done, skipped, seconds, stdSeconds };
+    }
+
+    // プレイヤー本体。checklistId（＋任意で sectionId）を受けて全画面オーバーレイを開く。
+    function openPlayer(checklistId, sectionId = null) {
+      const checklist = M.findChecklist(store.state, checklistId);
+      const steps = playerSteps(checklist, sectionId);
+      if (!steps.length) {
+        showToast('実行できる項目がありません。');
+        return;
+      }
+      const overlay = document.createElement('div');
+      overlay.className = 'player-overlay';
+      document.body.appendChild(overlay);
+
+      let results; // ステップ別の実行結果（実測秒は保存しない・このオーバーレイ限り）
+      let idx; // 表示中のステップ
+      let imgIndex; // 表示中ステップの画像インデックス
+      let view; // 'step' | 'summary'
+      function initRun() {
+        // 開始時点でチェック済みのステップは「完了(0:00)」として扱う（決定1・3）
+        results = steps.map((st) => ({ status: st.item.done ? 'done' : 'pending', seconds: 0 }));
+        idx = playerStartIndex(steps);
+        imgIndex = 0;
+        view = 'step';
+      }
+      initRun();
+
+      // 実測時間: 表示中のステップに1秒刻みで加算（サマリ中は止まる）。保存はしない（決定2）。
+      const timer = setInterval(() => {
+        if (view !== 'step' || !results[idx]) return;
+        results[idx].seconds += 1;
+        const el = overlay.querySelector('[data-pl-elapsed]');
+        if (el) el.textContent = formatPlayerTime(results[idx].seconds);
+      }, 1000);
+
+      function close() {
+        clearInterval(timer);
+        document.removeEventListener('keydown', onKey, true);
+        overlay.remove();
+      }
+      // 完了して次へ: 本体のチェック状態へ同期（決定1）。Undo できる通常 commit。
+      function complete() {
+        const st = steps[idx];
+        results[idx].status = 'done';
+        if (!st.item.done) {
+          store.commit((s) => {
+            const cc = M.findChecklist(s, checklist.id);
+            const sec = cc && cc.sections.find((x) => x.id === st.sectionId);
+            const it = sec && sec.items.find((x) => x.id === st.item.id);
+            if (it) {
+              it.done = true;
+              cc.updatedAt = Date.now();
+            }
+          });
+        }
+        advance();
+      }
+      // スキップ: チェックは付けず次へ（決定4）。チェック済みの項目は「完了」のまま。
+      function skip() {
+        if (results[idx].status !== 'done') results[idx].status = 'skip';
+        advance();
+      }
+      function advance() {
+        if (idx + 1 >= steps.length) {
+          view = 'summary';
+        } else {
+          idx += 1;
+          imgIndex = 0;
+        }
+        renderPlayer();
+      }
+      function prev() {
+        if (view === 'summary') {
+          view = 'step';
+          idx = steps.length - 1;
+        } else if (idx > 0) {
+          idx -= 1;
+        } else {
+          return;
+        }
+        imgIndex = 0;
+        renderPlayer();
+      }
+      function onKey(e) {
+        if (!overlay.isConnected) return;
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          close();
+          return;
+        }
+        if (view !== 'step') return;
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          complete();
+        } else if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          prev();
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          skip();
+        }
+      }
+      // capture: リッチ本文等のドキュメントリスナーより先に受ける（プレイヤー表示中は編集UIが無い）
+      document.addEventListener('keydown', onKey, true);
+
+      function shotHtml(item) {
+        const imgs = Array.isArray(item.images) ? item.images : [];
+        if (!imgs.length) return '';
+        if (imgIndex >= imgs.length) imgIndex = 0;
+        const src = imgs[imgIndex];
+        const thumbs =
+          imgs.length > 1
+            ? `<div class="pl-thumbs">${imgs
+                .map(
+                  (s, i) =>
+                    `<img src="${resolveImageSync(s)}"${isImgRef(s) ? ` data-img-ref="${s}"` : ''}
+                       class="${i === imgIndex ? 'active' : ''}" data-pl-img="${i}" alt="画像 ${i + 1}" />`
+                )
+                .join('')}</div>`
+            : '';
+        return `<figure class="pl-shot" style="margin:0">
+          <img class="pl-img" src="${resolveImageSync(src)}"${isImgRef(src) ? ` data-img-ref="${src}"` : ''}
+               alt="ステップ画像" />
+          ${thumbs}
+        </figure>`;
+      }
+      function stepHtml() {
+        const st = steps[idx];
+        const item = st.item;
+        const shot = shotHtml(item);
+        const body = item.body ? sanitizeBodyHtml(item.body) : '';
+        const stdMin = parseInt(item.time, 10) || 0;
+        return `
+          <div class="pl-top">
+            <span class="pl-list">${escapeHtml(checklist.title)}</span>
+            ${st.sectionTitle ? `<span class="pl-sec">▸ ${escapeHtml(st.sectionTitle)}</span>` : ''}
+            <span class="pl-counter">ステップ <b>${idx + 1}</b> / ${steps.length}</span>
+            <button class="btn" data-pl="exit" type="button">✕ 終了</button>
+          </div>
+          <div class="pl-progress"><i style="width:${Math.round((idx / steps.length) * 100)}%"></i></div>
+          <div class="pl-main${shot ? '' : ' no-image'}">
+            ${shot}
+            <div class="pl-pane">
+              <p class="pl-text${item.text ? '' : ' empty'}">${item.text ? escapeHtml(item.text) : '（無題の手順）'}</p>
+              ${body ? `<div class="pl-bodyview">${body}</div>` : ''}
+              ${item.note ? `<div class="pl-note">💬 ${escapeHtml(item.note)}</div>` : ''}
+              <div class="pl-times">
+                <span><span class="k">実測</span><span class="v" data-pl-elapsed>${formatPlayerTime(results[idx].seconds)}</span></span>
+                <span><span class="k">標準時間</span><span class="v">${stdMin ? formatPlayerTime(stdMin * 60) : '—'}</span></span>
+              </div>
+            </div>
+          </div>
+          <div class="pl-bottom">
+            <button class="btn" data-pl="prev" type="button" ${idx === 0 ? 'disabled' : ''}>← 戻る</button>
+            <button class="btn primary" data-pl="complete" type="button">✓ 完了して次へ</button>
+            <button class="btn" data-pl="skip" type="button">スキップ →</button>
+            <div class="pl-hints">
+              <span><kbd>Space</kbd> 完了して次へ</span>
+              <span><kbd>←</kbd><kbd>→</kbd> 移動</span>
+              <span><kbd>Esc</kbd> 終了</span>
+            </div>
+          </div>`;
+      }
+      function summaryHtml() {
+        const sum = playerSummary(steps, results);
+        const rows = steps
+          .map((st, i) => {
+            const r = results[i];
+            const stdSec = (parseInt(st.item.time, 10) || 0) * 60;
+            const over = r.status !== 'pending' && stdSec > 0 && r.seconds > stdSec;
+            const chip =
+              r.status === 'done'
+                ? '<span class="pl-chip done">完了</span>'
+                : r.status === 'skip'
+                  ? '<span class="pl-chip">スキップ</span>'
+                  : '<span class="pl-chip">未実施</span>';
+            return `<tr>
+              <td>${i + 1}</td>
+              <td>${st.item.text ? escapeHtml(st.item.text) : '（無題の手順）'}</td>
+              <td>${chip}</td>
+              <td class="num${over ? ' over' : ''}">${r.status === 'pending' ? '—' : formatPlayerTime(r.seconds)}</td>
+              <td class="num">${stdSec ? formatPlayerTime(stdSec) : '—'}</td>
+            </tr>`;
+          })
+          .join('');
+        return `
+          <div class="pl-top">
+            <span class="pl-list">${escapeHtml(checklist.title)}</span>
+            <span class="pl-counter">${steps.length} ステップ</span>
+            <button class="btn" data-pl="exit" type="button">✕ 終了</button>
+          </div>
+          <div class="pl-progress"><i style="width:100%"></i></div>
+          <div class="pl-summary">
+            <h3>🏁 実行完了 — ${escapeHtml(checklist.title)}</h3>
+            <div class="pl-stats">
+              <div class="pl-stat"><div class="k">完了</div><div class="v">${sum.done} / ${sum.total}</div></div>
+              <div class="pl-stat"><div class="k">スキップ</div><div class="v">${sum.skipped}</div></div>
+              <div class="pl-stat"><div class="k">合計実測</div><div class="v">${formatPlayerTime(sum.seconds)}</div></div>
+              <div class="pl-stat"><div class="k">合計標準</div><div class="v">${sum.stdSeconds ? formatPlayerTime(sum.stdSeconds) : '—'}</div></div>
+            </div>
+            <div style="overflow-x:auto">
+              <table class="pl-table">
+                <thead><tr><th>#</th><th>ステップ</th><th>結果</th><th style="text-align:right">実測</th><th style="text-align:right">標準</th></tr></thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap">
+              <button class="btn primary" data-pl="exit" type="button">リストに戻る</button>
+              <button class="btn" data-pl="again" type="button">もう一度実行</button>
+              <button class="btn" data-pl="prev" type="button">← 最後のステップに戻る</button>
+            </div>
+          </div>`;
+      }
+      function renderPlayer() {
+        overlay.innerHTML = view === 'summary' ? summaryHtml() : stepHtml();
+      }
+      overlay.addEventListener('click', (e) => {
+        const thumb = e.target.closest('[data-pl-img]');
+        if (thumb) {
+          imgIndex = Number(thumb.dataset.plImg) || 0;
+          renderPlayer();
+          return;
+        }
+        const btn = e.target.closest('[data-pl]');
+        if (!btn || btn.disabled) return;
+        const op = btn.dataset.pl;
+        if (op === 'exit') close();
+        else if (op === 'complete') complete();
+        else if (op === 'skip') skip();
+        else if (op === 'prev') prev();
+        else if (op === 'again') {
+          initRun();
+          renderPlayer();
+        }
+      });
+      renderPlayer();
+      return overlay; // テスト用（本番では未使用）
     }
 
     // 📥ボタンの表示制御（ブラウザ単体では非表示・録画中は無効）。
@@ -5583,6 +5978,8 @@
         case 'redo': return store.redo();
         case 'record': return toggleRecording();
         case 'import-rec': return openImportPicker();
+        case 'play': return c && openPlayer(c.id);
+        case 'play-section': return c && openPlayer(c.id, sectionId);
         case 'home': return goHome();
         case 'new': return openNewDialog();
         case 'open': return goEditor(id);
@@ -5790,6 +6187,8 @@
         // 録画取り込みウィザードの純関数（2-R4）
         wizardDefaultChoice, wizardStepsFrom, wizardMergeUp, wizardBulkReplace,
         wizardShotFiles, buildImportSection,
+        // 実行モード（3-R5）
+        playerSteps, playerStartIndex, formatPlayerTime, playerSummary, openPlayer,
       });
     }
   })();
