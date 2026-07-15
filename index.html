@@ -227,10 +227,34 @@
 
   .editor-toolbar {
     display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 12px;
     margin-bottom: 18px;
   }
+  /* タブ（上段）と編集バー（下段） */
+  .tb-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tb-tab {
+    font: inherit;
+    font-weight: 600;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 8px 15px;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    border-radius: 8px 8px 0 0;
+  }
+  .tb-tab:hover { background: var(--surface-2); color: var(--text); }
+  .tb-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+  .tb-panel { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tb-panel[hidden] { display: none; }
+  .tb-divider { height: 1px; background: var(--border); }
+  .tb-fixed { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
   /* セクション */
   .section {
@@ -531,6 +555,9 @@
   .ie-tool {
     width: 34px;
     height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--surface);
@@ -540,6 +567,18 @@
   }
   .ie-tool:hover { background: var(--surface-2); }
   .ie-tool.active { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
+  /* SVGライン アイコン（ハンド/吹き出し/ペン/ハイライト/消しゴム）。currentColor で
+     選択時の白反転（.ie-tool.active）に追従する。 */
+  .ie-ic {
+    width: 19px;
+    height: 19px;
+    display: block;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
   .ie-color-btn {
     display: inline-flex; align-items: center; gap: 4px;
     width: auto; height: 34px; padding: 0 8px;
@@ -2379,6 +2418,9 @@
           </div>
         </article>`;
     }
+    // エディタ・ツールバーのアクティブタブ（'run' | 'export'）。エディタは innerHTML で
+    // 再描画されるため、選択中タブをここで保持して再描画後も維持する。
+    let activeToolbarTab = 'run';
     function renderEditor(checklist) {
       const p = progress(checklist);
       const isTemplate = checklist.type === MODES.TEMPLATE;
@@ -2408,22 +2450,32 @@
             <small>${p.done} / ${p.total} 完了（${p.percent}%）${timeNote}</small>
           </div>
           <div class="editor-toolbar">
-            <button class="btn" data-action="play" ${p.total ? '' : 'disabled '}title="1ステップずつ全画面で実行">▶ 実行</button>
-            ${window.guideAPI ? `<button class="btn" data-action="play-guide" ${p.total ? '' : 'disabled '}title="常時最前面の小窓で実行（作業しながら見られる）">🧭 小窓で実行</button>` : ''}
-            <button class="btn" data-action="add-section">＋ ${isTemplate ? 'フェーズ' : 'セクション'}</button>
-            ${
-              isTemplate
-                ? `<button class="btn" data-action="reset">↺ 一括リセット</button>
-                   <button class="btn" data-action="cover">🪧 表紙</button>`
-                : `<button class="btn" data-action="clear-completed">完了を削除</button>`
-            }
-            <button class="btn" data-action="share">🔗 共有リンク</button>
-            <button class="btn" data-action="print">🖨 印刷 / PDF</button>
-            <button class="btn" data-action="save-html">💾 ${IS_STANDALONE ? '保存（HTML）' : '名前を付けて保存 (HTML)'}</button>
-            ${window.docxAPI ? '<button class="btn" data-action="save-docx">📄 Word (.docx)</button>' : ''}
-            ${window.xlsxAPI ? '<button class="btn" data-action="save-xlsx">📊 Excel (.xlsx)</button>' : ''}
-            ${window.csvAPI ? '<button class="btn" data-action="save-csv">📋 CSV</button>' : ''}
-            ${window.printAPI ? '<button class="btn" data-action="save-pdf">📕 PDF</button>' : ''}
+            <div class="tb-tabs" role="tablist">
+              <button class="tb-tab${activeToolbarTab === 'run' ? ' active' : ''}" data-tab="run" role="tab">▶ 実行</button>
+              <button class="tb-tab${activeToolbarTab === 'export' ? ' active' : ''}" data-tab="export" role="tab">📤 他ファイルで出力</button>
+            </div>
+            <div class="tb-panel" data-panel="run"${activeToolbarTab === 'run' ? '' : ' hidden'}>
+              <button class="btn" data-action="play" ${p.total ? '' : 'disabled '}title="1ステップずつ全画面で実行">▶ 実行</button>
+              ${window.guideAPI ? `<button class="btn" data-action="play-guide" ${p.total ? '' : 'disabled '}title="常時最前面の小窓で実行（作業しながら見られる）">🧭 小窓で実行</button>` : ''}
+            </div>
+            <div class="tb-panel" data-panel="export"${activeToolbarTab === 'export' ? '' : ' hidden'}>
+              ${window.docxAPI ? '<button class="btn" data-action="save-docx">📄 Word (.docx)</button>' : ''}
+              ${window.xlsxAPI ? '<button class="btn" data-action="save-xlsx">📊 Excel (.xlsx)</button>' : ''}
+              ${window.printAPI ? '<button class="btn" data-action="save-pdf">📕 PDF</button>' : ''}
+              <button class="btn" data-action="share">🔗 共有リンク</button>
+            </div>
+            <div class="tb-divider"></div>
+            <div class="tb-fixed">
+              <button class="btn" data-action="save-html">💾 ${IS_STANDALONE ? '保存（HTML）' : '名前を付けて保存 (HTML)'}</button>
+              <button class="btn" data-action="print">🖨 印刷</button>
+              <button class="btn" data-action="add-section">＋ ${isTemplate ? 'フェーズ' : 'セクション'}</button>
+              ${
+                isTemplate
+                  ? `<button class="btn" data-action="cover">🪧 表紙</button>
+                     <button class="btn" data-action="reset">↺ 一括リセット</button>`
+                  : `<button class="btn" data-action="clear-completed">完了を削除</button>`
+              }
+            </div>
           </div>
           ${
             isTemplate && checklist.coverPage && checklist.coverPage.enabled
@@ -5016,15 +5068,15 @@
         <div class="modal img-editor" role="dialog" aria-modal="true">
           <div class="ie-toolbar">
             <div class="ie-tools">
-              <button class="ie-tool" data-tool="hand" title="ハンド（画像を移動）">✋</button>
+              <button class="ie-tool" data-tool="hand" title="ハンド（画像を移動）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></button>
               <button class="ie-tool" data-tool="arrow" title="矢印">↗</button>
               <button class="ie-tool" data-tool="line" title="直線（Shiftで45°刻み）">╱</button>
               <button class="ie-tool" data-tool="rect" title="四角">▢</button>
               <button class="ie-tool" data-tool="ellipse" title="丸">◯</button>
-              <button class="ie-tool" data-tool="callout" title="吹き出し（コメント）">💬</button>
-              <button class="ie-tool" data-tool="pen" title="フリーハンドペン">✏</button>
-              <button class="ie-tool" data-tool="marker" title="ハイライト">🖍</button>
-              <button class="ie-tool" data-tool="eraser" title="消しゴム（描いた注釈だけ消す）">⌫</button>
+              <button class="ie-tool" data-tool="callout" title="吹き出し（コメント）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></button>
+              <button class="ie-tool" data-tool="pen" title="フリーハンドペン"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+              <button class="ie-tool" data-tool="marker" title="ハイライト"><svg class="ie-ic" viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button>
+              <button class="ie-tool" data-tool="eraser" title="消しゴム（描いた注釈だけ消す）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg></button>
               <button class="ie-tool" data-tool="text" title="テキスト">T</button>
               <button class="ie-tool" data-tool="mosaic" title="モザイク/ぼかし">▦</button>
               <button class="ie-tool" data-tool="crop" title="トリミング">⛶</button>
@@ -5074,7 +5126,7 @@
       const colorInput = overlay.querySelector('.ie-color input');
       const sizeInput = overlay.querySelector('.ie-size input');
       const toolBtns = overlay.querySelectorAll('.ie-tool');
-      let tool = 'arrow';
+      let tool = null; // null = ツール未選択（初期状態。選択・移動のみ、描画しない）
       const undoStack = [];
 
       // ---- ベクター注釈オブジェクト ----
@@ -5358,7 +5410,8 @@
         if (t === 'crop') enterCropMode();
         recomposite();
       }
-      toolBtns.forEach((b) => b.addEventListener('click', () => selectTool(b.dataset.tool)));
+      // 同じツールを再クリックしたら未選択（null）へトグルする。
+      toolBtns.forEach((b) => b.addEventListener('click', () => selectTool(b.dataset.tool === tool ? null : b.dataset.tool)));
 
       const baseImg = new Image();
       baseImg.onload = () => {
@@ -5968,9 +6021,8 @@
       function enterCropMode() {
         if (canvas.width < 10 || canvas.height < 10) return;
         cropMode = true;
-        const m = Math.round(Math.min(canvas.width, canvas.height) * 0.1);
-        cropRect = { x: m, y: m, w: canvas.width - m * 2, h: canvas.height - m * 2 };
-        if (cropRect.w < 10 || cropRect.h < 10) cropRect = { x: 0, y: 0, w: canvas.width, h: canvas.height };
+        // 初期選択枠は全画面（＝トリミングなし）。ここから8ハンドルで内側へ縮める。
+        cropRect = { x: 0, y: 0, w: canvas.width, h: canvas.height };
         if (cropActions) cropActions.hidden = false;
         recomposite();
       }
@@ -6057,15 +6109,15 @@
         });
         cropMode = false; cropRect = null; cropDrag = null;
         if (cropActions) cropActions.hidden = true;
-        selectTool('arrow');
+        selectTool(null);
         applyZoom();
         recomposite();
       }
       if (cropActions) {
         overlay.querySelector('.ie-crop-apply').addEventListener('click', applyCrop);
-        overlay.querySelector('.ie-crop-cancel').addEventListener('click', () => selectTool('arrow'));
+        overlay.querySelector('.ie-crop-cancel').addEventListener('click', () => selectTool(null));
       }
-      selectTool('arrow'); // 初期ツール（crop 系関数の定義後に呼ぶ）
+      selectTool(null); // 初期は未選択（crop 系関数の定義後に呼ぶ）
 
       // ---- ポインタ操作 ----
       let drawing = false;
@@ -6082,9 +6134,15 @@
         // 右ボタンは contextmenu（右クリック削除メニュー）に任せる。
         // ここを素通しすると右ドラッグで描画・選択が始まってしまう。
         if (e.button !== 0) return;
+        // テキスト編集中に枠外を左クリック → 確定（空なら破棄）のみ。新規テキストは作らない。
+        if (editingText) {
+          const ta = canvasWrap.querySelector('.ie-text-input');
+          if (ta) ta.blur(); // blur→commit で確定
+          return;
+        }
         colorGestureFor = null;
         const p = xy(e);
-        // 吹き出し編集中：先端付近を掴めば尻尾ドラッグ、それ以外を押したら確定して続行。
+        // 吹き出し編集中：先端付近を掴めば尻尾ドラッグ、それ以外を押したら確定のみ。
         if (activeCallout) {
           if (nearCalloutTip(p)) {
             activeCallout.dragTip = true;
@@ -6093,9 +6151,11 @@
             return;
           }
           commitCallout();
+          return; // 外側クリックは確定のみ。新規吹き出しは作らない
         }
-        // 既存オブジェクトの選択・ドラッグ開始（ツール本来の動作より優先）
-        if (OBJECT_TOOLS.includes(tool)) {
+        // 既存オブジェクトの選択・ドラッグ開始（ツール本来の動作より優先）。
+        // 未選択（null）でも選択・移動はできる（描画しないだけ）。
+        if (tool === null || OBJECT_TOOLS.includes(tool)) {
           const sel = selectedObj();
           const hk = sel && hitObjHandle(sel, p);
           if (hk) { // 選択中オブジェクトのハンドル（端点・四隅・尻尾）
@@ -6113,6 +6173,7 @@
           }
           if (selectedId) { selectedId = null; recomposite(); } // 空白クリックで選択解除して通常動作へ
         }
+        if (tool === null) return; // 未選択時は描画・パンへ進まない（選択・移動のみ）
         if (tool === 'hand') { startPan(e); return; }
         if (tool === 'crop') {
           if (!cropRect) return;
@@ -6177,7 +6238,8 @@
         if (tool === 'crop') { if (cropDrag) updateCrop(xy(e)); return; }
         if (!drawing) {
           // ホバー中のカーソル表示（ハンドル＝grab、本体＝move）。hand はパン用カーソル優先。
-          if (OBJECT_TOOLS.includes(tool) && tool !== 'hand') {
+          // 未選択（null）でも選択・移動できるのでカーソルを出す。
+          if ((tool === null || OBJECT_TOOLS.includes(tool)) && tool !== 'hand') {
             const p2 = xy(e);
             const sel = selectedObj();
             const hk = sel && hitObjHandle(sel, p2);
@@ -6264,7 +6326,7 @@
       // ダブルクリックでテキスト・吹き出しを再編集（Excel と同じ操作感）
       canvas.addEventListener('dblclick', (e) => {
         if (activeCallout || cropMode) return;
-        if (!OBJECT_TOOLS.includes(tool)) return;
+        if (!(tool === null || OBJECT_TOOLS.includes(tool))) return; // 未選択でも再編集可
         const p = xy(e);
         const hit = hitObject(p);
         if (hit && (hit.type === 'text' || hit.type === 'callout')) {
@@ -6288,7 +6350,7 @@
       canvas.addEventListener('contextmenu', (e) => {
         e.preventDefault(); // 既定メニュー・選択系の既定動作を抑止（Electron では通常出ないが保険）
         if (cropMode || activeCallout) return;
-        if (!OBJECT_TOOLS.includes(tool)) return; // クリック選択と同じ対象ツールに限定して一貫性を保つ
+        if (!(tool === null || OBJECT_TOOLS.includes(tool))) return; // クリック選択と同じ対象（未選択含む）に限定
         const hit = hitObject(xy(e));
         if (!hit) return;
         selectedId = hit.id;
@@ -6452,6 +6514,18 @@
       }
     });
 
+    // ---- ツールバーのタブ切替（委譲。再描画に強い） ----
+    document.addEventListener('click', (e) => {
+      const tab = e.target.closest('.tb-tab');
+      if (!tab) return;
+      const key = tab.dataset.tab;
+      activeToolbarTab = key;
+      const toolbar = tab.closest('.editor-toolbar');
+      if (!toolbar) return;
+      toolbar.querySelectorAll('.tb-tab').forEach((t) => t.classList.toggle('active', t === tab));
+      toolbar.querySelectorAll('.tb-panel').forEach((p) => { p.hidden = p.dataset.panel !== key; });
+    });
+
     // ---- イベント委譲 ----
     document.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-action]');
@@ -6528,8 +6602,6 @@
           return c && saveDocxViaElectron(c);
         case 'save-xlsx':
           return c && saveXlsxViaElectron(c);
-        case 'save-csv':
-          return c && saveCsvViaElectron(c);
         case 'save-pdf':
           return c && savePdfViaElectron(c);
       }
