@@ -15,7 +15,7 @@
 // 確定仕様の詳細は docs/録画機能-仕様.md「実装前に確定した詳細仕様」を参照。
 'use strict';
 
-const { app, BrowserWindow, ipcMain, screen, nativeImage, shell, dialog } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, screen, nativeImage, shell, dialog } = require('electron');
 const path = require('path');
 
 // アプリケーション名（メニュー/Dock/通知などに表示される）。
@@ -139,6 +139,70 @@ function sanitizeName(s) {
     .slice(0, 60);
   return cleaned || '記録';
 }
+// ── アプリケーションメニュー（左上のメニューバー。すべて日本語）─────────
+// Electron 既定メニューは英語（File/Edit/View…）のため、標準ロールに日本語ラベルを
+// 当てたメニューを組んで差し替える。ロールがネイティブの挙動（コピー/貼り付け/拡大…）を担う。
+function buildAppMenu() {
+  const isMac = process.platform === 'darwin';
+  const template = [
+    // macOS はアプリ名メニュー（一番左）を先頭に置くのが慣習。
+    ...(isMac
+      ? [{
+          label: app.name,
+          submenu: [
+            { role: 'about', label: `${app.name} について` },
+            { type: 'separator' },
+            { role: 'hide', label: `${app.name} を隠す` },
+            { role: 'hideOthers', label: 'ほかを隠す' },
+            { role: 'unhide', label: 'すべて表示' },
+            { type: 'separator' },
+            { role: 'quit', label: `${app.name} を終了` },
+          ],
+        }]
+      : []),
+    {
+      label: 'ファイル',
+      submenu: [isMac ? { role: 'close', label: 'ウィンドウを閉じる' } : { role: 'quit', label: '終了' }],
+    },
+    {
+      label: '編集',
+      submenu: [
+        { role: 'undo', label: '元に戻す' },
+        { role: 'redo', label: 'やり直す' },
+        { type: 'separator' },
+        { role: 'cut', label: '切り取り' },
+        { role: 'copy', label: 'コピー' },
+        { role: 'paste', label: '貼り付け' },
+        { role: 'delete', label: '削除' },
+        { role: 'selectAll', label: 'すべて選択' },
+      ],
+    },
+    {
+      label: '表示',
+      submenu: [
+        { role: 'reload', label: '再読み込み' },
+        { role: 'forceReload', label: '強制的に再読み込み' },
+        { type: 'separator' },
+        { role: 'resetZoom', label: '実際のサイズ' },
+        { role: 'zoomIn', label: '拡大' },
+        { role: 'zoomOut', label: '縮小' },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: '全画面表示' },
+      ],
+    },
+    {
+      label: 'ウィンドウ',
+      submenu: [
+        { role: 'minimize', label: '最小化' },
+        ...(isMac
+          ? [{ role: 'zoom', label: 'ズーム' }, { type: 'separator' }, { role: 'front', label: 'すべてを手前に移動' }]
+          : [{ role: 'close', label: '閉じる' }]),
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 // ── ウィンドウ生成 ──────────────────────────────────────────
 function createMainWindow() {
   mainWin = new BrowserWindow({
@@ -1365,6 +1429,7 @@ app.whenReady().then(() => {
   // エラーのローカルログ（log:write）。実装は errorlog.js（1-3）。
   initErrorLog(app, ipcMain);
 
+  buildAppMenu();
   createMainWindow();
 
   app.on('activate', () => {
