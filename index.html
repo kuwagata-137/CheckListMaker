@@ -1600,6 +1600,48 @@
       checklist.sections.splice(insertAt, 0, sec);
       return touch(checklist);
     }
+    // 所要時間(分)の統合: 両方数値なら和、片方だけ数値ならその値、どちらも非数値なら空。
+    function mergeTimeValue(a, b) {
+      const na = parseInt(a, 10);
+      const nb = parseInt(b, 10);
+      const va = Number.isNaN(na) ? null : na;
+      const vb = Number.isNaN(nb) ? null : nb;
+      if (va !== null && vb !== null) return String(va + vb);
+      if (va !== null) return String(va);
+      if (vb !== null) return String(vb);
+      return '';
+    }
+    // 2つの手順を統合する純関数。cur を prev に吸収させ prev を返す（ユーザー確定仕様）。
+    //  - text: 「、」連結（片方空はもう片方） / body(リッチ): 段落として連結
+    //  - note: 改行連結 / time: 合算 / done: 両方完了のときだけ完了
+    //  - 画像: 並行配列(images/imageEdits/imagesFull)を index を揃えてから連結
+    function mergeItemInto(prev, cur) {
+      prev.text = prev.text && cur.text ? `${prev.text}、${cur.text}` : (prev.text || cur.text || '');
+      const pb = prev.body || '', cb = cur.body || '';
+      prev.body = pb && cb ? pb + cb : (pb || cb || '');
+      const pn = prev.note || '', cn = cur.note || '';
+      prev.note = pn && cn ? `${pn}\n${cn}` : (pn || cn || '');
+      prev.time = mergeTimeValue(prev.time, cur.time);
+      prev.done = !!prev.done && !!cur.done;
+      // 並行配列を両者とも images 長に正規化してから連結（index 対応を保つ）
+      const pI = itemImages(prev), pE = itemImageEdits(prev), pF = itemImagesFull(prev);
+      const cI = itemImages(cur), cE = itemImageEdits(cur), cF = itemImagesFull(cur);
+      prev.images = pI.concat(cI);
+      prev.imageEdits = pE.concat(cE);
+      prev.imagesFull = pF.concat(cF);
+      return prev;
+    }
+    // 指定手順を「1つ上の手順」へ統合する（同一セクション内のみ）。
+    // 先頭手順・見つからない場合は何もしない。統合後は下側の手順を取り除く。
+    function mergeItemUp(checklist, sectionId, itemId) {
+      const s = findSection(checklist, sectionId);
+      if (!s || !Array.isArray(s.items)) return checklist;
+      const idx = s.items.findIndex((x) => x.id === itemId);
+      if (idx <= 0) return checklist;
+      mergeItemInto(s.items[idx - 1], s.items[idx]);
+      s.items.splice(idx, 1);
+      return touch(checklist);
+    }
 
     // app 側から M.xxx で参照する名前空間
     const M = {
@@ -1607,7 +1649,7 @@
       findChecklist, progress, sumMinutes, addChecklist, removeChecklist, duplicateChecklist,
       renameChecklist, addSection, renameSection, removeSection, addItem, addBlankItem,
       setItemField, editItem, toggleItem, removeItem, resetChecklist, clearCompleted,
-      moveItem, moveSection,
+      moveItem, moveSection, mergeItemUp, mergeItemInto, mergeTimeValue,
       addItemImage, replaceItemImage, removeItemImage,
     };
 
@@ -2517,8 +2559,8 @@
     function renderSection(section, prog, type, startNo) {
       const isTemplate = type === MODES.TEMPLATE;
       const items = isTemplate
-        ? section.items.map((it, i) => renderStep(section.id, it, startNo + i + 1)).join('')
-        : section.items.map((it) => renderItem(section.id, it)).join('');
+        ? section.items.map((it, i) => renderStep(section.id, it, startNo + i + 1, i)).join('')
+        : section.items.map((it, i) => renderItem(section.id, it, i)).join('');
       const mins = isTemplate ? sumMinutes(section.items) : 0;
       const meta = `${prog.done}/${prog.total}${mins ? ` ・⏱${mins}分` : ''}`;
       return `
@@ -2566,7 +2608,7 @@
         </div>`;
     }
     // ToDo型の項目
-    function renderItem(sectionId, item) {
+    function renderItem(sectionId, item, idx = 0) {
       return `
         <li class="item ${item.done ? 'done' : ''}" data-item="${item.id}"
             data-section="${sectionId}" data-drag="item">
@@ -2580,6 +2622,8 @@
                   data-action="move-item-up" data-section="${sectionId}" data-item="${item.id}">↑</button>
           <button class="icon" title="下へ移動"
                   data-action="move-item-down" data-section="${sectionId}" data-item="${item.id}">↓</button>
+          <button class="icon" title="上の項目と統合"${idx === 0 ? ' disabled' : ''}
+                  data-action="merge-item-up" data-section="${sectionId}" data-item="${item.id}">⤒</button>
           <button class="icon danger" title="削除"
                   data-action="delete-item" data-section="${sectionId}" data-item="${item.id}">✕</button>
           ${renderImages(sectionId, item)}
@@ -2589,7 +2633,7 @@
         </li>`;
     }
     // テンプレート型の手順ステップ（番号バッジ＋連結線＋メモ＋所要時間）
-    function renderStep(sectionId, item, no) {
+    function renderStep(sectionId, item, no, idx = 0) {
       const note = item.note || '';
       const time = item.time || '';
       return `
@@ -2617,6 +2661,8 @@
                       data-action="move-item-up" data-section="${sectionId}" data-item="${item.id}">↑</button>
               <button class="icon" title="下へ移動"
                       data-action="move-item-down" data-section="${sectionId}" data-item="${item.id}">↓</button>
+              <button class="icon" title="上の手順と統合"${idx === 0 ? ' disabled' : ''}
+                      data-action="merge-item-up" data-section="${sectionId}" data-item="${item.id}">⤒</button>
               <button class="icon danger" title="削除"
                       data-action="delete-item" data-section="${sectionId}" data-item="${item.id}">✕</button>
             </div>
@@ -6571,7 +6617,7 @@
       const btn = e.target.closest('[data-action]');
       if (!btn) return;
       const action = btn.dataset.action;
-      if (!['insert-item-after', 'add-image', 'edit-image', 'delete-image', 'move-item-up', 'move-item-down'].includes(action)) return;
+      if (!['insert-item-after', 'add-image', 'edit-image', 'delete-image', 'move-item-up', 'move-item-down', 'merge-item-up'].includes(action)) return;
       e.preventDefault();
       const c = currentChecklist();
       if (!c) return;
@@ -6614,6 +6660,14 @@
         if (to < 0 || to > sec.items.length - 1) return; // 先頭↑・末尾↓は何もしない
         store.commit((s) =>
           M.moveItem(M.findChecklist(s, c.id), sectionId, itemId, sectionId, to)
+        );
+      } else if (action === 'merge-item-up') {
+        // 直前の手順へ統合（同一セクション内のみ・先頭は無効）。1コミット＝Undo1回。
+        const sec = c.sections.find((x) => x.id === sectionId);
+        const i = sec ? sec.items.findIndex((x) => x.id === itemId) : -1;
+        if (i <= 0) return; // 先頭 or 見つからない → 何もしない
+        store.commit((s) =>
+          M.mergeItemUp(M.findChecklist(s, c.id), sectionId, itemId)
         );
       }
     });
