@@ -2036,8 +2036,11 @@
       const parts = [];
       // accent は表紙の差し色に連動（表紙が無くても既定色でモダン様式に使う）。後処理が見出し等に流す。
       const accent = (checklist.coverPage && checklist.coverPage.accent) || '#3b6ea5';
-      const meta = { isTemplate, markerTitle: '', markerToc: '', accent };
+      const meta = { isTemplate, markerTitle: '', markerToc: '', markerSecBrk: '', accent };
       const pageBreak = '<div class="page-break" style="page-break-after: always;"></div>';
+      // 表紙・目次を「セクション1（ページ番号なし）」、本文を「セクション2（1ページ目から番号）」に
+      // 分けるための区切りマーカー。後処理が sectPr 段落へ置換する（表紙があるときだけ使う）。
+      const sectionBreak = '<p>@@DXSECBRK@@</p>';
       if (isTemplate) {
         // マーカーは英数字トークン（正規表現エスケープ不要な文字種のみ）。
         meta.markerTitle = '@@DXTITLE' + Math.random().toString(36).slice(2, 10) + '@@';
@@ -2049,16 +2052,18 @@
           // （デザイン忠実再現）。表題は画像に含まれるため表題マーカーは出さない。
           // 605x856px ≒ 本文幅160mm・A4縦比。
           parts.push(`<p><img src="${coverImage}" width="605" height="856" /></p>`);
-          parts.push(pageBreak);
           meta.markerTitle = '';
           if (cover.includeToc !== false) {
+            parts.push(pageBreak); // 表紙 → 目次（同じセクション1・番号なし）
             parts.push(`<p>${meta.markerToc}</p>`);
-            parts.push(pageBreak);
+            parts.push(sectionBreak); // 目次 → 本文（セクション区切り＝改ページ＋番号リセット）
           } else {
             meta.markerToc = '';
+            parts.push(sectionBreak); // 表紙 → 本文（セクション区切り）
           }
+          meta.markerSecBrk = '@@DXSECBRK@@';
         } else {
-          // 表紙なし: 表題のみ（目次は表紙機能のオプションのため出さない）。
+          // 表紙なし: 表題のみ（目次は表紙機能のオプションのため出さない。1ページ目から通し番号）。
           parts.push(`<p>${meta.markerTitle}${escapeHtml(checklist.title)}</p>`);
           meta.markerToc = '';
         }
