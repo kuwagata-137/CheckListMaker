@@ -922,7 +922,7 @@
   /* 手順カード（薄塗り＋左アクセント帯＋番号バッジ。手順どうしの間隔は広め） */
   .print-step {
     background: #F3F6FA; border: 1px solid #E2E8F1; border-left: 5px solid var(--print-accent);
-    border-radius: 3px; padding: 10px 14px; margin-bottom: 18px;
+    border-radius: 3px; padding: 10px 14px; margin-bottom: 28px;
   }
   .print-step-keep { break-inside: avoid; } /* 手順と最初の画像を同ページに保つ */
   .print-step-head { display: flex; align-items: baseline; gap: 8px; }
@@ -938,13 +938,15 @@
   .print-body ul, .print-body ol { margin: 3px 0 5px 1.3em; padding: 0; }
   .print-note { margin: 8px 0 0 2.4em; color: #4c525a; font-size: 10pt; word-break: break-word; }
   .print-note-lbl { color: #808080; }
-  .print-imgs { margin: 10px 0 0 2.4em; display: flex; flex-wrap: wrap; gap: 8px; }
-  .print-step .print-imgs + .print-imgs { margin-top: 8px; }
+  .print-imgs { margin: 10px 0 0 2.4em; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; }
+  .print-step .print-imgs + .print-imgs { margin-top: 16px; }
 
   /* 画像はすべて同じ幅に揃える（拡大画像も引き伸ばして統一） */
   .print-img { object-fit: contain; border: 1px solid #c9ccd2; border-radius: 2px; break-inside: avoid; }
   .print-cols-1 .print-img { width: 100%; height: auto; max-height: 210mm; }
   .print-cols-2 .print-img { width: 48%; height: auto; max-height: 140mm; }
+  /* 方針A: 2col でも写真が1枚だけなら全幅で見せる（2枚以上は48%で左右に並ぶ）。 */
+  .print-cols-2 .print-imgs .print-img:only-child { width: 100%; max-height: 210mm; }
 
   /* ToDo 型はチェックが本質なので □/☑ 欄を残す（テンプレート手順書では出さない） */
   .print-todo { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; padding: 4px 0; break-inside: avoid; }
@@ -3497,11 +3499,11 @@
                 const note = it.note
                   ? `<div class="print-note"><span class="print-note-lbl">（メモ）</span>${escapeHtml(it.note)}</div>`
                   : '';
-                // 手順と「最初の画像」は同じ keep ブロックに入れて分断を防ぐ。
-                // 2枚目以降はカード内の別ブロックに流し、必要なら改ページされてよい。
-                const firstImg = imgs.length ? `<div class="print-imgs">${imgTag(imgs[0])}</div>` : '';
-                const restImg = imgs.length > 1
-                  ? `<div class="print-imgs">${imgs.slice(1).map(imgTag).join('')}</div>`
+                // 方針A: 手順内の写真は1つの箱にまとめ、2枚以上は左右に並べる
+                //（1枚なら :only-child で全幅）。手順と写真が改ページで離れないよう、
+                // 箱ごと keep ブロックに入れて分断を防ぐ（手順単位で1ページに保つ）。
+                const imgsHtml = imgs.length
+                  ? `<div class="print-imgs">${imgs.map(imgTag).join('')}</div>`
                   : '';
                 return `<div class="print-step">
                   <div class="print-step-keep">
@@ -3510,9 +3512,8 @@
                       <span class="print-step-text">${escapeHtml(it.text)}</span>
                       ${time}
                     </div>
-                    ${bodyHtml}${note}${firstImg}
+                    ${bodyHtml}${note}${imgsHtml}
                   </div>
-                  ${restImg}
                 </div>`;
               }
               // ToDo 型: チェック欄（□/☑）を残す

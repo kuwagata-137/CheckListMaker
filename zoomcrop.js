@@ -12,6 +12,7 @@ const { CONTAINER_TYPES } = require('./steptext');
 const ZOOM_MARGIN = 48; // 要素矩形の四方に足す余白
 const ZOOM_MIN_W = 480; // 拡大画像の最小幅（フォールバック時の固定幅を兼ねる）
 const ZOOM_MIN_H = 320; // 同・最小高さ
+const ZOOM_WIDEN = 1.5; // 案A: 切り出し範囲を中心維持でこの倍率だけ広げる（拡大しすぎ回避）
 const FRAME_PAD = 6; // 枠を要素矩形より外側に描く量
 const MAX_ELEMENT_FRACTION = 0.9; // 幅・高さの両方がこの割合以上なら「画面ほぼ全体」で不採用
 const CLICK_TOLERANCE = 4; // クリック点が矩形内にあるとみなす許容誤差
@@ -68,7 +69,18 @@ function adoptElementRect(uia, click, imageSize, displayOrigin) {
   return el;
 }
 
-// 要素矩形の周囲を切り出す拡大範囲（余白＋最小サイズ保証＋クランプ）。
+// 矩形 [x,y,w,h] を中心維持で factor 倍に広げ、画像内へクランプする。
+// 案A の「もう少し引いた」切り出しはこれで作る（拡大しすぎ回避）。
+function widenRect(rect, factor, imgW, imgH) {
+  const [x, y, w, h] = rect;
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const nw = w * factor;
+  const nh = h * factor;
+  return clampRect(cx - nw / 2, cy - nh / 2, nw, nh, imgW, imgH);
+}
+
+// 要素矩形の周囲を切り出す拡大範囲（余白＋最小サイズ保証＋案A の広げ＋クランプ）。
 function cropForElement(el, imageSize, scale) {
   const margin = ZOOM_MARGIN * scale;
   let x = el[0] - margin;
@@ -79,14 +91,17 @@ function cropForElement(el, imageSize, scale) {
   const minH = ZOOM_MIN_H * scale;
   if (w < minW) { x -= (minW - w) / 2; w = minW; }
   if (h < minH) { y -= (minH - h) / 2; h = minH; }
-  return clampRect(x, y, w, h, imageSize.w, imageSize.h);
+  const base = clampRect(x, y, w, h, imageSize.w, imageSize.h);
+  return widenRect(base, ZOOM_WIDEN, imageSize.w, imageSize.h);
 }
 
 // クリック座標中心の固定サイズ切り出し（矩形が採用できないときのフォールバック）。
+// 要素ベースと同様に案A の広げを効かせて統一する。
 function cropForClick(click, imageSize, scale) {
   const w = ZOOM_MIN_W * scale;
   const h = ZOOM_MIN_H * scale;
-  return clampRect(click.x - w / 2, click.y - h / 2, w, h, imageSize.w, imageSize.h);
+  const base = clampRect(click.x - w / 2, click.y - h / 2, w, h, imageSize.w, imageSize.h);
+  return widenRect(base, ZOOM_WIDEN, imageSize.w, imageSize.h);
 }
 
 // 要素矩形を FRAME_PAD だけ外側に広げた「描く枠」の矩形。
@@ -117,4 +132,4 @@ function planShot({ uia, click, imageSize, displayOrigin, scale = 1 }) {
   return { element: null, frame: null, zoom: { rect: cropForClick(click, imageSize, scale), source: 'click' } };
 }
 
-module.exports = { planShot, ZOOM_MARGIN, ZOOM_MIN_W, ZOOM_MIN_H, FRAME_PAD };
+module.exports = { planShot, ZOOM_MARGIN, ZOOM_MIN_W, ZOOM_MIN_H, ZOOM_WIDEN, FRAME_PAD };
