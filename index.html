@@ -6191,7 +6191,8 @@
         };
       }
       function hitHandle(p) {
-        const tol = 11 * dispScale();
+        // 当たり判定は見た目のハンドル(約16px)より広めに取り、掴みやすくする（画面上 ±16px）。
+        const tol = 16 * dispScale();
         const pts = handlePoints();
         for (const k in pts) {
           if (Math.abs(p.x - pts[k][0]) <= tol && Math.abs(p.y - pts[k][1]) <= tol) return k;
@@ -6214,10 +6215,17 @@
         g.setLineDash([]);
         g.lineWidth = 2 * s;
         g.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
-        const hs = 9 * s;
-        g.fillStyle = '#1a73e8';
+        // ハンドルは掴みやすいよう大きめ（画面上 約16px）＋白フチで視認性を上げる。
+        const hs = 16 * s;
         const pts = handlePoints();
-        for (const k in pts) g.fillRect(pts[k][0] - hs / 2, pts[k][1] - hs / 2, hs, hs);
+        g.lineWidth = 2 * s;
+        for (const k in pts) {
+          const hx = pts[k][0] - hs / 2, hy = pts[k][1] - hs / 2;
+          g.fillStyle = '#fff';
+          g.fillRect(hx, hy, hs, hs);
+          g.fillStyle = '#1a73e8';
+          g.fillRect(hx + 2 * s, hy + 2 * s, hs - 4 * s, hs - 4 * s);
+        }
         g.restore();
       }
       function updateCrop(p) {
