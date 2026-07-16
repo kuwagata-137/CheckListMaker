@@ -80,6 +80,14 @@ Walker を1つ取得し、`IUIAutomationTreeWalker::GetParentElement`（vtable 3
 - **事前ダンプ（実装前・2-R0 スパイクと同じ先行方式）**: 1クリック分で
   「最深要素の `controlType`/`className`/`name`」「親チェーン」「アドレスバー要素の
   構造」を出すダンプを取り、**A の停止条件と B の取得経路・vtable を確定してから実装**する。
+  - ツール: `tools/uia-spike/dump-element.js`（`npm run dump` / `npm run selftest:dump`）。
+    クリック先の最深要素から `ControlViewWalker` で親チェーンを上へたどって記録する。
+    手順は `tools/uia-spike/README.md` の「2-R2c ダンプ手順」①〜④。
+  - このダンプで確定する事項: (a) 詳細ビューで「名前」を出している最深要素の実体、
+    (b) フォルダ表示名を持つ `ListItem` が親チェーンの何段目か（＝A の登り停止先）、
+    (c) アドレスバー（ブレッドクラム）の要素構造（＝B の読み取り経路）、
+    (d) `get_ControlViewWalker`（vtable 14 想定）/`GetParentElement`（vtable 3 想定）が
+    実機で通るか。
 - **実装後**: 詳細／中アイコン／大アイコン各ビューでフォルダをダブルクリック →
   `NNN.json` の `uia.name` がフォルダ名、`text` が「『◯◯』をダブルクリック」。
   左ナビゲーションツリーの `TreeItem` でも同様。RemoteApp では B かフォールバックに倒れる。

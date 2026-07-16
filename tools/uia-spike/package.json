@@ -6,7 +6,9 @@
   "scripts": {
     "selftest": "node measure.js --selftest",
     "measure": "node measure.js",
-    "summary": "node summarize.js"
+    "summary": "node summarize.js",
+    "selftest:dump": "node dump-element.js --selftest",
+    "dump": "node dump-element.js"
   },
   "dependencies": {
     "koffi": "^2.9.0",
