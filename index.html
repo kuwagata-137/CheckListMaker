@@ -3177,12 +3177,30 @@
       if (!sel.rangeCount || sel.isCollapsed) return; // 範囲選択が無ければ何もしない
       document.execCommand('styleWithCSS', false, false);
       document.execCommand('fontSize', false, '7');
+      const spans = [];
       editor.querySelectorAll('font[size="7"]').forEach((f) => {
         const span = document.createElement('span');
         span.style.fontSize = pt + 'pt';
         while (f.firstChild) span.appendChild(f.firstChild);
+        // 内側に残った古い文字サイズ指定を除去（新しいサイズが効くように）
+        span.querySelectorAll('span[style*="font-size"]').forEach((inner) => {
+          inner.style.fontSize = '';
+          if (!inner.getAttribute('style')) inner.removeAttribute('style');
+        });
         f.replaceWith(span);
+        spans.push(span);
       });
+      // 適用した範囲を選択し直す。DOM を置換した直後は元の選択が壊れるため、
+      // これをしないと A˄/A˅ の連続適用が2回目以降で効かなくなる。
+      if (spans.length) {
+        try {
+          const r = document.createRange();
+          r.setStartBefore(spans[0]);
+          r.setEndAfter(spans[spans.length - 1]);
+          sel.removeAllRanges();
+          sel.addRange(r);
+        } catch (_) { /* noop */ }
+      }
       rbCommitEditor(editor);
     }
 
@@ -4937,6 +4955,7 @@
         const clean = sanitizeBodyHtml(editor.innerHTML);
         const savedCover = M.findChecklist(store.state, checklistId).coverPage || {};
         draft[field] = clean;
+        refresh(); // 太字/文字サイズ/色などの書式変更も即プレビューへ反映する
         if ((savedCover[field] || '') === clean) return;
         persist();
       };
