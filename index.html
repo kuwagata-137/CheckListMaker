@@ -898,88 +898,73 @@
      編集用の <input> は印刷でテキストが折り返せず欠けてしまうため、
      印刷専用のテキスト表現（span/li）で描き直す。 */
   #print-root { display: none; }
-  .print-header h1 { margin: 0 0 6px; font-size: 1.5rem; }
-  .print-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 16px;
-    color: #444;
-    font-size: 0.9rem;
-    border-bottom: 2px solid #000;
-    padding-bottom: 8px;
-    margin-bottom: 14px;
+  /* 印刷/PDF は Word 出力と同じ「手順カード」様式に揃える（游ゴシック・アクセント色）。 */
+  #print-root, .print-preview-page {
+    font-family: "游ゴシック体","游ゴシック","Yu Gothic",YuGothic,"Hiragino Kaku Gothic ProN","Noto Sans JP","Meiryo",sans-serif;
   }
-  .print-section { margin-bottom: 14px; break-inside: avoid; }
-  .print-section-title {
-    font-size: 1.15rem;
-    margin: 0 0 6px;
-    padding-bottom: 3px;
-    border-bottom: 1px solid #999;
-  }
-  .print-section-meta { font-weight: 400; font-size: 0.9rem; color: #555; }
-  .print-items { list-style: none; margin: 0; padding: 0; }
-  .print-item {
-    display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 3px 0;
-    break-inside: avoid;
-  }
-  .print-no { min-width: 1.4em; font-weight: 700; color: #555; }
-  .print-box { font-size: 1.05rem; line-height: 1; }
-  .print-text { flex: 1; min-width: 0; word-break: break-word; }
-  .print-item.done .print-text { text-decoration: line-through; color: #666; }
-  .print-step-time { color: #555; font-size: 0.9rem; white-space: nowrap; }
-  .print-note {
-    flex-basis: 100%;
-    margin-left: 1.9em;
-    color: #555;
-    font-size: 0.95rem;
-    word-break: break-word;
-  }
-  .print-imgs {
-    flex-basis: 100%;
-    margin: 4px 0 4px 1.9em;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-  .print-img {
-    object-fit: contain;
-    border: 1px solid #ccc;
-    break-inside: avoid;
-  }
-  /* 画像の配置（印刷プレビューで選択・記憶）:
-     1列=1枚ずつ縦に並べる / 2列=横に2枚並べる。
-     どちらも原寸より拡大しない（トリミングした画像が紙幅まで引き伸ばされないように）。
-     紙幅を超える大きい画像だけ収まるよう縮小する。 */
-  .print-cols-1 .print-img { width: auto; max-width: 100%; max-height: 160mm; }
-  .print-cols-2 .print-img { max-width: 49%; max-height: 110mm; }
+  .print-doc { --print-accent: #3B6EA5; color: #1c2126; font-size: 10.5pt; line-height: 1.7; }
 
-  /* ---- 目次ページ（表紙の「目次を含める」ON のとき、表紙の直後に出す） ---- */
+  /* 表紙が無いときの表題（中央・下にアクセント線。種別・進捗・出力日は載せない） */
+  .print-doc-title {
+    font-size: 20pt; font-weight: 800; text-align: center; word-break: break-word;
+    border-bottom: 3px solid var(--print-accent); padding-bottom: 10px; margin: 6px 0 22px;
+  }
+
+  /* セクション見出し（アクセント色・太字＋下にアクセント細線） */
+  .print-section + .print-section { margin-top: 22px; }
+  .print-section-title {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+    font-size: 13pt; font-weight: 800; color: var(--print-accent);
+    border-bottom: 2px solid var(--print-accent); padding-bottom: 5px; margin: 0 0 14px;
+  }
+  .print-sec-mins { font-weight: 400; font-size: 10.5pt; color: #808080; white-space: nowrap; }
+
+  /* 手順カード（薄塗り＋左アクセント帯＋番号バッジ。手順どうしの間隔は広め） */
+  .print-step {
+    background: #F3F6FA; border: 1px solid #E2E8F1; border-left: 5px solid var(--print-accent);
+    border-radius: 3px; padding: 10px 14px; margin-bottom: 18px;
+  }
+  .print-step-keep { break-inside: avoid; } /* 手順と最初の画像を同ページに保つ */
+  .print-step-head { display: flex; align-items: baseline; gap: 8px; }
+  .print-badge {
+    flex: 0 0 auto; background: var(--print-accent); color: #fff; font-weight: 700;
+    font-size: 10.5pt; line-height: 1; padding: 4px 7px; border-radius: 2px;
+    min-width: 1.5em; text-align: center;
+  }
+  .print-step-text { flex: 1; min-width: 0; font-weight: 700; font-size: 11.5pt; word-break: break-word; }
+  .print-step-time { flex: 0 0 auto; color: #808080; font-size: 10pt; white-space: nowrap; }
+  .print-body { margin: 8px 0 0 2.4em; }
+  .print-body p { margin: 0 0 5px; }
+  .print-body ul, .print-body ol { margin: 3px 0 5px 1.3em; padding: 0; }
+  .print-note { margin: 8px 0 0 2.4em; color: #4c525a; font-size: 10pt; word-break: break-word; }
+  .print-note-lbl { color: #808080; }
+  .print-imgs { margin: 10px 0 0 2.4em; display: flex; flex-wrap: wrap; gap: 8px; }
+  .print-step .print-imgs + .print-imgs { margin-top: 8px; }
+
+  /* 画像はすべて同じ幅に揃える（拡大画像も引き伸ばして統一） */
+  .print-img { object-fit: contain; border: 1px solid #c9ccd2; border-radius: 2px; break-inside: avoid; }
+  .print-cols-1 .print-img { width: 100%; height: auto; max-height: 210mm; }
+  .print-cols-2 .print-img { width: 48%; height: auto; max-height: 140mm; }
+
+  /* ToDo 型はチェックが本質なので □/☑ 欄を残す（テンプレート手順書では出さない） */
+  .print-todo { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; padding: 4px 0; break-inside: avoid; }
+  .print-todo .print-box { font-size: 1.05rem; line-height: 1; }
+  .print-todo .print-text { flex: 1; min-width: 0; word-break: break-word; }
+  .print-todo.done .print-text { text-decoration: line-through; color: #666; }
+  .print-todo .print-imgs { flex-basis: 100%; margin: 6px 0 4px 1.6em; }
+
+  /* ---- 目次ページ（表紙の「目次を含める」ON のとき、表紙の直後に出す。行間つめ） ---- */
   .print-toc-title {
-    font-size: 1.4rem;
-    margin: 0 0 12px;
-    padding-bottom: 6px;
-    border-bottom: 2px solid #000;
+    font-size: 15pt; font-weight: 800; color: var(--print-accent);
+    border-bottom: 2px solid var(--print-accent); padding-bottom: 5px; margin: 0 0 12px;
   }
   .print-toc-list { list-style: none; margin: 0; padding: 0; }
-  .print-toc-sec {
-    font-weight: 700;
-    font-size: 1.05rem;
-    margin: 10px 0 2px;
-    break-inside: avoid;
-  }
-  .print-toc-meta { font-weight: 400; font-size: 0.85rem; color: #555; margin-left: 6px; }
-  .print-toc-steps { list-style: none; margin: 2px 0 0; padding: 0 0 0 1.7em; }
-  .print-toc-step {
-    font-weight: 400;
-    font-size: 0.95rem;
-    color: #333;
-    padding: 1px 0;
-    word-break: break-word;
-  }
+  .print-toc-sec { break-inside: avoid; margin: 9px 0 0; }
+  .print-toc-secrow { display: flex; justify-content: space-between; gap: 10px; font-weight: 700; font-size: 11pt; }
+  .print-toc-meta { font-weight: 400; font-size: 9.5pt; color: #808080; white-space: nowrap; }
+  .print-toc-steps { list-style: none; margin: 1px 0 0 1.4em; padding: 0; }
+  .print-toc-step { display: flex; gap: 8px; font-size: 10pt; color: #33383e; padding: 0; line-height: 1.35; word-break: break-word; }
+  .print-toc-n { color: #808080; min-width: 1.9em; }
 
   /* ---- 印刷プレビュー（モーダル） ---- */
   .modal.print-preview { max-width: min(900px, 96vw); display: flex; flex-direction: column; }
@@ -1017,14 +1002,14 @@
     width: 210mm;
     max-width: 100%;
     margin: 0 auto;
-    padding: 16mm;
+    padding: 25mm;
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.45);
   }
   /* 印刷プレビュー内の表紙は、実際の印刷（@page coverpage=余白0の専用ページ）と同じく
-     ページの 16mm 余白を打ち消して全面(210mm=794px)で表示する。これをしないと A4 幅
+     ページの 25mm 余白を打ち消して全面(210mm=794px)で表示する。これをしないと A4 幅
      と等寸の表紙がプレビュー面からはみ出す（印刷/PDF 実出力は既に余白0で正しい）。 */
   .print-preview-page .print-cover {
-    margin: -16mm -16mm 0;
+    margin: -25mm -25mm 0;
     overflow: hidden;
   }
 
@@ -1192,13 +1177,10 @@
   .ie-ctx { padding: 4px; }
   .ie-ctx button { display: block; width: 100%; font: inherit; font-size: 0.85rem; padding: 6px 14px; border: none; border-radius: 5px; background: transparent; color: var(--text); text-align: left; cursor: pointer; white-space: nowrap; }
   .ie-ctx button:hover { background: var(--surface-2); }
-  /* 印刷用リッチ本文 */
-  .print-body { flex-basis: 100%; margin: 4px 0 2px 1.9em; font-size: 1rem; }
-  .print-body p { margin: 0 0 5px; }
-  .print-body ul, .print-body ol { margin: 3px 0 5px 1.3em; padding: 0; }
-  .print-body table { border-collapse: collapse; margin: 5px 0; font-size: 0.95rem; break-inside: avoid; max-width: 100%; }
-  .print-body th, .print-body td { border: 1px solid #555; padding: 4px 8px; text-align: left; vertical-align: top; }
-  .print-body thead th { background: #e9eef5; font-weight: 700; }
+  /* 印刷用リッチ本文の表（本文の余白等は上のカード様式ブロックで定義済み） */
+  .print-body table { border-collapse: collapse; margin: 5px 0; font-size: 0.95em; break-inside: avoid; max-width: 100%; }
+  .print-body th, .print-body td { border: 1px solid #99a; padding: 4px 8px; text-align: left; vertical-align: top; }
+  .print-body thead th { background: #eef3f9; font-weight: 700; }
 
   @media print {
     #topbar, #app { display: none !important; }
@@ -1209,7 +1191,7 @@
     body { background: #fff; color: #000; }
     /* size を明示するのは printToPDF(preferCSSPageSize) に @page を尊重させ、
        表紙(coverpage=余白0)と本文(16mm)を1ページの A4 に正しく収めるため。 */
-    @page { size: A4; margin: 16mm; }
+    @page { size: A4; margin: 25mm; }
     /* 表紙は余白なしの専用ページにして 794x1123 を A4 に 1:1 で載せる */
     @page coverpage { size: A4; margin: 0; }
     .print-cover { page: coverpage; break-after: page; overflow: hidden; }
@@ -1600,6 +1582,48 @@
       checklist.sections.splice(insertAt, 0, sec);
       return touch(checklist);
     }
+    // 所要時間(分)の統合: 両方数値なら和、片方だけ数値ならその値、どちらも非数値なら空。
+    function mergeTimeValue(a, b) {
+      const na = parseInt(a, 10);
+      const nb = parseInt(b, 10);
+      const va = Number.isNaN(na) ? null : na;
+      const vb = Number.isNaN(nb) ? null : nb;
+      if (va !== null && vb !== null) return String(va + vb);
+      if (va !== null) return String(va);
+      if (vb !== null) return String(vb);
+      return '';
+    }
+    // 2つの手順を統合する純関数。cur を prev に吸収させ prev を返す（ユーザー確定仕様）。
+    //  - text: 「、」連結（片方空はもう片方） / body(リッチ): 段落として連結
+    //  - note: 改行連結 / time: 合算 / done: 両方完了のときだけ完了
+    //  - 画像: 並行配列(images/imageEdits/imagesFull)を index を揃えてから連結
+    function mergeItemInto(prev, cur) {
+      prev.text = prev.text && cur.text ? `${prev.text}、${cur.text}` : (prev.text || cur.text || '');
+      const pb = prev.body || '', cb = cur.body || '';
+      prev.body = pb && cb ? pb + cb : (pb || cb || '');
+      const pn = prev.note || '', cn = cur.note || '';
+      prev.note = pn && cn ? `${pn}\n${cn}` : (pn || cn || '');
+      prev.time = mergeTimeValue(prev.time, cur.time);
+      prev.done = !!prev.done && !!cur.done;
+      // 並行配列を両者とも images 長に正規化してから連結（index 対応を保つ）
+      const pI = itemImages(prev), pE = itemImageEdits(prev), pF = itemImagesFull(prev);
+      const cI = itemImages(cur), cE = itemImageEdits(cur), cF = itemImagesFull(cur);
+      prev.images = pI.concat(cI);
+      prev.imageEdits = pE.concat(cE);
+      prev.imagesFull = pF.concat(cF);
+      return prev;
+    }
+    // 指定手順を「1つ上の手順」へ統合する（同一セクション内のみ）。
+    // 先頭手順・見つからない場合は何もしない。統合後は下側の手順を取り除く。
+    function mergeItemUp(checklist, sectionId, itemId) {
+      const s = findSection(checklist, sectionId);
+      if (!s || !Array.isArray(s.items)) return checklist;
+      const idx = s.items.findIndex((x) => x.id === itemId);
+      if (idx <= 0) return checklist;
+      mergeItemInto(s.items[idx - 1], s.items[idx]);
+      s.items.splice(idx, 1);
+      return touch(checklist);
+    }
 
     // app 側から M.xxx で参照する名前空間
     const M = {
@@ -1607,7 +1631,7 @@
       findChecklist, progress, sumMinutes, addChecklist, removeChecklist, duplicateChecklist,
       renameChecklist, addSection, renameSection, removeSection, addItem, addBlankItem,
       setItemField, editItem, toggleItem, removeItem, resetChecklist, clearCompleted,
-      moveItem, moveSection,
+      moveItem, moveSection, mergeItemUp, mergeItemInto, mergeTimeValue,
       addItemImage, replaceItemImage, removeItemImage,
     };
 
@@ -2012,8 +2036,11 @@
       const parts = [];
       // accent は表紙の差し色に連動（表紙が無くても既定色でモダン様式に使う）。後処理が見出し等に流す。
       const accent = (checklist.coverPage && checklist.coverPage.accent) || '#3b6ea5';
-      const meta = { isTemplate, markerTitle: '', markerToc: '', accent };
+      const meta = { isTemplate, markerTitle: '', markerToc: '', markerSecBrk: '', accent };
       const pageBreak = '<div class="page-break" style="page-break-after: always;"></div>';
+      // 表紙・目次を「セクション1（ページ番号なし）」、本文を「セクション2（1ページ目から番号）」に
+      // 分けるための区切りマーカー。後処理が sectPr 段落へ置換する（表紙があるときだけ使う）。
+      const sectionBreak = '<p>@@DXSECBRK@@</p>';
       if (isTemplate) {
         // マーカーは英数字トークン（正規表現エスケープ不要な文字種のみ）。
         meta.markerTitle = '@@DXTITLE' + Math.random().toString(36).slice(2, 10) + '@@';
@@ -2025,16 +2052,18 @@
           // （デザイン忠実再現）。表題は画像に含まれるため表題マーカーは出さない。
           // 605x856px ≒ 本文幅160mm・A4縦比。
           parts.push(`<p><img src="${coverImage}" width="605" height="856" /></p>`);
-          parts.push(pageBreak);
           meta.markerTitle = '';
           if (cover.includeToc !== false) {
+            parts.push(pageBreak); // 表紙 → 目次（同じセクション1・番号なし）
             parts.push(`<p>${meta.markerToc}</p>`);
-            parts.push(pageBreak);
+            parts.push(sectionBreak); // 目次 → 本文（セクション区切り＝改ページ＋番号リセット）
           } else {
             meta.markerToc = '';
+            parts.push(sectionBreak); // 表紙 → 本文（セクション区切り）
           }
+          meta.markerSecBrk = '@@DXSECBRK@@';
         } else {
-          // 表紙なし: 表題のみ（目次は表紙機能のオプションのため出さない）。
+          // 表紙なし: 表題のみ（目次は表紙機能のオプションのため出さない。1ページ目から通し番号）。
           parts.push(`<p>${meta.markerTitle}${escapeHtml(checklist.title)}</p>`);
           meta.markerToc = '';
         }
@@ -2517,8 +2546,8 @@
     function renderSection(section, prog, type, startNo) {
       const isTemplate = type === MODES.TEMPLATE;
       const items = isTemplate
-        ? section.items.map((it, i) => renderStep(section.id, it, startNo + i + 1)).join('')
-        : section.items.map((it) => renderItem(section.id, it)).join('');
+        ? section.items.map((it, i) => renderStep(section.id, it, startNo + i + 1, i)).join('')
+        : section.items.map((it, i) => renderItem(section.id, it, i)).join('');
       const mins = isTemplate ? sumMinutes(section.items) : 0;
       const meta = `${prog.done}/${prog.total}${mins ? ` ・⏱${mins}分` : ''}`;
       return `
@@ -2566,7 +2595,7 @@
         </div>`;
     }
     // ToDo型の項目
-    function renderItem(sectionId, item) {
+    function renderItem(sectionId, item, idx = 0) {
       return `
         <li class="item ${item.done ? 'done' : ''}" data-item="${item.id}"
             data-section="${sectionId}" data-drag="item">
@@ -2580,6 +2609,8 @@
                   data-action="move-item-up" data-section="${sectionId}" data-item="${item.id}">↑</button>
           <button class="icon" title="下へ移動"
                   data-action="move-item-down" data-section="${sectionId}" data-item="${item.id}">↓</button>
+          <button class="icon" title="上の項目と統合"${idx === 0 ? ' disabled' : ''}
+                  data-action="merge-item-up" data-section="${sectionId}" data-item="${item.id}">⤒</button>
           <button class="icon danger" title="削除"
                   data-action="delete-item" data-section="${sectionId}" data-item="${item.id}">✕</button>
           ${renderImages(sectionId, item)}
@@ -2589,7 +2620,7 @@
         </li>`;
     }
     // テンプレート型の手順ステップ（番号バッジ＋連結線＋メモ＋所要時間）
-    function renderStep(sectionId, item, no) {
+    function renderStep(sectionId, item, no, idx = 0) {
       const note = item.note || '';
       const time = item.time || '';
       return `
@@ -2617,6 +2648,8 @@
                       data-action="move-item-up" data-section="${sectionId}" data-item="${item.id}">↑</button>
               <button class="icon" title="下へ移動"
                       data-action="move-item-down" data-section="${sectionId}" data-item="${item.id}">↓</button>
+              <button class="icon" title="上の手順と統合"${idx === 0 ? ' disabled' : ''}
+                      data-action="merge-item-up" data-section="${sectionId}" data-item="${item.id}">⤒</button>
               <button class="icon danger" title="削除"
                       data-action="delete-item" data-section="${sectionId}" data-item="${item.id}">✕</button>
             </div>
@@ -3131,12 +3164,30 @@
       if (!sel.rangeCount || sel.isCollapsed) return; // 範囲選択が無ければ何もしない
       document.execCommand('styleWithCSS', false, false);
       document.execCommand('fontSize', false, '7');
+      const spans = [];
       editor.querySelectorAll('font[size="7"]').forEach((f) => {
         const span = document.createElement('span');
         span.style.fontSize = pt + 'pt';
         while (f.firstChild) span.appendChild(f.firstChild);
+        // 内側に残った古い文字サイズ指定を除去（新しいサイズが効くように）
+        span.querySelectorAll('span[style*="font-size"]').forEach((inner) => {
+          inner.style.fontSize = '';
+          if (!inner.getAttribute('style')) inner.removeAttribute('style');
+        });
         f.replaceWith(span);
+        spans.push(span);
       });
+      // 適用した範囲を選択し直す。DOM を置換した直後は元の選択が壊れるため、
+      // これをしないと A˄/A˅ の連続適用が2回目以降で効かなくなる。
+      if (spans.length) {
+        try {
+          const r = document.createRange();
+          r.setStartBefore(spans[0]);
+          r.setEndAfter(spans[spans.length - 1]);
+          sel.removeAllRanges();
+          sel.addRange(r);
+        } catch (_) { /* noop */ }
+      }
       rbCommitEditor(editor);
     }
 
@@ -3425,54 +3476,63 @@
     // 印刷（ブラウザの印刷→PDF保存を想定）用の読み取り専用ビューを組み立てる。
     // 入力欄は印刷でテキストが折り返せないため、span/li のプレーンな表現で描く。
     function renderPrintView(checklist) {
-      const p = progress(checklist);
       const isTemplate = checklist.type === MODES.TEMPLATE;
-      const dateStr = new Date().toLocaleDateString('ja-JP');
-      const totalMin = isTemplate
-        ? checklist.sections.reduce((a, s) => a + sumMinutes(s.items), 0)
-        : 0;
+      // アクセント色（表紙の差し色に連動。無ければ既定色）。style 属性に入れるため厳格に検証。
+      const accentRaw = (checklist.coverPage && checklist.coverPage.accent) || '';
+      const accent = /^#[0-9a-fA-F]{3,8}$/.test(accentRaw) ? accentRaw : '#3B6EA5';
       let stepNo = 0;
+      const imgTag = (src) => `<img class="print-img" src="${src}" alt="" />`;
       const sections = checklist.sections
         .map((s) => {
           const itemsHtml = s.items
             .map((it) => {
-              const box = it.done ? '☑' : '☐';
-              const imgs = (Array.isArray(it.images) ? it.images : [])
-                .map((src) => `<img class="print-img" src="${src}" alt="" />`)
-                .join('');
-              const imgsHtml = imgs ? `<div class="print-imgs">${imgs}</div>` : '';
+              const imgs = Array.isArray(it.images) ? it.images : [];
               if (isTemplate) {
                 stepNo += 1;
                 const time = it.time
                   ? `<span class="print-step-time">⏱${escapeHtml(String(it.time))}分</span>`
                   : '';
-                const note = it.note
-                  ? `<div class="print-note">${escapeHtml(it.note)}</div>`
-                  : '';
                 const bodyClean = sanitizeBodyHtml(it.body || '');
                 const bodyHtml = bodyClean ? `<div class="print-body">${bodyClean}</div>` : '';
-                return `<li class="print-item ${it.done ? 'done' : ''}">
-                  <span class="print-no">${stepNo}</span>
-                  <span class="print-box">${box}</span>
-                  <span class="print-text">${escapeHtml(it.text)}</span>
-                  ${time}${bodyHtml}${note}${imgsHtml}
-                </li>`;
+                const note = it.note
+                  ? `<div class="print-note"><span class="print-note-lbl">（メモ）</span>${escapeHtml(it.note)}</div>`
+                  : '';
+                // 手順と「最初の画像」は同じ keep ブロックに入れて分断を防ぐ。
+                // 2枚目以降はカード内の別ブロックに流し、必要なら改ページされてよい。
+                const firstImg = imgs.length ? `<div class="print-imgs">${imgTag(imgs[0])}</div>` : '';
+                const restImg = imgs.length > 1
+                  ? `<div class="print-imgs">${imgs.slice(1).map(imgTag).join('')}</div>`
+                  : '';
+                return `<div class="print-step">
+                  <div class="print-step-keep">
+                    <div class="print-step-head">
+                      <span class="print-badge">${stepNo}</span>
+                      <span class="print-step-text">${escapeHtml(it.text)}</span>
+                      ${time}
+                    </div>
+                    ${bodyHtml}${note}${firstImg}
+                  </div>
+                  ${restImg}
+                </div>`;
               }
-              return `<li class="print-item ${it.done ? 'done' : ''}">
+              // ToDo 型: チェック欄（□/☑）を残す
+              const box = it.done ? '☑' : '☐';
+              const imgsHtml = imgs.length ? `<div class="print-imgs">${imgs.map(imgTag).join('')}</div>` : '';
+              return `<div class="print-todo ${it.done ? 'done' : ''}">
                 <span class="print-box">${box}</span>
                 <span class="print-text">${escapeHtml(it.text)}</span>
                 ${imgsHtml}
-              </li>`;
+              </div>`;
             })
             .join('');
           const mins = isTemplate ? sumMinutes(s.items) : 0;
-          const meta = mins ? `<span class="print-section-meta">（⏱${mins}分）</span>` : '';
+          const secMeta = mins ? `<span class="print-sec-mins">⏱${mins}分</span>` : '';
           const titleText = escapeHtml(s.title);
           const titleHtml =
-            titleText || meta
-              ? `<h2 class="print-section-title">${titleText}${meta}</h2>`
+            titleText || secMeta
+              ? `<div class="print-section-title"><span>${titleText}</span>${secMeta}</div>`
               : '';
-          return `<section class="print-section">${titleHtml}<ul class="print-items">${itemsHtml}</ul></section>`;
+          return `<section class="print-section">${titleHtml}<div class="print-items">${itemsHtml}</div></section>`;
         })
         .join('');
       const coverOn = isTemplate && checklist.coverPage && checklist.coverPage.enabled;
@@ -3487,34 +3547,23 @@
         const tocItems = checklist.sections
           .map((s) => {
             const mins = sumMinutes(s.items);
-            const secMeta = mins ? `<span class="print-toc-meta">（⏱${mins}分）</span>` : '';
+            const secMeta = mins ? `<span class="print-toc-meta">⏱${mins}分</span>` : '';
             const secTitle = escapeHtml(s.title) || '（無題のセクション）';
             const steps = s.items
               .map((it) => {
                 tocNo += 1;
-                return `<li class="print-toc-step">${tocNo}. ${escapeHtml(it.text)}</li>`;
+                return `<li class="print-toc-step"><span class="print-toc-n">${tocNo}.</span><span>${escapeHtml(it.text)}</span></li>`;
               })
               .join('');
-            const stepsHtml = steps ? `<ol class="print-toc-steps">${steps}</ol>` : '';
-            return `<li class="print-toc-sec">${secTitle}${secMeta}${stepsHtml}</li>`;
+            const stepsHtml = steps ? `<ul class="print-toc-steps">${steps}</ul>` : '';
+            return `<li class="print-toc-sec"><div class="print-toc-secrow"><span>${secTitle}</span>${secMeta}</div>${stepsHtml}</li>`;
           })
           .join('');
-        tocHtml = `<div class="print-toc"><h2 class="print-toc-title">目次</h2><ol class="print-toc-list">${tocItems}</ol></div>`;
+        tocHtml = `<div class="print-toc"><div class="print-toc-title">目次</div><ul class="print-toc-list">${tocItems}</ul></div>`;
       }
-      return `
-        ${coverHtml}
-        ${tocHtml}
-        <div class="print-header">
-          <h1>${escapeHtml(checklist.title)}</h1>
-          <div class="print-meta">
-            <span>${modeLabel(checklist.type)}</span>
-            <span>${p.done} / ${p.total} 完了（${p.percent}%）${
-              totalMin ? ` ・ 総所要 約${totalMin}分` : ''
-            }</span>
-            <span>${dateStr}</span>
-          </div>
-        </div>
-        ${sections}`;
+      // 表紙が無いときだけ、中央の表題を出す（Word 同様。種別・進捗・出力日は載せない）。
+      const titleHtml = coverOn ? '' : `<div class="print-doc-title">${escapeHtml(checklist.title)}</div>`;
+      return `<div class="print-doc" style="--print-accent:${accent}">${coverHtml}${tocHtml}${titleHtml}${sections}</div>`;
     }
 
     // =========================================================================
@@ -4891,6 +4940,7 @@
         const clean = sanitizeBodyHtml(editor.innerHTML);
         const savedCover = M.findChecklist(store.state, checklistId).coverPage || {};
         draft[field] = clean;
+        refresh(); // 太字/文字サイズ/色などの書式変更も即プレビューへ反映する
         if ((savedCover[field] || '') === clean) return;
         persist();
       };
@@ -6145,7 +6195,8 @@
         };
       }
       function hitHandle(p) {
-        const tol = 11 * dispScale();
+        // 当たり判定は見た目のハンドル(約16px)より広めに取り、掴みやすくする（画面上 ±16px）。
+        const tol = 16 * dispScale();
         const pts = handlePoints();
         for (const k in pts) {
           if (Math.abs(p.x - pts[k][0]) <= tol && Math.abs(p.y - pts[k][1]) <= tol) return k;
@@ -6168,10 +6219,17 @@
         g.setLineDash([]);
         g.lineWidth = 2 * s;
         g.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
-        const hs = 9 * s;
-        g.fillStyle = '#1a73e8';
+        // ハンドルは掴みやすいよう大きめ（画面上 約16px）＋白フチで視認性を上げる。
+        const hs = 16 * s;
         const pts = handlePoints();
-        for (const k in pts) g.fillRect(pts[k][0] - hs / 2, pts[k][1] - hs / 2, hs, hs);
+        g.lineWidth = 2 * s;
+        for (const k in pts) {
+          const hx = pts[k][0] - hs / 2, hy = pts[k][1] - hs / 2;
+          g.fillStyle = '#fff';
+          g.fillRect(hx, hy, hs, hs);
+          g.fillStyle = '#1a73e8';
+          g.fillRect(hx + 2 * s, hy + 2 * s, hs - 4 * s, hs - 4 * s);
+        }
         g.restore();
       }
       function updateCrop(p) {
@@ -6571,7 +6629,7 @@
       const btn = e.target.closest('[data-action]');
       if (!btn) return;
       const action = btn.dataset.action;
-      if (!['insert-item-after', 'add-image', 'edit-image', 'delete-image', 'move-item-up', 'move-item-down'].includes(action)) return;
+      if (!['insert-item-after', 'add-image', 'edit-image', 'delete-image', 'move-item-up', 'move-item-down', 'merge-item-up'].includes(action)) return;
       e.preventDefault();
       const c = currentChecklist();
       if (!c) return;
@@ -6614,6 +6672,14 @@
         if (to < 0 || to > sec.items.length - 1) return; // 先頭↑・末尾↓は何もしない
         store.commit((s) =>
           M.moveItem(M.findChecklist(s, c.id), sectionId, itemId, sectionId, to)
+        );
+      } else if (action === 'merge-item-up') {
+        // 直前の手順へ統合（同一セクション内のみ・先頭は無効）。1コミット＝Undo1回。
+        const sec = c.sections.find((x) => x.id === sectionId);
+        const i = sec ? sec.items.findIndex((x) => x.id === itemId) : -1;
+        if (i <= 0) return; // 先頭 or 見つからない → 何もしない
+        store.commit((s) =>
+          M.mergeItemUp(M.findChecklist(s, c.id), sectionId, itemId)
         );
       }
     });

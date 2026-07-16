@@ -1222,10 +1222,10 @@ async function saveDocx(event, payload) {
       },
       table: { row: { cantSplit: true } },
       // フッター（中身は後処理で「PAGE / NUMPAGES」に差し替え）と
-      // 既定フォント（和文=游明朝・10.5pt・日本語）。docDefaults の eastAsia も後処理で游明朝に固定する。
+      // 既定フォント（和文=游ゴシック・10.5pt・日本語）。docDefaults の eastAsia も後処理で游ゴシックに固定する。
       footer: true,
       pageNumber: true,
-      font: '游明朝',
+      font: '游ゴシック',
       fontSize: 21,
       complexScriptFontSize: 21,
       lang: 'ja-JP',

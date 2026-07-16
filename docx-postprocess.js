@@ -2,18 +2,19 @@
 //
 // html-to-docx が生成した docx(zip Buffer) を受け取り、以下を書き換えて返す:
 //   (a) styles.xml  : Heading2/Heading4 を「アクセント色の見出し＋細ハイライン」に差し替え。
-//                     docDefaults の本文フォント(eastAsia)も游明朝に固定。
+//                     docDefaults の本文フォント(eastAsia)も游ゴシックに固定。
 //   (b) document.xml: レンダラーのマーカー段落を「表題」「目次(TOCフィールド)」の OOXML に置換。
 //                     所要時間の右詰め用マーカー @@DXTAB@@ を右タブ(w:tab)に変換。
 //                     見出し段落に直接付く行間指定も除去。
-//   (c) footer1.xml : 「ページ / 総ページ」(PAGE / NUMPAGES) の細罫線付き中央フッターに差し替え。
+//   (c) footer1.xml : 「ページ / 本文ページ数」(PAGE / SECTIONPAGES) の細罫線付き中央フッターに差し替え。
+//                     表紙・目次はセクション1（フッター無し＝番号なし）、本文はセクション2で1から採番。
 //   (d) settings.xml: 開いたときに目次等のフィールド更新を促す updateFields を挿入。
 //
 // 配色は表紙(カバー)の差し色に連動する（meta.accent）。表紙が無い場合も既定色でモダン様式にする。
 // Electron に依存しない素の Node モジュール（検証スクリプトからも同じ実装を require できる）。
 'use strict';
 
-const EA = '游明朝'; // 和文フォント（本文・見出し共通）
+const EA = '游ゴシック'; // 和文フォント（本文・見出し共通）
 const RIGHT_TAB = 9070; // twips ≒ 本文幅160mm。所要時間を行末に右詰めするタブ位置
 
 // 差し色を 6桁HEX（#なし・大文字）に正規化。3桁は展開、8桁(alpha付き)は先頭6桁。
@@ -167,14 +168,14 @@ const FOOTER_XML = (accent) => {
     <w:r>${rpr}<w:fldChar w:fldCharType="end" /></w:r>
     <w:r>${rpr}<w:t xml:space="preserve"> / </w:t></w:r>
     <w:r>${rpr}<w:fldChar w:fldCharType="begin" /></w:r>
-    <w:r>${rpr}<w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r>
+    <w:r>${rpr}<w:instrText xml:space="preserve"> SECTIONPAGES </w:instrText></w:r>
     <w:r>${rpr}<w:fldChar w:fldCharType="end" /></w:r>
   </w:p>
 </w:ftr>`;
 };
 
-// docDefaults（本文既定）の和文フォントを游明朝に固定する。html-to-docx は font 指定を
-// ascii/hAnsi 中心に置くため、CJK 用の eastAsia を明示して文書全体を游明朝に統一する。
+// docDefaults（本文既定）の和文フォントを游ゴシックに固定する。html-to-docx は font 指定を
+// ascii/hAnsi 中心に置くため、CJK 用の eastAsia を明示して文書全体を游ゴシックに統一する。
 function setDocDefaultEastAsia(styles, font) {
   const re = /(<w:docDefaults>[\s\S]*?<w:rPrDefault>\s*<w:rPr>[\s\S]*?)<w:rFonts([^>]*?)\/>/;
   if (re.test(styles)) {
@@ -200,7 +201,7 @@ async function postProcessDocx(buffer, meta) {
   const accent = normalizeHex(m.accent, '3B6EA5');
   const zip = await JSZip.loadAsync(buffer);
 
-  // (a) styles.xml: 見出しをモダン様式に、本文フォントを游明朝に
+  // (a) styles.xml: 見出しをモダン様式に、本文フォントを游ゴシックに
   let styles = await zip.file('word/styles.xml').async('string');
   const replaceStyle = (xml, styleId, replacement) => {
     const re = new RegExp('<w:style w:type="paragraph" w:styleId="' + styleId + '">[\\s\\S]*?</w:style>');
@@ -236,6 +237,30 @@ async function postProcessDocx(buffer, meta) {
     const pM = doc.match(paragraphWithMarker(m.markerToc));
     if (pM) doc = doc.replace(pM[0], TOC_XML(accent));
     else doc = doc.split(m.markerToc).join('');
+  }
+  // セクション分け: 表紙・目次（セクション1・フッター無し＝ページ番号なし）と
+  // 本文（セクション2・pgNumType で 1 ページ目から採番）に分ける。フッターは
+  // PAGE / SECTIONPAGES（本文のみの通し番号）。表紙が無い場合はマーカーが出ないので
+  // 単一セクションのまま（SECTIONPAGES は総ページ＝従来と同じ）。
+  //   html-to-docx は body-level sectPr を <w:body> の「先頭」に置く（非標準）。標準形
+  //   （区切りは段落内 sectPr、本文 sectPr は body 末尾）へ組み替える。
+  if (m.markerSecBrk) {
+    const origSect = (doc.match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/) || [])[0];
+    const secBrkP = doc.match(paragraphWithMarker(m.markerSecBrk));
+    if (origSect && secBrkP) {
+      const pgSz = (origSect.match(/<w:pgSz\b[^>]*\/>/) || [''])[0];
+      const pgMar = (origSect.match(/<w:pgMar\b[^>]*\/>/) || [''])[0];
+      const ftrRef = (origSect.match(/<w:footerReference\b[^>]*\/>/) || [''])[0];
+      // セクション1（表紙・目次）: 次ページ開始・寸法は本文と同じ・footer 無し＝番号なし。
+      const sect1 = `<w:sectPr><w:type w:val="nextPage"/>${pgSz}${pgMar}</w:sectPr>`;
+      // 本文（最終セクション）: 元の footer 参照を保持＋1 ページ目から採番。
+      const bodySect = `<w:sectPr>${ftrRef}${pgSz}${pgMar}<w:pgNumType w:start="1"/></w:sectPr>`;
+      doc = doc.replace(origSect, ''); // 先頭の元 sectPr を撤去（本文用として末尾へ移す）
+      doc = doc.replace(secBrkP[0], `<w:p><w:pPr>${sect1}</w:pPr></w:p>`); // 区切り → セクション1
+      doc = doc.replace('</w:body>', bodySect + '</w:body>'); // 本文 sectPr を末尾へ
+    } else {
+      doc = doc.split(m.markerSecBrk).join(''); // フェイルソフト（マーカーだけ除去）
+    }
   }
   // 手順番号のバッジ化: @@DXNUM@@N@@DXNE@@ をアクセント色のバッジ run に変換（@@DXTAB@@ より先）。
   doc = doc.replace(/@@DXNUM@@(\d+)@@DXNE@@/g, numBadgeReplacement(accent));
