@@ -78,6 +78,8 @@
     max-width: 880px;
     margin: 0 auto;
     padding: 20px 16px 60px;
+    /* 編集画面の表示ズーム（Ctrl+ホイール）。トップバーは等倍のまま内容だけ拡大縮小する。 */
+    zoom: var(--editor-zoom, 1);
   }
 
   /* ---- ボタン類 ---- */
@@ -202,11 +204,23 @@
   }
 
   /* ---- エディタ ---- */
+  /* 編集画面のヘッダー（← 一覧 ＋ タイトル ＋ 種別バッジ）はスクロールしても
+     トップバー直下に固定する。--topbar-h はトップバーの実測高さ（JS が設定）。
+     #app の横パディング(16px)を相殺する負マージン＋同量パディングで、固定バーを
+     読みカラムの端まで広げ、下に境界線を引いてツールバーらしく見せる。 */
   .editor-head {
+    position: sticky;
+    /* #app が zoom されるとヘッダーの sticky top も同じ倍率でスケールするため、
+       トップバー直下（等倍px）に固定されるよう倍率で割って補正する。 */
+    top: calc(var(--topbar-h, 46px) / var(--editor-zoom, 1));
+    z-index: 5;
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 12px;
+    margin: 0 -16px 12px;
+    padding: 8px 16px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
     flex-wrap: wrap;
   }
   .title-input {
@@ -363,7 +377,7 @@
   }
 
   /* ---- テンプレート型：番号付きタイムライン手順 ---- */
-  .items.steps { padding: 8px 12px 12px; }
+  .items.steps { padding: 4px 12px 6px; }
   .step {
     display: grid;
     grid-template-columns: 30px 1fr;
@@ -379,8 +393,8 @@
     cursor: grab;
   }
   .step-badge {
-    width: 28px;
-    height: 28px;
+    width: 22px;
+    height: 22px;
     flex: 0 0 auto;
     border-radius: 50%;
     border: 1px solid var(--border);
@@ -389,7 +403,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.85rem;
+    font-size: 0.78rem;
     font-weight: 700;
   }
   .step.done .step-badge {
@@ -405,13 +419,13 @@
     min-height: 6px;
   }
   .step:last-child .step-line { display: none; }
-  .step-body { padding-bottom: 12px; min-width: 0; }
+  .step-body { padding-bottom: 5px; min-width: 0; }
   .step-main { display: flex; align-items: center; gap: 8px; }
   .step-text { flex: 1; font-weight: 600; }
   .step.done .step-text { text-decoration: line-through; color: var(--muted); font-weight: 500; }
   .step-time { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); white-space: nowrap; }
   .step-time-input {
-    width: 38px;
+    width: 52px;
     text-align: right;
     border: 1px solid transparent;
     border-radius: 6px;
@@ -1102,6 +1116,9 @@
   .ce-field { display: grid; gap: 5px; font-size: 0.75rem; color: var(--muted); }
   .ce-field.col2 { grid-column: 1 / -1; }
   .ce-field input { font: inherit; font-size: 0.9rem; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+  /* 表紙のテキスト欄（本文編集と同じリッチ編集）。欄内では余白を詰めて背景を入力欄に合わせる。 */
+  .ce-field .rb.rb-cover { margin: 0; background: var(--bg); }
+  .rb-cover .rb-body { min-height: 34px; font-size: 0.9rem; }
   table.ce-rev { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
   table.ce-rev th { text-align: left; color: var(--muted); font-weight: 600; padding: 2px 5px; }
   table.ce-rev td { padding: 3px 4px; vertical-align: middle; }
@@ -1122,7 +1139,7 @@
      リッチ本文（手順の本文：書式付きテキスト＋表）
      contenteditable の本文。ツールバーはフォーカス時のみ表示。
      表の行列コントロールは body:hover 時に近接セルへフローティング表示する(#rb-tctl)。 */
-  .rb { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin: 6px 0 8px; }
+  .rb { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin: 3px 0 4px; }
   .rb:focus-within { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 16%, transparent); }
   .rb-toolbar { display: none; align-items: center; gap: 2px; flex-wrap: wrap; padding: 5px 6px; background: var(--surface-2); border-bottom: 1px solid var(--border); border-radius: 8px 8px 0 0; }
   .rb:focus-within .rb-toolbar { display: flex; }
@@ -1141,7 +1158,7 @@
   .rb-swatch { display: inline-block; width: 13px; height: 4px; border-radius: 2px; background: #c0392b; margin-left: 1px; vertical-align: 2px; }
   .rb-swatch-hl { padding: 0 3px; background: #fff3a3; color: #1f2329; border-radius: 3px; }
   .rb-ins-table { margin-left: auto; border: 1px solid var(--border); background: var(--surface); font-size: 0.85rem; gap: 4px; }
-  .rb-body { padding: 10px 12px; min-height: 38px; font-size: 0.95rem; outline: none; }
+  .rb-body { padding: 6px 10px; min-height: 20px; font-size: 0.95rem; outline: none; }
   .rb-body:empty::before { content: attr(data-placeholder); color: var(--muted); opacity: 0.7; }
   .rb-body p { margin: 0 0 6px; }
   .rb-body ul, .rb-body ol { margin: 4px 0 6px 1.4em; padding: 0; }
@@ -1247,6 +1264,11 @@
   <main id="app"></main>
 
   <input id="file-input" type="file" accept="application/json,.json,text/html,.html" hidden />
+
+  <!-- 所要時間の候補（1〜60分・1分刻み）。各手順の所要時間入力から list 属性で参照する。
+       テキスト入力はそのまま残しつつ、ドロップダウンからも選べるようにする候補リスト。
+       中身（option）は起動時に JS で流し込む（fillStepTimeOptions）。 -->
+  <datalist id="step-time-options"></datalist>
 
   <!-- アプリ全体を1ファイルに内包（ES Modules不使用 → file:// のダブルクリックで動作） -->
   <script>
@@ -1903,6 +1925,7 @@
         '  </div>\n' +
         '  <main id="app"></main>\n' +
         '  <input id="file-input" type="file" accept="application/json,.json,text/html,.html" hidden />\n' +
+        '  <datalist id="step-time-options"></datalist>\n' +
         '  <script>window.__CLM_STANDALONE__ = true;<\/script>\n' +
         '  <script type="application/json" id="clm-data">' + dataJson + '<\/script>\n' +
         '  <script>' + appJs + '<\/script>\n' +
@@ -2249,12 +2272,13 @@
         sheetName: excelSheetName(checklist.title),
         cover: cover
           ? {
-              title: cover.title || checklist.title || '',
-              subtitle: cover.subtitle || null,
-              author: cover.author || null,
+              // 表紙のテキスト欄はリッチ編集（HTML）なので、Excel セル用に素テキスト化する。
+              title: htmlToPlainText(cover.title || '') || checklist.title || '',
+              subtitle: htmlToPlainText(cover.subtitle || '') || null,
+              author: htmlToPlainText(cover.author || '') || null,
               date: cover.date || null,
-              version: cover.version || null,
-              docNumber: cover.docNumber || null,
+              version: htmlToPlainText(cover.version || '') || null,
+              docNumber: htmlToPlainText(cover.docNumber || '') || null,
               logo: cover.logo || null,
               revisions: (Array.isArray(cover.revisions) ? cover.revisions : []).map((r) => ({
                 version: r.version || '',
@@ -2584,6 +2608,7 @@
                      placeholder="手順の内容" value="${escapeHtml(item.text)}" />
               <span class="step-time">
                 <input class="step-time-input" data-action="edit-time" inputmode="numeric"
+                       list="step-time-options"
                        data-section="${sectionId}" data-item="${item.id}"
                        placeholder="–" aria-label="所要時間（分）" value="${escapeHtml(time)}" />
                 <span class="unit">分</span>
@@ -2606,12 +2631,44 @@
                   title="この下に手順を追加">＋ ここに追加</button>
         </li>`;
     }
-    // 手順の「リッチ本文」: 書式付きテキスト＋表を編集できる contenteditable 領域。
-    // ツールバーはフォーカス時のみ表示。保存はフォーカスアウト時に sanitize して commit。
-    function renderRichBody(sectionId, item) {
-      const body = sanitizeBodyHtml(item.body || '');
+    // 編集画面の表示ズーム: Ctrl+ホイールで編集内容(#app)を拡大縮小する。トップバーは
+    // 等倍のまま。トラックパッドのピンチも ctrlKey 付き wheel として届くので同じく効く。
+    let editorZoom = 1;
+    function initEditorZoom() {
+      const appEl = document.getElementById('app');
+      if (!appEl) return;
+      const ZMIN = 0.5, ZMAX = 2;
+      const apply = () => document.documentElement.style.setProperty('--editor-zoom', String(editorZoom));
+      appEl.addEventListener('wheel', (e) => {
+        if (!e.ctrlKey) return; // Ctrl 併用時のみズーム（通常はスクロールのまま）
+        e.preventDefault();
+        const next = editorZoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1);
+        editorZoom = Math.max(ZMIN, Math.min(ZMAX, Math.round(next * 100) / 100));
+        apply();
+      }, { passive: false });
+      // Ctrl+0（または ⌘+0）で等倍に戻す。
+      window.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === '0') { editorZoom = 1; apply(); }
+      });
+    }
+    // トップバーの実測高さを CSS 変数 --topbar-h に反映（編集画面ヘッダーの sticky top 用）。
+    function syncTopbarHeight() {
+      const tb = document.getElementById('topbar');
+      if (tb) document.documentElement.style.setProperty('--topbar-h', tb.offsetHeight + 'px');
+    }
+    // 所要時間の候補（1〜60分・1分刻み）を datalist に流し込む。テキスト直接入力は
+    // そのまま残し、入力欄の list 属性からこの候補をドロップダウン表示する。
+    function fillStepTimeOptions() {
+      const dl = document.getElementById('step-time-options');
+      if (!dl || dl.children.length) return;
+      let html = '';
+      for (let m = 1; m <= 60; m++) html += `<option value="${m}"></option>`;
+      dl.innerHTML = html;
+    }
+    // リッチ編集ツールバー（太字/斜体/下線/取消線・文字サイズ・文字色/ハイライト/セル塗り・
+    // 箇条書き/番号/表）。手順の本文と表紙のテキスト欄で共用する。
+    function rbToolbarHtml() {
       return `
-        <div class="rb" draggable="false">
           <div class="rb-toolbar">
             <button type="button" class="rb-btn" data-rb-cmd="bold" title="太字"><b>B</b></button>
             <button type="button" class="rb-btn" data-rb-cmd="italic" title="斜体"><i>I</i></button>
@@ -2631,7 +2688,15 @@
             <button type="button" class="rb-btn" data-rb-cmd="insertUnorderedList" title="箇条書き">•≡</button>
             <button type="button" class="rb-btn" data-rb-cmd="insertOrderedList" title="番号付きリスト">1.≡</button>
             <button type="button" class="rb-btn rb-ins-table" data-rb-cmd="insertTable" title="表を挿入">▦ 表</button>
-          </div>
+          </div>`;
+    }
+    // 手順の「リッチ本文」: 書式付きテキスト＋表を編集できる contenteditable 領域。
+    // ツールバーはフォーカス時のみ表示。保存はフォーカスアウト時に sanitize して commit。
+    function renderRichBody(sectionId, item) {
+      const body = sanitizeBodyHtml(item.body || '');
+      return `
+        <div class="rb" draggable="false">
+          ${rbToolbarHtml()}
           <div class="rb-body" contenteditable="true" data-rb-edit
                data-section="${sectionId}" data-item="${item.id}"
                data-placeholder="本文（任意）。書式や表を使えます">${body}</div>
@@ -2842,9 +2907,15 @@
       const it = sec && sec.items.find((x) => x.id === itemId);
       return it ? (it.body || '') : '';
     }
+    // 表紙のテキスト欄（リッチ編集）用のコミット橋渡し。表紙エディタが開いている間だけ
+    // 関数を差し込む（editor → draft へ保存）。閉じたら null に戻す。
+    let coverRichCommit = null;
     function rbCommitEditor(editor) {
+      if (!editor) return;
+      // 表紙のテキスト欄はチェックリスト項目ではないので専用の保存経路へ。
+      if (editor.dataset.rbCover) { if (coverRichCommit) coverRichCommit(editor); return; }
       const c = currentChecklist();
-      if (!c || !editor) return;
+      if (!c) return;
       const sectionId = editor.dataset.section, itemId = editor.dataset.item;
       const clean = sanitizeBodyHtml(editor.innerHTML);
       if (sanitizeBodyHtml(rbItemBody(c.id, sectionId, itemId)) === clean) return; // 変化なしなら何もしない
@@ -3254,11 +3325,15 @@
       const c = cover || {};
       const preset = COVER_PRESETS.includes(c.preset) ? c.preset : 'centered';
       const accent = /^#[0-9a-fA-F]{3,8}$/.test(c.accent || '') ? c.accent : '#3b6ea5';
-      const t = escapeHtml(c.title || fallbackTitle || '');
-      const author = escapeHtml(c.author || ''), date = escapeHtml(formatCoverDate(c.date));
-      const ver = escapeHtml(c.version || ''), docn = escapeHtml(c.docNumber || '');
+      // 表紙のテキスト欄は本文編集と同じリッチ編集（書式付き HTML）。サニタイズして流し込む。
+      // 日付だけはカレンダー入力の値を「yyyy年m月d日」に整形した素テキストにする。
+      const richCover = (v) => sanitizeBodyHtml(v || '');
+      const t = richCover(c.title) || escapeHtml(fallbackTitle || '');
+      const author = richCover(c.author), date = escapeHtml(formatCoverDate(c.date));
+      const ver = richCover(c.version), docn = richCover(c.docNumber);
       const title = `<h1 class="title">${t}</h1>`;
-      const subtitle = c.subtitle ? `<p class="subtitle">${escapeHtml(c.subtitle)}</p>` : '';
+      const sub = richCover(c.subtitle);
+      const subtitle = sub ? `<p class="subtitle">${sub}</p>` : '';
       const logo = c.logo ? `<div class="logo"><img src="${c.logo}" alt="" /></div>` : '';
       const metaInlineParts = [author, date, ver].filter(Boolean);
       const metaInline = metaInlineParts.length ? `<div class="meta">${metaInlineParts.join('　｜　')}</div>` : '';
@@ -3267,7 +3342,7 @@
         ? `<div class="meta" style="display:grid;gap:8px">${metaRows.map(([k, v]) => `<div class="meta-row"><b>${k}</b><span>${v}</span></div>`).join('')}</div>` : '';
       const revs = (Array.isArray(c.revisions) ? c.revisions : []).filter((r) => r.version || r.date || r.author || r.note);
       const revTable = revs.length
-        ? `<table class="rev"><caption>改訂履歴</caption><thead><tr><th>版</th><th>日付</th><th>作成者</th><th>内容</th></tr></thead><tbody>${revs.map((r) => `<tr><td>${escapeHtml(r.version || '')}</td><td>${escapeHtml(r.date || '')}</td><td>${escapeHtml(r.author || '')}</td><td>${escapeHtml(r.note || '')}</td></tr>`).join('')}</tbody></table>` : '';
+        ? `<table class="rev"><caption>改訂履歴</caption><thead><tr><th>版</th><th>日付</th><th>作成者</th><th>内容</th></tr></thead><tbody>${revs.map((r) => `<tr><td>${escapeHtml(r.version || '')}</td><td>${escapeHtml(formatCoverDate(r.date))}</td><td>${escapeHtml(r.author || '')}</td><td>${escapeHtml(r.note || '')}</td></tr>`).join('')}</tbody></table>` : '';
       const infoRows = [['文書番号', docn], ['版数', ver], ['作成者', author], ['発行日', date]].filter(([, v]) => v);
       const infobox = infoRows.length
         ? `<div class="infobox">${infoRows.map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join('')}</div>` : '';
@@ -3305,7 +3380,10 @@
       return new Promise((resolve, reject) => {
         try {
           const W = 794, H = 1123, SCALE = 2; // 2倍(1588x2246)で描く。本文幅160mmで約250dpi相当
-          const coverHtml = renderCoverHtml(cover, fallbackTitle);
+          // foreignObject 内は XML(XHTML)として解析されるため、空要素は自己終了形にする
+          //（表紙テキストのリッチ編集で <br> 等が入りうる。未終了だと XML 解析が壊れる）。
+          const coverHtml = renderCoverHtml(cover, fallbackTitle)
+            .replace(/<(br|hr|img|col|wbr)\b([^>]*?)\s*\/?>/gi, '<$1$2/>');
           // アプリの <style> 全文を同梱して .cover 系 CSS（プリセット・差し色）を効かせる。
           // ただし foreignObject を包む SVG は XML として解析されるため、CSS コメントは除去する
           // （このスタイルシートのコメントに含まれる "<input>" 等の '<' が XML を壊すため）。
@@ -4682,6 +4760,12 @@
       const fallbackTitle = M.findChecklist(store.state, checklistId).title;
       let draft = JSON.parse(JSON.stringify(M.findChecklist(store.state, checklistId).coverPage));
       const SWATCHES = [['#3b6ea5', '青'], ['#2f8f6b', '緑'], ['#2b3a67', '紺'], ['#5b6470', 'グレー'], ['#9b3b4a', '臙脂']];
+      // 表紙のテキスト欄（本文編集と同じリッチ編集）。data-rb-cover に対象フィールド名を持たせ、
+      // 保存・コミットは coverRichCommit 経由で draft へ書き戻す。
+      const coverRichField = (field, label, colClass) =>
+        `<div class="ce-field${colClass ? ' ' + colClass : ''}">${label}
+           <div class="rb rb-cover">${rbToolbarHtml()}<div class="rb-body" contenteditable="true" data-rb-edit data-rb-cover="${field}" data-placeholder="${escapeHtml(label)}">${sanitizeBodyHtml(draft[field] || '')}</div></div>
+         </div>`;
 
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
@@ -4722,12 +4806,12 @@
               <div class="ce-grp">
                 <div class="ce-lbl">テキスト</div>
                 <div class="ce-fields">
-                  <label class="ce-field col2">タイトル（大見出し）<input data-ce-field="title" /></label>
-                  <label class="ce-field col2">サブタイトル・説明<input data-ce-field="subtitle" /></label>
-                  <label class="ce-field">作成者・組織名<input data-ce-field="author" /></label>
+                  ${coverRichField('title', 'タイトル（大見出し）', 'col2')}
+                  ${coverRichField('subtitle', 'サブタイトル・説明', 'col2')}
+                  ${coverRichField('author', '作成者・組織名')}
                   <label class="ce-field">日付<input type="date" data-ce-field="date" /></label>
-                  <label class="ce-field">バージョン / 版数<input data-ce-field="version" /></label>
-                  <label class="ce-field">文書番号（任意）<input data-ce-field="docNumber" /></label>
+                  ${coverRichField('version', 'バージョン / 版数')}
+                  ${coverRichField('docNumber', '文書番号（任意）')}
                 </div>
               </div>
               <div class="ce-grp">
@@ -4763,7 +4847,7 @@
         revBody.innerHTML = (draft.revisions || []).map((r) => `
           <tr data-id="${r.id}">
             <td><input data-rev="version" value="${escapeHtml(r.version || '')}" /></td>
-            <td><input data-rev="date" value="${escapeHtml(r.date || '')}" /></td>
+            <td><input type="date" data-rev="date" value="${escapeHtml(toIsoDate(r.date))}" /></td>
             <td><input data-rev="author" value="${escapeHtml(r.author || '')}" /></td>
             <td><input data-rev="note" value="${escapeHtml(r.note || '')}" /></td>
             <td><button class="ce-rev-del" data-rev-del title="削除">🗑</button></td>
@@ -4799,8 +4883,24 @@
       renderRevRows();
       refresh();
 
+      // 表紙リッチ欄の確定保存（フォーカスアウト・書式適用時に rbCommitEditor から呼ばれる）。
+      // 保存済みと同じなら何もしない（無駄な Undo ステップを作らない）。
+      coverRichCommit = (editor) => {
+        const field = editor.dataset.rbCover;
+        if (!field) return;
+        const clean = sanitizeBodyHtml(editor.innerHTML);
+        const savedCover = M.findChecklist(store.state, checklistId).coverPage || {};
+        draft[field] = clean;
+        if ((savedCover[field] || '') === clean) return;
+        persist();
+      };
+
       const onResize = () => scaleCoverStages(overlay);
-      function close() { window.removeEventListener('resize', onResize); closeModal(overlay); }
+      function close() {
+        coverRichCommit = null;
+        window.removeEventListener('resize', onResize);
+        closeModal(overlay);
+      }
 
       overlay.addEventListener('click', (e) => {
         if (e.target === overlay || e.target.closest('[data-close]')) return close();
@@ -4824,8 +4924,12 @@
           persist(); renderRevRows(); refresh(); return;
         }
       });
-      // 入力中はプレビュー即時更新（commit は change で）
+      // 入力中はプレビュー即時更新（commit は change / フォーカスアウトで）
       overlay.addEventListener('input', (e) => {
+        // 表紙のリッチ編集欄（contenteditable）: サニタイズ済み HTML を draft へ入れて即プレビュー反映。
+        // 編集中の DOM は書き換えない（キャレット維持）ので draft 側だけ整えれば安全に保存できる。
+        const rich = e.target.closest('[data-rb-cover]');
+        if (rich) { draft[rich.dataset.rbCover] = sanitizeBodyHtml(rich.innerHTML); refresh(); return; }
         const f = e.target.closest('[data-ce-field]');
         if (f) { draft[f.dataset.ceField] = e.target.value; refresh(); return; }
         if (e.target.matches('[data-ce="custom-color"]')) { draft.accent = e.target.value; refresh(); return; }
@@ -6709,6 +6813,14 @@
       restoreFocus();
     });
     rbInit();
+    // 所要時間ドロップダウンの候補（1〜60分・1分刻み）を datalist に流し込む。
+    fillStepTimeOptions();
+    // 編集画面ヘッダーの固定位置（top）に使うトップバー高さを実測して CSS 変数へ反映。
+    syncTopbarHeight();
+    window.addEventListener('resize', syncTopbarHeight);
+    // 編集画面の表示ズーム（Ctrl+ホイールで拡大縮小・Ctrl+0 で等倍）。
+    // 画像編集キャンバスの Ctrl+ホイールズームと同じ操作感。内容(#app)だけを拡大する。
+    initEditorZoom();
     // Electron 版なら録画状態の変化を受け取りボタン表示へ反映する。
     if (window.recorderAPI && window.recorderAPI.onState) {
       window.recorderAPI.onState((d) => {
@@ -6761,6 +6873,8 @@
         guideStepPayload,
         // Excel/CSV 出力（3-A）の純関数
         buildXlsxSheetData, buildCsvText, htmlToPlainText, excelSheetName, capImageSize,
+        // 表紙（カバーページ）の純関数
+        renderCoverHtml, sanitizeBodyHtml, formatCoverDate, toIsoDate,
       });
     }
   })();
