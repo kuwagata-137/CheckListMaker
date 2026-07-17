@@ -105,6 +105,31 @@ test('model — チェックリスト操作の純関数', async (t) => {
     assert.ok(item.imageEdits[0], '残った画像に対応する編集ソースが残る');
   });
 
+  await t.test('copyItemImage — 手順間コピー（参照共有・元は残る・edit複製・同一は不変）', () => {
+    const c = M.createChecklist('template');
+    M.addSection(c, 'フェーズ2');
+    const [s1, s2] = c.sections;
+    M.addItem(c, s1.id, 'src');
+    M.addItem(c, s2.id, 'dst');
+    const src = s1.items[0];
+    const dst = s2.items[0];
+    M.addItemImage(c, s1.id, src.id, PX_JPEG, 'img:full-1');
+    M.replaceItemImage(c, s1.id, src.id, 0, PX_JPEG, { v: 1, base: PX_JPEG, strokes: '', objects: [] }, 'img:full-1');
+
+    // 別フェーズの手順へコピー
+    M.copyItemImage(c, s1.id, src.id, 0, s2.id, dst.id);
+    assert.equal(src.images.length, 1, '元の画像は残る（移動ではない）');
+    assert.equal(dst.images.length, 1, 'コピー先に1枚追加される');
+    assert.equal(dst.images[0], src.images[0], 'サムネ参照は共有（同じ値）');
+    assert.equal(dst.imagesFull[0], 'img:full-1', '原寸参照も共有される');
+    assert.ok(dst.imageEdits[0], 'edit も引き継がれる');
+    assert.notEqual(dst.imageEdits[0], src.imageEdits[0], 'edit は取り違え防止に複製（別オブジェクト）');
+
+    // 同一手順へのコピーは何もしない
+    M.copyItemImage(c, s1.id, src.id, 0, s1.id, src.id);
+    assert.equal(src.images.length, 1, '同一手順コピーは無視');
+  });
+
   await t.test('sumMinutes — 数値解釈できない time は 0 扱い', () => {
     assert.equal(M.sumMinutes([{ time: '10' }, { time: '5分' }, { time: '' }, { time: 'abc' }]), 15);
   });

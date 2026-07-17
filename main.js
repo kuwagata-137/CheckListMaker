@@ -1206,15 +1206,16 @@ async function saveDocx(event, payload) {
   try {
     // ページ設定は Word の手順書テンプレートに合わせて明示する
     // （html-to-docx の既定は US レター・余白 上下1440/左右1800 twip）。
-    // 単位は TWIP（1mm ≈ 56.69twip）: A4 = 210×297mm、余白は4方向とも 25mm。
+    // 単位は TWIP（1mm ≈ 56.69twip）: A4 = 210×297mm、余白は上下 15mm・左右 25mm。
+    // 上下を 15mm に詰めているのは、1工程が1ページに収まりやすくするため（印刷/PDF も同じ）。
     const MM = 56.6929; // twip / mm
     const buffer = await HTMLtoDOCX(html, null, {
       orientation: 'portrait',
       pageSize: { width: Math.round(210 * MM), height: Math.round(297 * MM) },
       margins: {
-        top: Math.round(25 * MM),
+        top: Math.round(15 * MM),
         right: Math.round(25 * MM),
-        bottom: Math.round(25 * MM),
+        bottom: Math.round(15 * MM),
         left: Math.round(25 * MM),
         header: 720,
         footer: 720,
@@ -1344,7 +1345,7 @@ async function savePdfFile(event, payload) {
   });
   if (canceled || !filePath) return { saved: false, canceled: true };
   try {
-    // preferCSSPageSize で CSS の @page（本文=A4/余白16mm、表紙=A4/余白0）を尊重する。
+    // preferCSSPageSize で CSS の @page（本文=A4/余白 上下15mm・左右25mm、表紙=A4/余白0）を尊重する。
     // これを付けないと printToPDF は既定余白を全ページに強制し、@page coverpage の
     // 余白0が効かず、A4 と等寸(794x1123px)の表紙が余白分だけはみ出してしまう。
     const buf = await event.sender.printToPDF({
@@ -1357,6 +1358,34 @@ async function savePdfFile(event, payload) {
     return { saved: true, filePath };
   } catch (e) {
     return { error: e.message };
+  }
+}
+
+// 画像挿入ボタン用のネイティブ「開く」ダイアログ。既定フォルダはユーザーの
+// ピクチャ配下 CheckListMaker（スクショ保存先と同じ）。無ければ作成してから開く。
+// 選択ファイルを dataURL にして返す（レンダラーの追加フローに載せる）。
+async function pickImageFile(event) {
+  const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+  const dir = screenshotDir();
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: '画像を選択',
+    defaultPath: dir,
+    properties: ['openFile'],
+    filters: [{ name: '画像', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'] }],
+  });
+  if (canceled || !filePaths || !filePaths[0]) return { canceled: true };
+  try {
+    const p = filePaths[0];
+    const buf = fs.readFileSync(p);
+    const ext = path.extname(p).toLowerCase().replace('.', '');
+    const mime = ({
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+      gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp',
+    })[ext] || 'application/octet-stream';
+    return { dataUrl: `data:${mime};base64,${buf.toString('base64')}` };
+  } catch (e) {
+    return { error: e.message || '画像の読み込みに失敗しました' };
   }
 }
 
@@ -1421,6 +1450,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('docx:save', (e, payload) => saveDocx(e, payload));
   ipcMain.handle('file:saveHtml', (e, payload) => saveHtmlFile(e, payload));
+  ipcMain.handle('image:pickFile', (e) => pickImageFile(e));
   ipcMain.handle('xlsx:save', (e, payload) => saveXlsx(e, payload));
   ipcMain.handle('csv:save', (e, payload) => saveCsv(e, payload));
   ipcMain.handle('print:pdf', (e, payload) => savePdfFile(e, payload));

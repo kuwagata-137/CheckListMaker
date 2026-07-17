@@ -147,6 +147,9 @@ contextBridge.exposeInMainWorld('fileAPI', {
   available: true,
   // payload = { title, html }。戻り値 = { saved } / { canceled } / { error }。
   saveHtml: (payload) => ipcRenderer.invoke('file:saveHtml', payload),
+  // 画像挿入ボタン用のネイティブ「開く」ダイアログ。既定フォルダは
+  // ピクチャ\CheckListMaker（無ければ作成）。戻り値 = { dataUrl } / { canceled } / { error }。
+  pickImage: () => ipcRenderer.invoke('image:pickFile'),
 });
 
 // PDF 保存（Electron 版のみ）。#print-root に印刷ビューを流し込んだ状態で呼ぶと、
