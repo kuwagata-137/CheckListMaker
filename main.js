@@ -1345,7 +1345,7 @@ async function savePdfFile(event, payload) {
   });
   if (canceled || !filePath) return { saved: false, canceled: true };
   try {
-    // preferCSSPageSize で CSS の @page（本文=A4/余白16mm、表紙=A4/余白0）を尊重する。
+    // preferCSSPageSize で CSS の @page（本文=A4/余白 上下15mm・左右25mm、表紙=A4/余白0）を尊重する。
     // これを付けないと printToPDF は既定余白を全ページに強制し、@page coverpage の
     // 余白0が効かず、A4 と等寸(794x1123px)の表紙が余白分だけはみ出してしまう。
     const buf = await event.sender.printToPDF({
@@ -1358,6 +1358,34 @@ async function savePdfFile(event, payload) {
     return { saved: true, filePath };
   } catch (e) {
     return { error: e.message };
+  }
+}
+
+// 画像挿入ボタン用のネイティブ「開く」ダイアログ。既定フォルダはユーザーの
+// ピクチャ配下 CheckListMaker（スクショ保存先と同じ）。無ければ作成してから開く。
+// 選択ファイルを dataURL にして返す（レンダラーの追加フローに載せる）。
+async function pickImageFile(event) {
+  const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+  const dir = screenshotDir();
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: '画像を選択',
+    defaultPath: dir,
+    properties: ['openFile'],
+    filters: [{ name: '画像', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'] }],
+  });
+  if (canceled || !filePaths || !filePaths[0]) return { canceled: true };
+  try {
+    const p = filePaths[0];
+    const buf = fs.readFileSync(p);
+    const ext = path.extname(p).toLowerCase().replace('.', '');
+    const mime = ({
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+      gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp',
+    })[ext] || 'application/octet-stream';
+    return { dataUrl: `data:${mime};base64,${buf.toString('base64')}` };
+  } catch (e) {
+    return { error: e.message || '画像の読み込みに失敗しました' };
   }
 }
 
@@ -1422,6 +1450,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('docx:save', (e, payload) => saveDocx(e, payload));
   ipcMain.handle('file:saveHtml', (e, payload) => saveHtmlFile(e, payload));
+  ipcMain.handle('image:pickFile', (e) => pickImageFile(e));
   ipcMain.handle('xlsx:save', (e, payload) => saveXlsx(e, payload));
   ipcMain.handle('csv:save', (e, payload) => saveCsv(e, payload));
   ipcMain.handle('print:pdf', (e, payload) => savePdfFile(e, payload));

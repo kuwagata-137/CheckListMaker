@@ -1521,6 +1521,31 @@
       }
       return touch(checklist);
     }
+    // 手順間の画像コピー（任意の手順→任意の手順）。実体（原寸/サムネのファイル参照）は
+    // 複製せず共有し、編集メタ(imageEdits)だけ複製する（docs/spec-dnd-image-copy-phase-move.md）。
+    // 同一手順へのコピーは何もしない。
+    function copyItemImage(checklist, fromSectionId, fromItemId, imgIndex, toSectionId, toItemId) {
+      if (fromSectionId === toSectionId && fromItemId === toItemId) return checklist;
+      const fromSec = findSection(checklist, fromSectionId);
+      const fromItem = fromSec && fromSec.items.find((x) => x.id === fromItemId);
+      const toSec = findSection(checklist, toSectionId);
+      const toItem = toSec && toSec.items.find((x) => x.id === toItemId);
+      if (!fromItem || !toItem) return checklist;
+      const src = itemImages(fromItem)[imgIndex];
+      if (src === undefined) return checklist;
+      const edit0 = itemImageEdits(fromItem)[imgIndex] || null;
+      const full = itemImagesFull(fromItem)[imgIndex] || null;
+      const edit = edit0 ? JSON.parse(JSON.stringify(edit0)) : null; // 取り違え防止に複製
+      // 3配列を「現在の長さで揃えて」取得してから同時に push する。images を先に
+      // push すると normalizeParallel が edits/fulls を先に null で埋めてズレるため。
+      const imgs = itemImages(toItem);
+      const edits = itemImageEdits(toItem);
+      const fulls = itemImagesFull(toItem);
+      imgs.push(src);        // サムネ参照は共有
+      edits.push(edit);
+      fulls.push(full);      // 原寸参照も共有
+      return touch(checklist);
+    }
     function replaceItemImage(checklist, sectionId, itemId, index, dataUrl, edit, fullRef) {
       const s = findSection(checklist, sectionId);
       const i = s && s.items.find((x) => x.id === itemId);
@@ -1635,7 +1660,7 @@
       renameChecklist, addSection, renameSection, removeSection, addItem, addBlankItem,
       setItemField, editItem, toggleItem, removeItem, resetChecklist, clearCompleted,
       moveItem, moveSection, mergeItemUp, mergeItemInto, mergeTimeValue,
-      addItemImage, replaceItemImage, removeItemImage,
+      addItemImage, replaceItemImage, removeItemImage, copyItemImage,
     };
 
     // =========================================================================
@@ -2581,9 +2606,9 @@
           (src, idx) => `
           <span class="thumb-wrap">
             <img class="thumb" src="${resolveImageSync(src)}"${isImgRef(src) ? ` data-img-ref="${src}"` : ''}
-                 alt="添付画像 ${idx + 1}" draggable="false"
+                 alt="添付画像 ${idx + 1}" draggable="true"
                  data-action="edit-image" data-section="${sectionId}"
-                 data-item="${item.id}" data-index="${idx}" title="クリックで編集" />
+                 data-item="${item.id}" data-index="${idx}" title="クリックで編集／別の手順へドラッグでコピー" />
             <button class="thumb-del" title="画像を削除" data-action="delete-image"
                     data-section="${sectionId}" data-item="${item.id}" data-index="${idx}">✕</button>
           </span>`
@@ -3653,6 +3678,25 @@
             rect,
           };
         }
+        // フェーズ見出し・空フェーズ・手順のすき間にドロップしたとき：そのフェーズの
+        // 手順リストを対象にする（見出し付近＝先頭、それ以外＝末尾へ）。
+        const overSection = e.target.closest('.section');
+        if (overSection) {
+          const list = overSection.querySelector('.items');
+          if (list) {
+            const items = list.querySelectorAll('.item');
+            const listRect = list.getBoundingClientRect();
+            const before = e.clientY < listRect.top;
+            const last = items[items.length - 1];
+            const rect = listRect.width ? listRect : overSection.getBoundingClientRect();
+            return {
+              toSection: list.dataset.section,
+              toIndex: before ? 0 : items.length,
+              lineY: before || !last ? rect.top : last.getBoundingClientRect().bottom,
+              rect,
+            };
+          }
+        }
         return null;
       }
       function sectionDropAt(e) {
@@ -3697,6 +3741,70 @@
           onMove({ kind: 'section', sectionId: dragging.id, toIndex: at.toIndex });
         }
       });
+    }
+
+    // 手順間の画像コピー（サムネイルを別の手順へD&D）。並べ替え用DnDや外部ファイル
+    // ドロップとは、ドラッグ対象(.thumb)と専用の状態変数で切り分けて干渉しない。
+    // （docs/spec-dnd-image-copy-phase-move.md）
+    let imgDrag = null;      // { sectionId, itemId, index } コピー元
+    let imgDropHiEl = null;  // ドロップ先ハイライト中の .item
+    function setImgDropHi(el) {
+      if (imgDropHiEl === el) return;
+      clearImgDropHi();
+      imgDropHiEl = el;
+      el.classList.add('drop-target');
+    }
+    function clearImgDropHi() {
+      if (imgDropHiEl) { imgDropHiEl.classList.remove('drop-target'); imgDropHiEl = null; }
+    }
+    function attachImageDnD(container) {
+      if (container.__imgDndWired) return;
+      container.__imgDndWired = true;
+      const sameItem = (item) =>
+        imgDrag && item.dataset.section === imgDrag.sectionId && item.dataset.item === imgDrag.itemId;
+      container.addEventListener('dragstart', (e) => {
+        const thumb = e.target.closest && e.target.closest('.thumb');
+        if (!thumb) return;
+        imgDrag = {
+          sectionId: thumb.dataset.section,
+          itemId: thumb.dataset.item,
+          index: Number(thumb.dataset.index),
+        };
+        try {
+          e.dataTransfer.effectAllowed = 'copy';
+          e.dataTransfer.setData('application/x-clm-image', '1');
+        } catch (_) {}
+      });
+      container.addEventListener('dragover', (e) => {
+        if (!imgDrag) return;
+        const item = e.target.closest('.item');
+        if (!item || sameItem(item)) { clearImgDropHi(); return; }
+        e.preventDefault();
+        try { e.dataTransfer.dropEffect = 'copy'; } catch (_) {}
+        setImgDropHi(item);
+      });
+      container.addEventListener('dragleave', (e) => {
+        if (!imgDrag) return;
+        const item = e.target.closest('.item');
+        if (item && !item.contains(e.relatedTarget)) clearImgDropHi();
+      });
+      container.addEventListener('drop', (e) => {
+        if (!imgDrag) return;
+        const item = e.target.closest('.item');
+        const src = imgDrag;
+        clearImgDropHi();
+        imgDrag = null;
+        if (!item || (item.dataset.section === src.sectionId && item.dataset.item === src.itemId)) return;
+        e.preventDefault();
+        const toSection = item.dataset.section;
+        const toItem = item.dataset.item;
+        const c = currentChecklist();
+        if (!c) return;
+        commitImage((s) =>
+          M.copyItemImage(M.findChecklist(s, c.id), src.sectionId, src.itemId, src.index, toSection, toItem)
+        );
+      });
+      container.addEventListener('dragend', () => { clearImgDropHi(); imgDrag = null; });
     }
 
     // =========================================================================
@@ -4521,6 +4629,7 @@
         if (!checklist) { goHome(); return; }
         app.innerHTML = renderEditor(checklist);
         attachDragAndDrop(app, handleMove);
+        attachImageDnD(app);
         scaleCoverStages(app);
       } else {
         app.innerHTML = renderHome(store.state);
@@ -5110,11 +5219,11 @@
       }
       return true;
     }
-    async function addImageFromBlob(c, sectionId, itemId, blob, openEditor) {
+    async function addImageFromDataUrl(c, sectionId, itemId, dataUrl, openEditor) {
       try {
         // Electron では原寸＋サムネの2枚を個別ファイルへ保存して参照を state に持つ
         //（ブラウザはサムネの dataURL を素通し）。
-        const { thumb, full } = await storeImagePair(await blobToDataUrl(blob));
+        const { thumb, full } = await storeImagePair(dataUrl);
         const ok = commitImage((s) =>
           M.addItemImage(M.findChecklist(s, c.id), sectionId, itemId, thumb, full)
         );
@@ -5127,7 +5236,21 @@
         alert(err.message || '画像の追加に失敗しました');
       }
     }
-    function pickAndAddImage(c, sectionId, itemId) {
+    async function addImageFromBlob(c, sectionId, itemId, blob, openEditor) {
+      return addImageFromDataUrl(c, sectionId, itemId, await blobToDataUrl(blob), openEditor);
+    }
+    async function pickAndAddImage(c, sectionId, itemId) {
+      // Electron: ネイティブダイアログで既定フォルダ（ピクチャ\CheckListMaker）を初期表示する。
+      // 素のブラウザ・単体HTMLでは従来の <input type=file>（初期フォルダはブラウザ任せ）。
+      if (window.fileAPI && window.fileAPI.pickImage) {
+        let res;
+        try { res = await window.fileAPI.pickImage(); }
+        catch (_) { res = { error: '画像の選択に失敗しました' }; }
+        if (!res || res.canceled) return;
+        if (res.error) { alert(res.error); return; }
+        if (res.dataUrl) addImageFromDataUrl(c, sectionId, itemId, res.dataUrl, true);
+        return;
+      }
       const inp = document.createElement('input');
       inp.type = 'file';
       inp.accept = 'image/*';
