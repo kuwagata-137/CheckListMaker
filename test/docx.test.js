@@ -26,8 +26,8 @@ async function buildDocx(html, meta) {
     orientation: 'portrait',
     pageSize: { width: Math.round(210 * MM), height: Math.round(297 * MM) },
     margins: {
-      top: Math.round(25 * MM), right: Math.round(25 * MM),
-      bottom: Math.round(25 * MM), left: Math.round(25 * MM),
+      top: Math.round(15 * MM), right: Math.round(25 * MM),
+      bottom: Math.round(15 * MM), left: Math.round(25 * MM),
       header: 720, footer: 720, gutter: 0,
     },
     table: { row: { cantSplit: true } },

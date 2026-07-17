@@ -1206,15 +1206,16 @@ async function saveDocx(event, payload) {
   try {
     // ページ設定は Word の手順書テンプレートに合わせて明示する
     // （html-to-docx の既定は US レター・余白 上下1440/左右1800 twip）。
-    // 単位は TWIP（1mm ≈ 56.69twip）: A4 = 210×297mm、余白は4方向とも 25mm。
+    // 単位は TWIP（1mm ≈ 56.69twip）: A4 = 210×297mm、余白は上下 15mm・左右 25mm。
+    // 上下を 15mm に詰めているのは、1工程が1ページに収まりやすくするため（印刷/PDF も同じ）。
     const MM = 56.6929; // twip / mm
     const buffer = await HTMLtoDOCX(html, null, {
       orientation: 'portrait',
       pageSize: { width: Math.round(210 * MM), height: Math.round(297 * MM) },
       margins: {
-        top: Math.round(25 * MM),
+        top: Math.round(15 * MM),
         right: Math.round(25 * MM),
-        bottom: Math.round(25 * MM),
+        bottom: Math.round(15 * MM),
         left: Math.round(25 * MM),
         header: 720,
         footer: 720,

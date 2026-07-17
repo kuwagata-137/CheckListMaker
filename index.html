@@ -1004,14 +1004,14 @@
     width: 210mm;
     max-width: 100%;
     margin: 0 auto;
-    padding: 25mm;
+    padding: 15mm 25mm;
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.45);
   }
   /* 印刷プレビュー内の表紙は、実際の印刷（@page coverpage=余白0の専用ページ）と同じく
-     ページの 25mm 余白を打ち消して全面(210mm=794px)で表示する。これをしないと A4 幅
-     と等寸の表紙がプレビュー面からはみ出す（印刷/PDF 実出力は既に余白0で正しい）。 */
+     ページの余白（上下15mm・左右25mm）を打ち消して全面(210mm=794px)で表示する。これを
+     しないと A4 幅と等寸の表紙がプレビュー面からはみ出す（印刷/PDF 実出力は既に余白0で正しい）。 */
   .print-preview-page .print-cover {
-    margin: -25mm -25mm 0;
+    margin: -15mm -25mm 0;
     overflow: hidden;
   }
 
@@ -1192,8 +1192,9 @@
     #print-root { display: block !important; }
     body { background: #fff; color: #000; }
     /* size を明示するのは printToPDF(preferCSSPageSize) に @page を尊重させ、
-       表紙(coverpage=余白0)と本文(16mm)を1ページの A4 に正しく収めるため。 */
-    @page { size: A4; margin: 25mm; }
+       表紙(coverpage=余白0)と本文を1ページの A4 に正しく収めるため。
+       本文の上下余白は 15mm・左右 25mm（1工程が1ページに収まりやすいよう上下を詰める）。 */
+    @page { size: A4; margin: 15mm 25mm; }
     /* 表紙は余白なしの専用ページにして 794x1123 を A4 に 1:1 で載せる */
     @page coverpage { size: A4; margin: 0; }
     .print-cover { page: coverpage; break-after: page; overflow: hidden; }
