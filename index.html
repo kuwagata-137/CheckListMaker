@@ -864,7 +864,7 @@
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
   /* ---- 録画取り込みウィザード（2-R4） ---- */
-  .modal.import-wiz { max-width: 760px; display: flex; flex-direction: column; max-height: 88vh; }
+  .modal.import-wiz { max-width: 900px; display: flex; flex-direction: column; max-height: 88vh; }
   .iw-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .iw-badge { font-size: 0.75rem; border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; color: var(--muted); }
   .iw-badge.warn { color: var(--danger); border-color: var(--danger); }
@@ -886,12 +886,156 @@
   .iw-tools button:hover:not(:disabled) { background: var(--surface-2); }
   .iw-tools button:disabled { opacity: 0.35; cursor: default; }
   .iw-text { width: 100%; font: inherit; font-size: 0.9rem; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); resize: vertical; }
-  .iw-dest { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: 0.85rem; color: var(--muted); flex-wrap: wrap; }
-  .iw-dest select, .iw-dest input { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
-  .iw-dest input { flex: 1; min-width: 140px; }
+  /* 取り込み先パネル（拡張）: 取り込み方の2択・フェーズ選択・挿入位置ピッカー */
+  .iw-dest {
+    margin-top: 12px; padding: 11px 13px;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2);
+    display: flex; flex-direction: column; gap: 10px; font-size: 0.85rem;
+  }
+  .iw-dest-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .iw-dest-row[hidden] { display: none; }
+  .iw-lbl { color: var(--muted); min-width: 5.4em; font-size: 0.82rem; }
+  .iw-dest select, .iw-dest input {
+    font: inherit; font-size: 0.85rem; padding: 5px 8px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text); max-width: 100%;
+  }
+  .iw-dest input.iw-title { flex: 1; min-width: 140px; }
+  .iw-mode { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .iw-mode button {
+    font: inherit; font-size: 0.83rem; padding: 5px 12px;
+    border: 0; background: var(--bg); color: var(--muted); cursor: pointer;
+  }
+  .iw-mode button.active { background: var(--primary); color: #fff; font-weight: 600; }
+  .iw-hint { color: var(--muted); font-size: 0.78rem; }
+
+  .ip { border: 1px solid var(--border); border-radius: 8px; background: var(--bg); padding: 9px 10px; }
+  .ip[hidden] { display: none; }
+  .ip-head { display: flex; align-items: baseline; gap: 8px; font-size: 0.78rem; color: var(--muted); margin-bottom: 7px; }
+  .ip-head b { color: var(--text); font-size: 0.82rem; }
+  .ip-strip { display: flex; align-items: stretch; overflow-x: auto; padding-bottom: 2px; }
+  .ip-shot { width: 110px; flex: none; display: flex; flex-direction: column; gap: 4px; }
+  .ip-shot img, .ip-shot .ip-noimg {
+    width: 100%; aspect-ratio: 16 / 10; object-fit: contain; display: block;
+    border: 1px solid var(--border); border-radius: 5px; background: var(--surface-2);
+  }
+  .ip-shot .ip-noimg {
+    display: flex; align-items: center; justify-content: center;
+    border-style: dashed; border-color: var(--border-strong);
+    color: var(--muted); font-size: 0.66rem;
+  }
+  .ip-shot .lb { font-size: 0.68rem; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+  .ip-slot {
+    width: 42px; flex: none;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    border: 0; background: transparent; font: inherit;
+    color: var(--muted); font-size: 0.64rem; cursor: pointer; padding: 0;
+  }
+  .ip-slot .bar {
+    width: 3px; flex: 1; border-radius: 3px;
+    background: repeating-linear-gradient(180deg, var(--border-strong) 0 4px, transparent 4px 8px);
+  }
+  .ip-slot .lb { white-space: nowrap; }
+  .ip-slot:hover .bar { background: color-mix(in srgb, var(--primary) 55%, transparent); }
+  .ip-slot.active { color: var(--primary); font-weight: 700; width: 82px; }
+  .ip-slot.active .bar { background: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent); }
+  .ip-slot.active .lb { background: var(--primary); color: #fff; border-radius: 999px; padding: 1px 8px; }
+
   .iw-sessions { display: grid; gap: 8px; max-height: 60vh; overflow-y: auto; }
   .iw-session { text-align: left; font: inherit; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: inherit; cursor: pointer; }
   .iw-session:hover { border-color: var(--primary); background: var(--surface-2); }
+
+  /* ---- サムネイルサイドバー（仕様は docs/spec-thumbnail-sidebar-and-import-insert.md） ----
+     テンプレート型の編集画面でだけ出す固定サイドバー。#app には編集ズーム（zoom）が
+     掛かっているため、その外側（兄弟要素）に置いて等倍のまま保つ。 */
+  :root { --thumbs-w: 0px; }
+  body { padding-left: var(--thumbs-w); }
+  #thumbs {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: 220px;
+    z-index: 20;
+    display: none;
+    flex-direction: column;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+  }
+  body.has-thumbs #thumbs { display: flex; }
+  #thumbs.is-collapsed { width: 30px; }
+  .tsb-head {
+    display: flex; align-items: center; gap: 6px;
+    padding: 9px 6px 9px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.82rem; font-weight: 700; letter-spacing: 0.02em;
+    box-shadow: var(--topbar-shadow);
+  }
+  .tsb-head .tsb-ttl { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; }
+  #thumbs.is-collapsed .tsb-head { padding: 9px 2px; justify-content: center; }
+  #thumbs.is-collapsed .tsb-scroll { display: none; }
+  .tsb-scroll { flex: 1; overflow-y: auto; padding: 8px 8px 14px; display: flex; flex-direction: column; }
+
+  /* フェーズの区切りは色を増やさず「見出しバー＋左の縦罫＋余白」で出す */
+  .tsb-phase { display: flex; flex-direction: column; }
+  .tsb-phase + .tsb-phase { border-top: 1px solid var(--border); padding-top: 13px; margin-top: 13px; }
+  .tsb-phase-head {
+    position: sticky; top: 0; z-index: 2;
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 7px 5px 8px; margin-bottom: 7px;
+    background: var(--surface-2);
+    /* <button> の既定枠線を消してから、左だけアクセント帯にする */
+    border: 0; border-radius: 6px; border-left: 4px solid var(--primary);
+    font-size: 0.78rem; font-weight: 700;
+    color: inherit; font-family: inherit; text-align: left;
+    width: 100%; cursor: pointer;
+  }
+  .tsb-phase-head:hover { background: color-mix(in srgb, var(--primary) 12%, var(--surface-2)); }
+  .tsb-phase-head .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tsb-phase-head .ct { color: var(--muted); font-weight: 600; font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+  .tsb-body {
+    display: flex; flex-direction: column; gap: 6px;
+    border-left: 2px solid var(--border); margin-left: 4px; padding-left: 8px;
+    min-height: 10px;
+  }
+
+  .tsb-card {
+    position: relative;
+    display: grid; grid-template-columns: 20px 1fr; gap: 7px;
+    padding: 5px; border: 1px solid transparent; border-radius: 8px;
+    background: transparent; color: inherit; font: inherit; text-align: left;
+    cursor: pointer;
+  }
+  .tsb-card:hover { background: var(--surface-2); box-shadow: var(--shadow-item); }
+  .tsb-card:hover .tsb-ops { display: flex; }
+  .tsb-card.is-current { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
+  .tsb-card.is-current .tsb-no { color: var(--primary); }
+  .tsb-no {
+    font-size: 0.68rem; font-weight: 700; color: var(--muted);
+    text-align: center; padding-top: 2px; font-variant-numeric: tabular-nums;
+  }
+  .tsb-fig { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .tsb-shot {
+    width: 100%; aspect-ratio: 16 / 10; object-fit: contain; display: block;
+    border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2);
+  }
+  .tsb-noimg {
+    width: 100%; aspect-ratio: 16 / 10;
+    border: 1px dashed var(--border-strong); border-radius: 4px;
+    background: var(--surface-2); color: var(--muted); font-size: 0.66rem;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tsb-cap {
+    font-size: 0.72rem; color: var(--muted); line-height: 1.35;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .tsb-ops {
+    position: absolute; top: 3px; right: 3px;
+    display: none; gap: 2px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 1px 3px; box-shadow: var(--shadow-item);
+  }
+  .tsb-ops .tsb-grip { color: var(--muted); font-size: 0.72rem; padding: 0 3px; cursor: grab; user-select: none; }
+  .tsb-ops button { font: inherit; font-size: 0.72rem; padding: 0 3px; border: 0; background: transparent; color: var(--danger); cursor: pointer; }
+  .tsb-empty { color: var(--muted); font-size: 0.76rem; padding: 10px 4px; }
 
   /* ---- 印刷用ビュー ----
      画面では隠し、印刷時だけ #app / #topbar と入れ替えて表示する。
@@ -1186,6 +1330,9 @@
 
   @media print {
     #topbar, #app { display: none !important; }
+    /* サムネイルサイドバーは紙面に出さない（左パディングごと戻す） */
+    #thumbs { display: none !important; }
+    body { padding-left: 0 !important; }
     /* プレビューモーダルを開いたまま印刷/PDF化するため、モーダル類も紙面から除く */
     .modal-overlay { display: none !important; }
     .player-overlay { display: none !important; }
@@ -2692,6 +2839,152 @@
                   title="この下に手順を追加">＋ ここに追加</button>
         </li>`;
     }
+    // =========================================================================
+    // サムネイルサイドバー（仕様は docs/spec-thumbnail-sidebar-and-import-insert.md）
+    //   テンプレート型の編集画面でだけ出す。#app には編集ズーム(zoom)が掛かるため
+    //   #app の外（兄弟）に置き、等倍のまま保つ。
+    // =========================================================================
+    // チェックリスト → サイドバーの表示モデル。通し番号は本文と同じくフェーズを
+    // またいで 1..N。フェーズ名が空だと区切りが読めないので連番で補う。
+    function thumbStepModel(checklist) {
+      const sections = (checklist && checklist.sections) || [];
+      let no = 0;
+      return sections.map((s, si) => ({
+        id: s.id,
+        title: (s.title || '').trim() || `フェーズ ${si + 1}`,
+        count: s.items.length,
+        items: s.items.map((it) => {
+          no += 1;
+          const imgs = Array.isArray(it.images) ? it.images : [];
+          return {
+            id: it.id,
+            no,
+            text: (it.text || '').trim(),
+            image: imgs.length ? imgs[0] : null,
+          };
+        }),
+      }));
+    }
+    function thumbsCollapsed() {
+      const s = store.state.settings;
+      return !!(s && s.thumbsCollapsed);
+    }
+    function setThumbsCollapsed(v) {
+      // 見た目の設定なので Undo 履歴には積まない（印刷レイアウト設定と同じ扱い）
+      commitInPlace((s) => {
+        s.settings = s.settings || {};
+        s.settings.thumbsCollapsed = !!v;
+      }, { history: false });
+      // commitInPlace は再描画しないので、見出し（« / »）は自分で描き直す
+      updateThumbSidebar(currentChecklist());
+    }
+    function renderThumbSidebar(checklist) {
+      const model = thumbStepModel(checklist);
+      const phases = model
+        .map((p) => {
+          const cards = p.items
+            .map((it) => {
+              const fig = it.image
+                ? `<img class="tsb-shot" src="${resolveImageSync(it.image)}"${
+                    isImgRef(it.image) ? ` data-img-ref="${escapeHtml(it.image)}"` : ''
+                  } alt="" />`
+                : '<span class="tsb-noimg">画像なし</span>';
+              const cap = it.text || '（未入力）';
+              return `
+              <div class="tsb-card" data-item="${it.id}" data-section="${p.id}" data-drag="item"
+                   data-action="goto-item" title="${escapeHtml(cap)}">
+                <span class="tsb-no">${it.no}</span>
+                <span class="tsb-fig">${fig}<span class="tsb-cap">${escapeHtml(cap)}</span></span>
+                <span class="tsb-ops">
+                  <span class="tsb-grip" title="ドラッグで並べ替え（フェーズ間も可）">⠿</span>
+                  <button type="button" title="この手順を削除"
+                          data-action="delete-item" data-section="${p.id}" data-item="${it.id}">✕</button>
+                </span>
+              </div>`;
+            })
+            .join('');
+          return `
+          <div class="tsb-phase" data-section="${p.id}">
+            <button type="button" class="tsb-phase-head" data-action="goto-section" data-section="${p.id}"
+                    title="このフェーズへ移動">
+              <span class="nm">${escapeHtml(p.title)}</span>
+              <span class="ct">${p.count}件</span>
+            </button>
+            <div class="tsb-body" data-section="${p.id}">${cards}</div>
+          </div>`;
+        })
+        .join('');
+      const collapsed = thumbsCollapsed();
+      return `
+        <div class="tsb-head">
+          ${collapsed ? '' : '<span class="tsb-ttl">サムネイル</span>'}
+          <button class="icon" type="button" data-action="toggle-thumbs"
+                  title="${collapsed ? 'サムネイルを開く' : 'サムネイルを閉じる'}">${collapsed ? '»' : '«'}</button>
+        </div>
+        <div class="tsb-scroll">${phases || '<p class="tsb-empty">手順がありません</p>'}</div>`;
+    }
+    // <aside id="thumbs"> を #app の前に作る（buildStandaloneHtml の body 定義に
+    // 手を入れずに、単体HTMLでも同じように動かすため JS 側で生成する）。
+    let thumbsEl = null;
+    function ensureThumbsEl() {
+      if (thumbsEl && thumbsEl.isConnected) return thumbsEl;
+      thumbsEl = document.getElementById('thumbs');
+      if (!thumbsEl) {
+        thumbsEl = document.createElement('aside');
+        thumbsEl.id = 'thumbs';
+        thumbsEl.setAttribute('aria-label', 'サムネイル');
+        document.body.insertBefore(thumbsEl, document.getElementById('app'));
+      }
+      return thumbsEl;
+    }
+    // 表示状態と、本文を右へ寄せるための幅（--thumbs-w）を反映する。
+    function applyThumbsChrome() {
+      const on = document.body.classList.contains('has-thumbs');
+      const collapsed = thumbsCollapsed();
+      if (thumbsEl) thumbsEl.classList.toggle('is-collapsed', collapsed);
+      document.documentElement.style.setProperty('--thumbs-w', on ? (collapsed ? '30px' : '220px') : '0px');
+    }
+    // render() から呼ぶ。テンプレート型の編集画面のときだけ中身を作って出す。
+    function updateThumbSidebar(checklist) {
+      const on = !!checklist && checklist.type === MODES.TEMPLATE;
+      document.body.classList.toggle('has-thumbs', on);
+      if (!on) {
+        if (thumbsEl) thumbsEl.innerHTML = '';
+        applyThumbsChrome();
+        return;
+      }
+      const el = ensureThumbsEl();
+      const keepTop = el.querySelector('.tsb-scroll')?.scrollTop || 0;
+      el.innerHTML = renderThumbSidebar(checklist);
+      const scroll = el.querySelector('.tsb-scroll');
+      if (scroll) scroll.scrollTop = keepTop;
+      applyThumbsChrome();
+      attachDragAndDrop(el, handleMove, {
+        item: '.tsb-card',
+        list: '.tsb-body',
+        section: '.tsb-phase',
+        handle: '.tsb-grip',
+      });
+      markCurrentThumb(currentItemId);
+    }
+    // 本文で編集中の手順に対応するカードを強調する。再描画すると入力欄の
+    // フォーカスが壊れるため、class の付け替えだけで追随させる。
+    let currentItemId = null;
+    function markCurrentThumb(itemId) {
+      currentItemId = itemId || null;
+      if (!thumbsEl) return;
+      thumbsEl.querySelectorAll('.tsb-card').forEach((el) => {
+        el.classList.toggle('is-current', !!itemId && el.dataset.item === itemId);
+      });
+    }
+
+    // サイドバーから本文へジャンプするときのスクロール。#app は zoom が掛かるが
+    // scrollIntoView は実表示位置で効くのでそのまま使える。
+    function scrollToEditorTarget(el) {
+      if (!el || typeof el.scrollIntoView !== 'function') return;
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+
     // 編集画面の表示ズーム: Ctrl+ホイールで編集内容(#app)を拡大縮小する。トップバーは
     // 等倍のまま。トラックパッドのピンチも ctrlKey 付き wheel として届くので同じく効く。
     let editorZoom = 1;
@@ -3615,18 +3908,27 @@
     }
     function hideDragIndicator() { if (dragIndicatorEl) dragIndicatorEl.style.display = 'none'; }
 
-    function attachDragAndDrop(container, onMove) {
+    // opts でセレクタを差し替えられる（既定は編集画面本文の構造）。サムネイル
+    // サイドバーは同じ判定ロジックを別のクラス名で使い回すため、ここだけ可変にする。
+    const DND_SELECTORS = {
+      item: '.item',        // 1手順ぶんの行／カード
+      list: '.items',       // 手順の並ぶ入れ物（data-section を持つ）
+      section: '.section',  // フェーズの入れ物（data-section を持つ）
+      handle: '.grip, .step-rail', // 掴める場所
+    };
+    function attachDragAndDrop(container, onMove, opts = {}) {
       // render() のたびに呼ばれるが、リスナーはすべて委譲なので初回だけ配線する
       //（毎回追加すると drop 1回で onMove が複数回走り、undo 履歴も汚れる）。
       if (container.__dndWired) return;
       container.__dndWired = true;
+      const SEL = { ...DND_SELECTORS, ...opts };
       let dragging = null;
       let armed = null; // グリップ押下で一時的に draggable にした要素
       // ドラッグはハンドル（⠿グリップ／手順の番号レール）を掴んだときだけ開始する。
       // 行全体を常時 draggable にすると、テキスト入力欄・リッチ本文・画像の上での
       // 操作（文字選択など）がドラッグ判定に食われてしまうため。
       container.addEventListener('mousedown', (e) => {
-        const grip = e.target.closest && e.target.closest('.grip, .step-rail');
+        const grip = e.target.closest && e.target.closest(SEL.handle);
         const src = grip && grip.closest('[data-drag]');
         if (src) { src.setAttribute('draggable', 'true'); armed = src; }
       });
@@ -3637,15 +3939,15 @@
         if (!el || el.getAttribute('draggable') !== 'true') return;
         const kind = el.dataset.drag;
         if (kind === 'item') {
-          const li = el.closest('.item');
+          const li = el.closest(SEL.item);
           dragging = { kind, id: li.dataset.item, fromSection: li.dataset.section };
         } else if (kind === 'section') {
-          const sec = el.closest('.section');
+          const sec = el.closest(SEL.section);
           dragging = { kind, id: sec.dataset.section, fromSection: null };
         }
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', dragging ? dragging.id : '');
-        requestAnimationFrame(() => el.closest('.item, .section')?.classList.add('dragging'));
+        requestAnimationFrame(() => el.closest(`${SEL.item}, ${SEL.section}`)?.classList.add('dragging'));
       });
       container.addEventListener('dragend', () => {
         container.querySelectorAll('.dragging, .drop-target')
@@ -3657,10 +3959,10 @@
       // 挿入位置（どの行とどの行の間に入るか）を drop と同じ中点判定で求める。
       // dragover での表示と drop での確定が必ず一致するよう、判定を共通化する。
       function itemDropAt(e) {
-        const overItem = e.target.closest('.item');
-        const overList = e.target.closest('.items');
+        const overItem = e.target.closest(SEL.item);
+        const overList = e.target.closest(SEL.list);
         if (overItem) {
-          const siblings = [...overItem.parentElement.querySelectorAll('.item')];
+          const siblings = [...overItem.parentElement.querySelectorAll(SEL.item)];
           let toIndex = siblings.indexOf(overItem);
           const rect = overItem.getBoundingClientRect();
           const after = e.clientY > rect.top + rect.height / 2;
@@ -3668,7 +3970,7 @@
           return { toSection: overItem.dataset.section, toIndex, lineY: after ? rect.bottom : rect.top, rect };
         }
         if (overList) {
-          const items = overList.querySelectorAll('.item');
+          const items = overList.querySelectorAll(SEL.item);
           const rect = overList.getBoundingClientRect();
           const last = items[items.length - 1];
           return {
@@ -3680,11 +3982,11 @@
         }
         // フェーズ見出し・空フェーズ・手順のすき間にドロップしたとき：そのフェーズの
         // 手順リストを対象にする（見出し付近＝先頭、それ以外＝末尾へ）。
-        const overSection = e.target.closest('.section');
+        const overSection = e.target.closest(SEL.section);
         if (overSection) {
-          const list = overSection.querySelector('.items');
+          const list = overSection.querySelector(SEL.list);
           if (list) {
-            const items = list.querySelectorAll('.item');
+            const items = list.querySelectorAll(SEL.item);
             const listRect = list.getBoundingClientRect();
             const before = e.clientY < listRect.top;
             const last = items[items.length - 1];
@@ -3700,9 +4002,9 @@
         return null;
       }
       function sectionDropAt(e) {
-        const overSection = e.target.closest('.section');
+        const overSection = e.target.closest(SEL.section);
         if (!overSection) return null;
-        const sections = [...container.querySelectorAll('.section')];
+        const sections = [...container.querySelectorAll(SEL.section)];
         let toIndex = sections.indexOf(overSection);
         const rect = overSection.getBoundingClientRect();
         const after = e.clientY > rect.top + rect.height / 2;
@@ -3979,11 +4281,11 @@
       if (shot.choice === 'both' && shot.zoomImage) return [shot.image, shot.zoomImage];
       return [shot.image];
     }
-    // ステップモデル → 取り込むセクション。imagesByStep[i] は i 番目のステップに
+    // ステップモデル → 取り込む項目の配列。imagesByStep[i] は i 番目のステップに
     // 添付する画像（storeImage 済みの参照 or dataURL）の配列。
-    function buildImportSection(title, steps, imagesByStep = []) {
-      const section = M.createSection(title);
-      steps.forEach((st, i) => {
+    // 新セクションとして足すときも既存フェーズへ差し込むときも、ここを共用する。
+    function buildImportItems(steps, imagesByStep = []) {
+      return (steps || []).map((st, i) => {
         const item = M.createItem(String(st.text || '').trim());
         // imagesByStep[i] の各要素は {thumb, full} ペア（原寸 2 段構成・3-B）。
         // 後方互換で素の参照/dataURL が来た場合は原寸なし(null)として扱う。
@@ -3993,8 +4295,26 @@
           if (!Array.isArray(item.imagesFull)) item.imagesFull = [];
           item.imagesFull.push(isPair ? (img.full || null) : null);
         }
-        section.items.push(item);
+        return item;
       });
+    }
+    // ステップモデル → 取り込むセクション（末尾に新フェーズを足すモード）。
+    function buildImportSection(title, steps, imagesByStep = []) {
+      const section = M.createSection(title);
+      section.items = buildImportItems(steps, imagesByStep);
+      return section;
+    }
+    // 挿入位置の丸め。非数・負値は 0、超過は末尾（len）にする。
+    function clampInsertIndex(len, at) {
+      const n = Math.floor(Number(at));
+      if (!Number.isFinite(n)) return len;
+      return Math.max(0, Math.min(len, n));
+    }
+    // セクションの指定位置へ項目を差し込む（既存の手順は消さない）。
+    function insertItemsAt(section, at, items) {
+      if (!section || !Array.isArray(items) || !items.length) return section;
+      if (!Array.isArray(section.items)) section.items = [];
+      section.items.splice(clampInsertIndex(section.items.length, at), 0, ...items);
       return section;
     }
 
@@ -4083,10 +4403,30 @@
         </div>
         <div class="iw-list"></div>
         <div class="iw-dest">
-          取り込み先
-          <select class="iw-dest-select">${destOptions}</select>
-          セクション名
-          <input class="iw-title" value="${escapeHtml(defaultTitle)}" />
+          <div class="iw-dest-row">
+            <span class="iw-lbl">取り込み先</span>
+            <select class="iw-dest-select">${destOptions}</select>
+          </div>
+          <div class="iw-dest-row" data-iw-row="mode">
+            <span class="iw-lbl">取り込み方</span>
+            <span class="iw-mode">
+              <button type="button" data-iw-mode="new" class="active">＋ 新しいフェーズとして追加</button>
+              <button type="button" data-iw-mode="insert">▼ 既存のフェーズに挿入</button>
+            </span>
+          </div>
+          <div class="iw-dest-row" data-iw-row="title">
+            <span class="iw-lbl">セクション名</span>
+            <input class="iw-title" value="${escapeHtml(defaultTitle)}" />
+          </div>
+          <div class="iw-dest-row" data-iw-row="phase" hidden>
+            <span class="iw-lbl">フェーズ</span>
+            <select class="iw-phase-select"></select>
+            <span class="iw-hint">既存の手順は消えません。選んだ位置に割り込みます。</span>
+          </div>
+          <div class="ip" data-iw-row="pos" hidden>
+            <div class="ip-head"><b>挿入位置</b><span>手順のあいだを押して選びます</span></div>
+            <div class="ip-strip"></div>
+          </div>
         </div>
         <div class="modal-actions">
           <button class="btn" data-close type="button">キャンセル</button>
@@ -4095,6 +4435,108 @@
       `);
       overlay.querySelector('.modal').classList.add('import-wiz');
       const listEl = overlay.querySelector('.iw-list');
+
+      // ---- 取り込み先パネル: 新フェーズ追加 / 既存フェーズへ挿入 ----
+      const destSelect = overlay.querySelector('.iw-dest-select');
+      const phaseSelect = overlay.querySelector('.iw-phase-select');
+      const stripEl = overlay.querySelector('.ip-strip');
+      const row = (k) => overlay.querySelector(`[data-iw-row="${k}"]`);
+      // 'new' = 末尾に新フェーズ（現行どおり・既定） / 'insert' = 既存フェーズの途中へ
+      let destMode = 'new';
+      let insertAt = 0; // 選択中のすき間（0..items.length）
+
+      const destChecklist = () => {
+        const v = destSelect.value;
+        return v === '__new__' ? null : M.findChecklist(store.state, v);
+      };
+      const destSection = () => {
+        const c = destChecklist();
+        return c ? c.sections.find((s) => s.id === phaseSelect.value) || null : null;
+      };
+      // 「（新しいリストを作成）」や、フェーズが1つも無いリストには挿入できない
+      const canInsert = () => {
+        const c = destChecklist();
+        return !!(c && c.sections.length);
+      };
+
+      function renderPhaseOptions() {
+        const c = destChecklist();
+        const secs = c ? c.sections : [];
+        phaseSelect.innerHTML = secs
+          .map((s, i) => {
+            const name = (s.title || '').trim() || `フェーズ ${i + 1}`;
+            return `<option value="${escapeHtml(s.id)}">${escapeHtml(name)}（${s.items.length}件）</option>`;
+          })
+          .join('');
+      }
+      function renderStrip() {
+        const sec = destSection();
+        const items = sec ? sec.items : [];
+        insertAt = clampInsertIndex(items.length, insertAt);
+        const slot = (at, label) =>
+          `<button type="button" class="ip-slot${at === insertAt ? ' active' : ''}" data-ip-at="${at}">
+             <span class="bar"></span>
+             <span class="lb">${at === insertAt ? `${steps.length}件を挿入` : escapeHtml(label)}</span>
+           </button>`;
+        let html = slot(0, items.length ? '先頭' : 'ここ');
+        items.forEach((it, i) => {
+          const src = Array.isArray(it.images) && it.images.length ? it.images[0] : null;
+          const fig = src
+            ? `<img src="${resolveImageSync(src)}"${isImgRef(src) ? ` data-img-ref="${escapeHtml(src)}"` : ''} alt="" />`
+            : '<span class="ip-noimg">画像なし</span>';
+          const text = (it.text || '').trim() || '（未入力）';
+          html += `<span class="ip-shot">${fig}<span class="lb" title="${escapeHtml(text)}">${i + 1} ${escapeHtml(
+            text.length > 8 ? text.slice(0, 8) + '…' : text
+          )}</span></span>`;
+          html += slot(i + 1, i + 1 === items.length ? '末尾' : 'ここ');
+        });
+        stripEl.innerHTML = html;
+      }
+      // 押したら何が起きるかをボタンのラベルに出す
+      function importLabel() {
+        if (destMode !== 'insert') return '取り込む';
+        const sec = destSection();
+        const len = sec ? sec.items.length : 0;
+        const where = insertAt <= 0 ? '先頭に' : insertAt >= len ? '末尾に' : `手順${insertAt}の後に`;
+        return `${where}${steps.length}件を挿入`;
+      }
+      function syncDestPanel() {
+        const insertable = canInsert();
+        if (!insertable) destMode = 'new';
+        row('mode').hidden = !insertable;
+        row('title').hidden = destMode === 'insert';
+        row('phase').hidden = destMode !== 'insert';
+        row('pos').hidden = destMode !== 'insert';
+        overlay.querySelectorAll('[data-iw-mode]').forEach((b) => {
+          b.classList.toggle('active', b.dataset.iwMode === destMode);
+        });
+        if (destMode === 'insert') renderStrip();
+        const btn = overlay.querySelector('[data-iw-import]');
+        if (!btn.disabled) btn.textContent = importLabel();
+      }
+
+      renderPhaseOptions();
+      insertAt = (destSection()?.items.length) || 0; // 既定は末尾
+      syncDestPanel();
+
+      destSelect.addEventListener('change', () => {
+        renderPhaseOptions();
+        insertAt = (destSection()?.items.length) || 0;
+        syncDestPanel();
+      });
+      phaseSelect.addEventListener('change', () => {
+        insertAt = (destSection()?.items.length) || 0; // フェーズを変えたら末尾に戻す
+        syncDestPanel();
+      });
+      overlay.querySelectorAll('[data-iw-mode]').forEach((b) => {
+        b.addEventListener('click', () => { destMode = b.dataset.iwMode; syncDestPanel(); });
+      });
+      stripEl.addEventListener('click', (e) => {
+        const slot = e.target.closest('[data-ip-at]');
+        if (!slot) return;
+        insertAt = Number(slot.dataset.ipAt);
+        syncDestPanel();
+      });
 
       // サムネイル: 元PNGは大きいため 320px に縮小した dataURL をキャッシュする
       //（一覧のメモリを抑える。添付用の原寸は取り込み時に読み直す）。
@@ -4220,9 +4662,12 @@
             importBtn.textContent = `取り込み中… ${imagesByStep.length}/${steps.length}`;
           }
           const title = overlay.querySelector('.iw-title').value.trim() || defaultTitle;
-          const destSel = overlay.querySelector('.iw-dest-select').value;
-          const section = buildImportSection(title, steps, imagesByStep);
+          const destSel = destSelect.value;
+          const insertMode = destMode === 'insert' && canInsert();
+          const targetSectionId = insertMode ? phaseSelect.value : null;
+          const at = insertAt;
           let destId = destSel;
+          let fellBack = false; // 挿入先フェーズが消えていて末尾追加に切り替えたか
           // 1回の commit = Undo 1回で丸ごと取り消せる
           store.commit((s) => {
             let c = destSel === '__new__' ? null : M.findChecklist(s, destSel);
@@ -4232,7 +4677,14 @@
               M.addChecklist(s, c);
               destId = c.id;
             }
-            c.sections.push(section);
+            // 既存フェーズへの挿入。確定の直前にフェーズが消えていたら末尾追加へ倒す。
+            const target = insertMode ? c.sections.find((x) => x.id === targetSectionId) : null;
+            if (insertMode && target) {
+              insertItemsAt(target, at, buildImportItems(steps, imagesByStep));
+            } else {
+              if (insertMode) fellBack = true;
+              c.sections.push(buildImportSection(title, steps, imagesByStep));
+            }
             c.updatedAt = Date.now();
           });
           if (store.lastSaveOk === false) {
@@ -4244,10 +4696,14 @@
           window.recorderAPI.markImported(dir).catch(() => {});
           closeModal(overlay);
           goEditor(destId);
-          showToast(`${steps.length}件の手順を取り込みました（Ctrl+Z で取り消せます）。`);
+          showToast(
+            fellBack
+              ? `挿入先のフェーズが見つからなかったため、末尾に新しいフェーズとして${steps.length}件を取り込みました（Ctrl+Z で取り消せます）。`
+              : `${steps.length}件の手順を取り込みました（Ctrl+Z で取り消せます）。`
+          );
         } finally {
           importBtn.disabled = false;
-          importBtn.textContent = '取り込む';
+          importBtn.textContent = importLabel();
         }
       });
     }
@@ -4631,8 +5087,10 @@
         attachDragAndDrop(app, handleMove);
         attachImageDnD(app);
         scaleCoverStages(app);
+        updateThumbSidebar(checklist);
       } else {
         app.innerHTML = renderHome(store.state);
+        updateThumbSidebar(null);
       }
       updateTopbar();
     }
@@ -6809,6 +7267,15 @@
       }
     });
 
+    // ---- 本文でフォーカスした手順を、サイドバーのカードに反映する ----
+    // 再描画すると入力欄のフォーカスが壊れるため、class の付け替えだけで追随させる。
+    document.addEventListener('focusin', (e) => {
+      if (!document.body.classList.contains('has-thumbs')) return;
+      if (!app.contains(e.target)) return;
+      const row = e.target.closest('.item');
+      if (row && row.dataset.item !== currentItemId) markCurrentThumb(row.dataset.item);
+    });
+
     // ---- ツールバーのタブ切替（委譲。再描画に強い） ----
     document.addEventListener('click', (e) => {
       const tab = e.target.closest('.tb-tab');
@@ -6857,6 +7324,19 @@
           const cur = M.findChecklist(store.state, id);
           if (confirm(`「${cur ? cur.title : ''}」を削除しますか？`))
             store.commit((s) => M.removeChecklist(s, id));
+          return;
+        }
+        case 'toggle-thumbs':
+          return setThumbsCollapsed(!thumbsCollapsed());
+        case 'goto-section':
+          return scrollToEditorTarget(app.querySelector(`.section[data-section="${CSS.escape(sectionId)}"]`));
+        case 'goto-item': {
+          // 削除ボタン（.tsb-ops 内）を押したときは移動しない
+          if (e.target.closest('[data-action="delete-item"]')) return;
+          const row = app.querySelector(`.item[data-item="${CSS.escape(itemId)}"]`);
+          scrollToEditorTarget(row);
+          markCurrentThumb(itemId);
+          row?.querySelector('.item-text')?.focus();
           return;
         }
         case 'add-section':
@@ -7058,7 +7538,10 @@
         STORAGE_KEY, MIGRATED_KEY,
         // 録画取り込みウィザードの純関数（2-R4）
         wizardDefaultChoice, wizardStepsFrom, wizardMergeUp, wizardBulkReplace,
-        wizardShotFiles, buildImportSection,
+        wizardShotFiles, buildImportSection, buildImportItems, clampInsertIndex, insertItemsAt,
+        openImportWizard,
+        // サムネイルサイドバー
+        thumbStepModel, renderThumbSidebar, updateThumbSidebar, thumbsCollapsed, setThumbsCollapsed,
         // 実行モード（3-R5）とガイド小窓（3-R6）
         playerSteps, playerStartIndex, formatPlayerTime, playerSummary, openPlayer,
         guideStepPayload,
