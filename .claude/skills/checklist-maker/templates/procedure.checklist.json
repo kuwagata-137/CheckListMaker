@@ -1,0 +1,108 @@
+{
+  "checklists": [
+    {
+      "id": "clm-procedure-0001",
+      "title": "月次バックアップ復元テスト手順書",
+      "type": "template",
+      "createdAt": 1753600000000,
+      "updatedAt": 1753600000000,
+      "coverPage": {
+        "enabled": true,
+        "includeToc": true,
+        "preset": "doc-header",
+        "accent": "#3b6ea5",
+        "title": "月次バックアップ復元テスト手順書",
+        "subtitle": "基幹システム／検証環境での復元確認",
+        "author": "情報システム課",
+        "date": "2026-07-27",
+        "version": "1.0",
+        "docNumber": "IS-OPS-014",
+        "logo": "",
+        "revisions": [
+          {
+            "id": "clm-procedure-rev-1",
+            "version": "1.0",
+            "date": "2026-07-27",
+            "author": "情報システム課",
+            "note": "初版"
+          }
+        ]
+      },
+      "sections": [
+        {
+          "id": "clm-procedure-sec-1",
+          "title": "① 準備：作業前に確認する",
+          "items": [
+            {
+              "id": "clm-procedure-item-1",
+              "text": "当月のバックアップが正常終了しているか確認する",
+              "done": false,
+              "note": "失敗している場合はここで中止し、バックアップの再取得から始める。",
+              "time": "5",
+              "images": [],
+              "body": "<p>バックアップ管理画面の<strong>ジョブ履歴</strong>を開き、当月分の状態を確認する。</p><table><thead><tr><th>状態</th><th>判断</th></tr></thead><tbody><tr><td>成功</td><td>次の手順へ進む</td></tr><tr><td>警告</td><td>ログを確認し、対象外ファイルのみなら続行</td></tr><tr><td>失敗</td><td><strong>中止</strong>。バックアップ再取得を依頼する</td></tr></tbody></table>"
+            },
+            {
+              "id": "clm-procedure-item-2",
+              "text": "検証環境が停止していることを確認する",
+              "done": false,
+              "note": "本番環境に接続していないか、接続先設定を必ず目視で確認する。",
+              "time": "5",
+              "images": [],
+              "body": ""
+            }
+          ]
+        },
+        {
+          "id": "clm-procedure-sec-2",
+          "title": "② 実施：検証環境へ復元する",
+          "items": [
+            {
+              "id": "clm-procedure-item-3",
+              "text": "復元ウィザードを開き、対象のバックアップセットを選ぶ",
+              "done": false,
+              "note": "「復元先」が検証環境になっていることを、実行前にもう一度確認する。",
+              "time": "10",
+              "images": [],
+              "body": "<p>選択する項目は以下のとおり。</p><ul><li>復元元：当月の<strong>フルバックアップ</strong></li><li>復元先：<strong>検証環境</strong>（本番ではない）</li><li>オプション：既存データを上書き</li></ul>"
+            },
+            {
+              "id": "clm-procedure-item-4",
+              "text": "復元を実行し、完了までログを監視する",
+              "done": false,
+              "note": "所要時間はデータ量により変動する。エラーが出たらログを保存して中断する。",
+              "time": "45",
+              "images": [],
+              "body": ""
+            }
+          ]
+        },
+        {
+          "id": "clm-procedure-sec-3",
+          "title": "③ 確認：復元結果を検証する",
+          "items": [
+            {
+              "id": "clm-procedure-item-5",
+              "text": "検証環境にログインし、最新伝票の件数を照合する",
+              "done": false,
+              "note": "本番の件数と一致すれば成功。差異があれば復元をやり直す。",
+              "time": "10",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "clm-procedure-item-6",
+              "text": "結果を作業記録に残し、検証環境を停止する",
+              "done": false,
+              "note": "記録には実施日・担当者・件数照合の結果を書く。",
+              "time": "10",
+              "images": [],
+              "body": ""
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "settings": { "theme": "auto" }
+}

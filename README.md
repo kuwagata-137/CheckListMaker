@@ -103,6 +103,23 @@ npm run dist         # dist/ に CheckListMaker のインストーラ(.exe)を�
 （矢印・四角・モザイク・トリミング等）で説明を描き込めます。手順に貼った画像は手順欄の幅
 いっぱいに大きく表示されます。
 
+## AI に手順書を作らせる（別プロジェクトでの利用）
+
+別のプロジェクトで作業している AI（Claude）に、その作業内容から CheckListMaker で開ける
+手順書データ（`.checklist.json`）を書かせるためのスキルを同梱しています。
+
+- **スキル本体**: [`.claude/skills/checklist-maker/`](.claude/skills/checklist-maker/SKILL.md)
+- **導入**: このディレクトリごと対象リポジトリの `.claude/skills/` へコピーするだけ
+- **中身**: JSON スキーマの全仕様・手順書としての書き方・見本テンプレート2種・
+  依存ゼロのバリデータ（`node scripts/validate-checklist.mjs <file>`）
+
+AI ができるのは **JSON を書くところまで**です（CheckListMaker は MCP サーバーでも CLI でも
+ないため、AI がアプリを起動したり `.docx` を直接生成したりはできません）。生成された JSON を
+ホーム画面の「インポート」で取り込み、画像を貼り、Word / PDF / Excel に出すのは利用者の操作です。
+設計判断は [`docs/spec-ai-usage-skill.md`](docs/spec-ai-usage-skill.md) に残しています。
+
+> ⚠ JSON の取り込みは**既存データを全置換**します。先に「エクスポート」でバックアップを。
+
 ## 構成
 
 アプリ本体は `index.html` 1ファイルに収めています（外部依存ゼロ・ビルド不要・`file://` で
