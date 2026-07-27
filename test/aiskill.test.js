@@ -6,6 +6,9 @@
 //  - テンプレートが index.html で実際に開けること（＝ドキュメントの嘘を防ぐ）。
 //  - スキルが「type は template」と書いている根拠（note/time/body が出力に載る）が
 //    アプリの実装と一致していること。
+//  - json-to-html.mjs が出す「取り込み用 HTML」を parseChecklistFromHtml が読めること
+//    （AI の成果物を渡す既定経路なので、往復が壊れたら気付けるようにする）。
+//  - プラグインのマニフェスト（plugin.json / marketplace.json）が整合していること。
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,8 +19,10 @@ const { execFileSync } = require('child_process');
 const { bootApp, waitFor } = require('./harness');
 
 const ROOT = path.join(__dirname, '..');
-const SKILL = path.join(ROOT, '.claude', 'skills', 'checklist-maker');
+const PLUGIN = path.join(ROOT, 'plugins', 'checklist-maker');
+const SKILL = path.join(PLUGIN, 'skills', 'checklist-maker');
 const VALIDATOR = path.join(SKILL, 'scripts', 'validate-checklist.mjs');
+const TO_HTML = path.join(SKILL, 'scripts', 'json-to-html.mjs');
 const TEMPLATES = ['minimal', 'procedure'].map((n) =>
   path.join(SKILL, 'templates', `${n}.checklist.json`)
 );
@@ -215,5 +220,110 @@ test('checklist-maker スキル — ドキュメントの主張がアプリの�
 
   await t.test('time は parseInt で合計される（文字列で持つ）', () => {
     assert.equal(M.sumMinutes([{ time: '5' }, { time: '7' }, { time: '' }]), 12);
+  });
+});
+
+test('checklist-maker スキル — 取り込み用 HTML の往復', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const api = await app.api();
+  const { parseChecklistFromHtml } = api;
+
+  // json-to-html.mjs で HTML を作り、その場で読み返す
+  function toHtml(file) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clm-html-'));
+    const out = path.join(dir, 'out.html');
+    execFileSync(process.execPath, [TO_HTML, file, '-o', out], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const html = fs.readFileSync(out, 'utf8');
+    fs.rmSync(dir, { recursive: true, force: true });
+    return html;
+  }
+
+  for (const file of TEMPLATES) {
+    const name = path.basename(file);
+    await t.test(`${name} → HTML → parseChecklistFromHtml で復元できる`, () => {
+      const src = JSON.parse(fs.readFileSync(file, 'utf8')).checklists[0];
+      const back = parseChecklistFromHtml(toHtml(file));
+      assert.equal(back.id, src.id, 'id が保たれる（＝取り込みが更新扱いになる）');
+      assert.equal(back.title, src.title);
+      assert.equal(back.type, src.type);
+      assert.equal(back.sections.length, src.sections.length);
+      // back は jsdom 側の realm で JSON.parse された配列なので、deepStrictEqual だと
+      // プロトタイプ違いで落ちる。中身を文字列に畳んで比較する。
+      const texts = (c) => c.sections.flatMap((s) => s.items.map((i) => i.text)).join('\n');
+      assert.equal(texts(back), texts(src), '全手順が保たれる');
+      const notes = (c) => c.sections.flatMap((s) => s.items.map((i) => i.note || '')).join('\n');
+      assert.equal(notes(back), notes(src), 'メモが保たれる');
+      if (src.coverPage) assert.equal(back.coverPage.docNumber, src.coverPage.docNumber, '表紙が保たれる');
+    });
+  }
+
+  await t.test('取り込み用 HTML は人が読める静的レンダリングも含む', () => {
+    const file = TEMPLATES[1]; // procedure（表紙・表つき）
+    const src = JSON.parse(fs.readFileSync(file, 'utf8')).checklists[0];
+    const html = toHtml(file);
+    assert.ok(html.includes('<script type="application/json" id="clm-data">'), '取り込み用データがある');
+    const firstStep = src.sections[0].items[0].text;
+    // clm-data を取り除いた「見える部分」に手順名が出ていること
+    const visible = html.replace(/<script[\s\S]*?<\/script>/g, '');
+    assert.ok(visible.includes(firstStep), '手順名が静的レンダリングにも出る');
+    assert.ok(visible.includes('<table'), 'body の表が描画される');
+    assert.doesNotMatch(visible, /<script/i, '見える部分にスクリプトは無い');
+  });
+
+  await t.test('埋め込み JSON の "</" は退避され、script が途中で閉じない', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clm-html-'));
+    const src = path.join(dir, 'x.json');
+    const data = JSON.parse(fs.readFileSync(TEMPLATES[0], 'utf8'));
+    data.checklists[0].sections[0].items[0].body = '<p>閉じタグ </script> を含む</p>';
+    fs.writeFileSync(src, JSON.stringify(data));
+    try {
+      const back = parseChecklistFromHtml(toHtml(src));
+      assert.ok(back.sections[0].items[0].body.includes('</script>'), '中身が壊れず復元される');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('checklist-maker スキル — プラグインのマニフェスト', async (t) => {
+  const plugin = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'));
+  const market = JSON.parse(fs.readFileSync(path.join(ROOT, '.claude-plugin', 'marketplace.json'), 'utf8'));
+
+  await t.test('plugin.json に必須フィールドがある', () => {
+    assert.equal(plugin.name, 'checklist-maker');
+    assert.ok(plugin.description && plugin.description.length > 10);
+    assert.match(plugin.version, /^\d+\.\d+\.\d+$/);
+  });
+
+  await t.test('marketplace.json の必須フィールドと参照先が正しい', () => {
+    assert.ok(market.name && !/\s/.test(market.name), 'name は空白なしの識別子');
+    assert.ok(market.owner && market.owner.name, 'owner.name が要る');
+    assert.ok(Array.isArray(market.plugins) && market.plugins.length >= 1);
+    const entry = market.plugins.find((p) => p.name === plugin.name);
+    assert.ok(entry, 'plugin.json と同じ name のエントリがある');
+    assert.match(entry.source, /^\.\//, '相対パスは ./ で始まる');
+    // source はマーケットプレイスのルート（.claude-plugin を含む階層）から解決される
+    assert.ok(
+      fs.existsSync(path.join(ROOT, entry.source, '.claude-plugin', 'plugin.json')),
+      `source "${entry.source}" の先に plugin.json が無い`
+    );
+    assert.equal(entry.version, plugin.version, 'version が plugin.json と揃っている');
+  });
+
+  await t.test('スキルが plugin.json から見える場所にある', () => {
+    const skillMd = path.join(PLUGIN, 'skills', 'checklist-maker', 'SKILL.md');
+    assert.ok(fs.existsSync(skillMd), 'skills/<name>/SKILL.md が要る');
+    const head = fs.readFileSync(skillMd, 'utf8').slice(0, 400);
+    assert.match(head, /^---\n/, 'frontmatter で始まる');
+    assert.match(head, /\nname: checklist-maker\n/, 'frontmatter に name がある');
+    assert.match(head, /\ndescription: /, 'frontmatter に description がある');
+  });
+
+  await t.test('.claude/skills 側に複製が残っていない（二重管理の防止）', () => {
+    assert.ok(
+      !fs.existsSync(path.join(ROOT, '.claude', 'skills', 'checklist-maker')),
+      'プラグインへ移動済みなので .claude/skills 側には置かない'
+    );
   });
 });

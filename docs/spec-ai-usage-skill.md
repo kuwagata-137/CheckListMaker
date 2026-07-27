@@ -27,36 +27,73 @@
 
 ## 決定事項
 
-### 決定1: AI 向けインターフェースは state JSON に一本化する
+### 決定1: AI 向けインターフェースは state JSON ＋ 取り込み用 HTML
 
-AI にとっての「ツールとしての CheckListMaker」は **「正しい `.checklist.json` を書けること」**
-と定義する。そこを MCP のツールスキーマ相当の精度で書き切る。
+AI にとっての「ツールとしての CheckListMaker」は **「正しいデータを書けること」** と定義し、
+そこを MCP のツールスキーマ相当の精度で書き切る。
 
-自己完結 HTML の生成も理屈の上では可能だが、`index.html` 全体（388KB）を埋め込む必要が
-あるため AI が一から作るのは非現実的。**既存の書き出し HTML を編集する用途**にとどめ、
-ドキュメント上は「マージ取り込みができる形式」として紹介するだけにする。
+出力は2形式:
 
-### 決定2: 配布形態は Claude スキルにする
+- **state JSON**（`.checklist.json`）— 正本
+- **取り込み用 HTML** — `<script type="application/json" id="clm-data">` にデータを埋め、
+  加えて人が読める静的レンダリングを持つ HTML。`scripts/json-to-html.mjs` で生成する
 
-単独の Markdown 1枚だと、別プロジェクトの AI が自動で見つけられない。
-本リポジトリは既に `dev-policy` スキルで「方針を他リポジトリへ運ぶ」パターンを持っており、
-「他のプロジェクトで使う」という要求にそのまま合致する。同じ形に揃える。
+**HTML を既定の受け渡し形式にする。** 理由は取り込みの安全性で、HTML 取り込みは
+「同一 `id` なら更新、無ければ追加＝マージ」だから既存データを壊さない。
+`parseChecklistFromHtml` は `DOMParser` で `id="clm-data"` を探すだけなので、
+アプリ本体を埋め込んだ自己完結 HTML である必要がない——ここが実現可能性の鍵だった。
+
+なお **アプリの「自己完結HTML（名前を付けて保存）」は AI には作れない**
+（`index.html` 全体 388KB の埋め込みが要る）。AI が出すのは閲覧専用の HTML までで、
+編集できる HTML が欲しければ取り込んだあとアプリ側で保存し直す。
+
+### 決定2: 配布形態は Claude プラグインにする
+
+当初は `.claude/skills/` 直置きのスキルにしたが、それでは **CheckListMaker リポジトリで
+作業しているときしか発動しない**。「他のプロジェクトで手順書を作る」という当初の目的を
+満たすには配布の仕組みが要る。
+
+検討した3案:
+
+| 案 | 効く範囲 | 難点 |
+|---|---|---|
+| プロジェクトごとに `.claude/skills/` へコピー | コピー先だけ | 手作業。更新が伝播しない |
+| `~/.claude/skills/` に置く | ローカル全プロジェクト | Web／リモート環境ではコンテナ再生成で消える |
+| **プラグイン化** | 一度入れれば全プロジェクト | スキル名が名前空間付きになる |
+
+**プラグイン化を採用**。更新が `git push` で伝播し、Web セッションでも
+対象プロジェクトの `.claude/settings.json` に `extraKnownMarketplaces` ＋
+`enabledPlugins` を書けば効く。
 
 ```
-.claude/skills/checklist-maker/
-  SKILL.md                          AI 向け入口（できること／できないこと・手順・厳守事項）
-  references/data-format.md         JSON スキーマ全仕様
-  references/authoring-guide.md     手順書としての中身の書き方
-  references/export-and-limits.md   受け渡し・出力・既知の制約
-  templates/minimal.checklist.json    最小例
-  templates/procedure.checklist.json  表紙・表つきの実用例
-  scripts/validate-checklist.mjs    依存ゼロのバリデータ
+.claude-plugin/marketplace.json           マーケットプレイス（リポジトリ直下）
+plugins/checklist-maker/
+  .claude-plugin/plugin.json              プラグインのマニフェスト
+  skills/checklist-maker/
+    SKILL.md                          AI 向け入口（できること／できないこと・手順・厳守事項）
+    references/data-format.md         JSON スキーマ全仕様
+    references/authoring-guide.md     手順書としての中身の書き方
+    references/export-and-limits.md   受け渡し・出力・既知の制約
+    templates/minimal.checklist.json    最小例
+    templates/procedure.checklist.json  表紙・表つきの実用例
+    scripts/validate-checklist.mjs    依存ゼロのバリデータ
+    scripts/json-to-html.mjs          依存ゼロの取り込み用 HTML 生成
 ```
 
-### 決定3: バリデータは外部依存ゼロにする
+`.claude/skills/checklist-maker/` は **残さず `git mv` で移動した**。
+両方に置くと内容が二重管理になり、どちらが正か分からなくなるため
+（公式ドキュメントもプラグイン移行時は `.claude/` 側を消すよう案内している）。
+代償として、main にマージされるまでこのリポジトリ内では自動発動しない。
+その間は `claude --plugin-dir ./plugins/checklist-maker` で読ませる。
 
-導入先のプロジェクトで `npm install` できるとは限らない。Node 標準モジュールだけで
-動くこと（`node:fs` / `node:path` のみ）を必須要件とする。
+このリポジトリ自身の `.claude/settings.json` は変更していない。github ソースの
+マーケットプレイスは既定ブランチ（main）を見るため、マージ前に書くと
+「プラグインが見つからない」状態になるから。
+
+### 決定3: 同梱スクリプトは外部依存ゼロにする
+
+導入先のプロジェクトで `npm install` できるとは限らない。バリデータ・HTML 生成とも
+Node 標準モジュールだけで動くこと（`node:fs` / `node:path` のみ）を必須要件とする。
 
 エラー（取り込めない）と警告（取り込めるが意図と違う可能性）を分け、
 エラーがあれば終了コード 1 を返す。
@@ -77,18 +114,18 @@ AI は画像を持たない。`"images": []` で出させ、画像はユーザ�
 Word・Excel のどの出力にも載らない**。手順書用途では致命的なので、
 AI が踏みやすい地雷として SKILL.md の先頭付近に置いた。
 
-### 決定7: JSON 取り込みの「全置換」は今回ドキュメントで警告するに留める
+### 決定7: JSON 取り込みにマージを追加する（アプリ本体を変更）
 
 state JSON の取り込みは `confirm()` のあと `store.replaceState(data)` を行うため、
-**ユーザーの既存データがすべて消える**。「1件だけ追加する取り込み」はアプリ側に無い。
+**ユーザーの既存データがすべて消える**しか選べなかった。外から JSON を持ち込む運用を
+始める以上、これは危険なのでアプリ側を直す。
 
-今回はアプリ本体に手を入れず、次の2点をドキュメントで担保する:
+- `mergeChecklistsInto(state, incoming)` を追加し、取り込み時に
+  「追加・更新する（既定）／すべて置き換える／キャンセル」の3択を出す
+- 詳細な仕様と検証は **`docs/spec-json-merge-import.md`** に分離した
 
-- ユーザーへの案内文にバックアップの警告を必ず入れる
-- 既存データがある場合は「現在の JSON を書き出してもらい、`checklists` 配列に追記して返す」
-  運用を推奨する
-
-アプリ側に「1件マージ取り込み」を足すかどうかは**別タスク**とし、本スキルのスコープ外とする。
+あわせて、AI の成果物は既定で HTML 経路（もともとマージ）を使うようにしたので、
+危険な経路を通らずに済む二重の備えになっている。
 
 ## 作業中に見つかったこと（本スキルのスコープ外）
 
@@ -100,7 +137,10 @@ state JSON の取り込みは `confirm()` のあと `store.replaceState(data)` �
 
 ## 変更範囲
 
-`index.html` / `main.js` などアプリ本体には手を入れていない（ドキュメントと新規スキルのみ）。
+- 新規: `.claude-plugin/marketplace.json`、`plugins/checklist-maker/**`、
+  `docs/spec-json-merge-import.md`、`test/aiskill.test.js`
+- 変更: `index.html`（マージ取り込み＝決定7）、`README.md`、`test/io.test.js`
+- `main.js` などメインプロセス側は無変更
 
 ## 検証
 
@@ -111,3 +151,11 @@ state JSON の取り込みは `confirm()` のあと `store.replaceState(data)` �
   エラーと終了コード 1 を返すこと
 - `test/aiskill.test.js` — テンプレート2つを実際に `index.html` へ読み込ませ、
   編集画面が描画できることを jsdom ハーネスで確認する（回帰防止）
+- `json-to-html.mjs` が出す HTML を `parseChecklistFromHtml` が読み戻せること
+  （`id` / タイトル / 全手順 / メモ / 表紙が保たれる）。埋め込み JSON 中の
+  `</script>` が退避され、途中で script が閉じないこと
+- 生成 HTML の「見える部分」に手順名と表が描画され、スクリプトが混ざらないこと
+- プラグインのマニフェスト整合（`plugin.json` の必須項目、`marketplace.json` の
+  `source` が実在すること、version が両者で一致すること、
+  `.claude/skills/` 側に複製が残っていないこと）
+- マージ取り込みの検証は `docs/spec-json-merge-import.md` を参照

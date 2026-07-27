@@ -82,19 +82,35 @@ node <このスキル>/scripts/validate-checklist.mjs path/to/output.checklist.j
 外部依存ゼロ（Node 標準のみ）なので、どのプロジェクトでもそのまま動く。
 エラーが1件でもあれば終了コード 1。**エラーが消えるまで直してから渡すこと。**
 
-### 4. ユーザーに渡し方を案内する
+### 4. 取り込み用 HTML も出す（既定の受け渡し形式）
+
+```bash
+node <このスキル>/scripts/json-to-html.mjs path/to/output.checklist.json
+```
+
+**JSON だけでなく、この HTML を主たる成果物として渡す。** 理由は取り込み時の安全性:
+
+| 渡す形式 | 取り込みの挙動 |
+|---|---|
+| **HTML**（推奨） | **同一 `id` は更新、無ければ追加＝マージ。既存データは消えない** |
+| JSON | 「追加・更新」か「すべて置き換える」をユーザーが選ぶ（選択を誤ると既存が消える） |
+
+出力される HTML は、ブラウザで開けば手順書として読める静的ページでもある。
+ただし**アプリの「自己完結HTML」ではないので編集はできない**（読むだけ）。
+編集できる HTML が要るなら、取り込んだあとアプリの「💾 名前を付けて保存 (HTML)」を使う。
+
+### 5. ユーザーに渡し方を案内する
 
 → **`references/export-and-limits.md`** の手順をそのまま伝える。最低限これは必ず言う:
 
-> - CheckListMaker のホーム画面「インポート」からこのファイルを選んでください。
-> - **⚠ 読み込むと、今アプリに入っているデータはすべて置き換わります。**
->   既存のリストがあるなら、先に同じホーム画面の「エクスポート」でバックアップを取ってください。
+> - CheckListMaker のホーム画面「インポート」から、この **HTML** を選んでください。
+>   同じ ID のチェックリストがあれば更新、無ければ追加されるので、**既存のデータは消えません**。
 > - 画像は入れていません。録画ボタン（⏺）で操作を撮って各手順に貼るか、🖼 から手動で貼れます。
 > - 仕上げはエディタの「📤 他ファイルで出力」タブから
 >   「📄 Word (.docx)」「📊 Excel (.xlsx)」「📕 PDF」（デスクトップ版のみ）。
 
-既にユーザーがデータを持っているなら、**現在の state を「エクスポート」で書き出してもらい、
-その `checklists` 配列に1件追記して返す**ほうが安全（`id` は既存と重複させない）。
+JSON を渡す場合は、取り込み時に **「追加・更新する」** を選ぶよう必ず添える
+（「すべて置き換える」を選ぶと既存データが消える）。
 
 ---
 
@@ -123,23 +139,35 @@ node <このスキル>/scripts/validate-checklist.mjs path/to/output.checklist.j
 | `templates/minimal.checklist.json` | 1フェーズ・3手順・画像なしの最小例 |
 | `templates/procedure.checklist.json` | 表紙＋3フェーズ＋表つき本文の実用例 |
 | `scripts/validate-checklist.mjs` | 依存ゼロのバリデータ |
+| `scripts/json-to-html.mjs` | 依存ゼロの取り込み用 HTML 生成 |
 
 ---
 
 ## 他のプロジェクトへの導入
 
-このスキルディレクトリ（`.claude/skills/checklist-maker/`）を、対象リポジトリの
-`.claude/skills/` 配下へそのままコピーすれば有効になる。
+このスキルは **CheckListMaker リポジトリのプラグイン**として配布している。
 
-```bash
-mkdir -p <対象リポジトリ>/.claude/skills
-cp -r .claude/skills/checklist-maker <対象リポジトリ>/.claude/skills/
+```shell
+/plugin marketplace add kuwagata-137/CheckListMaker
+/plugin install checklist-maker@checklistmaker
 ```
 
-- `~/.claude/skills/` に置けばローカルの全プロジェクトで効くが、**Web／リモート実行環境では
-  コンテナ再生成で消える**。確実に残すならリポジトリ内（`.claude/skills/`）に置く。
-- コピーしてコミットするかどうか、どのブランチに乗せるかは**ユーザーに確認する**。
-  勝手に PR を立てたりマージしたりしない。
+一度入れれば全プロジェクトで使える。更新はリポジトリへの push で伝播する。
+
+`/plugin` が使えない Web／クラウドセッションでは、対象プロジェクトの
+`.claude/settings.json` に次を書く:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "checklistmaker": { "source": { "source": "github", "repo": "kuwagata-137/CheckListMaker" } }
+  },
+  "enabledPlugins": { "checklist-maker@checklistmaker": true }
+}
+```
+
+設定ファイルを書き換えてコミットするかどうかは**ユーザーに確認する**。
+勝手に PR を立てたりマージしたりしない。
 
 ---
 

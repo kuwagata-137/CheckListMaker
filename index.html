@@ -862,6 +862,11 @@
   }
   .warn { color: var(--danger); font-size: 0.85rem; }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  /* JSON 取り込みの3択ダイアログ */
+  .modal-actions.import-modes { flex-wrap: wrap; }
+  .btn.danger { color: var(--danger); border-color: var(--danger); }
+  .import-note { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 0.85rem; line-height: 1.7; }
 
   /* ---- 録画取り込みウィザード（2-R4） ---- */
   .modal.import-wiz { max-width: 900px; display: flex; flex-direction: column; max-height: 88vh; }
@@ -1574,6 +1579,26 @@
       state.checklists.unshift(checklist);
       return state;
     }
+    // 取り込んだ state を既存へマージする。同一 id は置換、無ければ末尾へ追加。
+    // settings は既存を保持する（取り込み側のテーマ設定で上書きしない）。
+    // HTML 取り込みと同じ意味論。仕様は docs/spec-json-merge-import.md 参照。
+    function mergeChecklistsInto(state, incoming) {
+      const list = incoming && Array.isArray(incoming.checklists) ? incoming.checklists : [];
+      let added = 0;
+      let updated = 0;
+      for (const cl of list) {
+        if (!cl || typeof cl !== 'object') continue;
+        const idx = state.checklists.findIndex((c) => c.id === cl.id);
+        if (idx >= 0) {
+          state.checklists[idx] = cl;
+          updated += 1;
+        } else {
+          state.checklists.push(cl);
+          added += 1;
+        }
+      }
+      return { added, updated };
+    }
     function removeChecklist(state, id) {
       state.checklists = state.checklists.filter((c) => c.id !== id);
       return state;
@@ -1803,7 +1828,8 @@
     // app 側から M.xxx で参照する名前空間
     const M = {
       MODES, createItem, createSection, createRevision, createCoverPage, createChecklist, createInitialState,
-      findChecklist, progress, sumMinutes, addChecklist, removeChecklist, duplicateChecklist,
+      findChecklist, progress, sumMinutes, addChecklist, mergeChecklistsInto,
+      removeChecklist, duplicateChecklist,
       renameChecklist, addSection, renameSection, removeSection, addItem, addBlankItem,
       setItemField, editItem, toggleItem, removeItem, resetChecklist, clearCompleted,
       moveItem, moveSection, mergeItemUp, mergeItemInto, mergeTimeValue,
@@ -5362,6 +5388,42 @@
     }
     function closeModal(overlay) { overlay.remove(); }
 
+    // JSON 取り込みの取り込み方をユーザーに選ばせる。
+    // 'merge'（既定・既存を壊さない）/ 'replace'（全置換）/ null（キャンセル）を返す。
+    // confirm() の2択では「全置換」しか選べず既存データを失うため、3択のモーダルにしている。
+    function askJsonImportMode(count) {
+      return new Promise((resolve) => {
+        const n = Number(count) || 0;
+        const overlay = buildModal(`
+          <h3>JSON を取り込む</h3>
+          <p>読み込んだファイルにはチェックリストが <strong>${n}件</strong> あります。
+             取り込み方を選んでください。</p>
+          <div class="modal-actions import-modes">
+            <button class="btn primary" data-mode="merge">追加・更新する</button>
+            <button class="btn danger" data-mode="replace">すべて置き換える</button>
+            <button class="btn" data-close>キャンセル</button>
+          </div>
+          <p class="import-note">
+            <strong>追加・更新</strong>: 今あるデータは消えません。同じ ID のチェックリストだけが更新され、
+            残りは追加されます。<br />
+            <strong>すべて置き換える</strong>: 今アプリに入っているチェックリストを
+            <strong>すべて破棄</strong>して、読み込んだ内容だけにします。
+          </p>
+        `);
+        let done = false;
+        const finish = (v) => { if (done) return; done = true; closeModal(overlay); resolve(v); };
+        overlay.querySelectorAll('[data-mode]').forEach((b) =>
+          b.addEventListener('click', () => finish(b.dataset.mode))
+        );
+        // 背景クリック・キャンセルボタンは buildModal 側が closeModal するので、
+        // 取り除かれたのを検知して null を返す（未解決の Promise を残さない）。
+        const obs = new MutationObserver(() => {
+          if (!overlay.isConnected) { obs.disconnect(); finish(null); }
+        });
+        obs.observe(document.body, { childList: true });
+      });
+    }
+
     // 表紙編集モーダル。左=設定フォーム / 右=ライブプレビュー。
     // 変更はドラフトに反映 → プレビュー即時更新、確定（クリック/blur）でストアへ commit。
     function openCoverDialog(checklistId) {
@@ -7461,17 +7523,25 @@
           goEditor(checklist.id);
           return;
         }
-        // JSON: 従来どおり全state置換。
+        // JSON: 「追加・更新（マージ）」か「すべて置き換える」かをユーザーに選ばせる。
+        // 仕様は docs/spec-json-merge-import.md 参照。
         const data = JSON.parse(text);
         if (!data || !Array.isArray(data.checklists)) {
           throw new Error('JSON に checklists 配列が見つかりません');
         }
-        if (confirm('現在のデータを、読み込んだ内容で置き換えます。よろしいですか？')) {
-          // dataURL → 個別ファイル参照（Electronのみ。ブラウザは素通し）
-          for (const cl of data.checklists) await absorbChecklistImages(cl);
+        const mode = await askJsonImportMode(data.checklists.length);
+        if (!mode) return; // キャンセル
+        // dataURL → 個別ファイル参照（Electronのみ。ブラウザは素通し）
+        for (const cl of data.checklists) await absorbChecklistImages(cl);
+        if (mode === 'replace') {
           store.replaceState(data);
-          goHome();
+          showToast(`${data.checklists.length}件で置き換えました。`);
+        } else {
+          let res = { added: 0, updated: 0 };
+          store.commit((s) => { res = M.mergeChecklistsInto(s, data); });
+          showToast(`${res.added}件を追加、${res.updated}件を更新しました。`);
         }
+        goHome();
       } catch (err) {
         alert(err.message);
       }
@@ -7530,11 +7600,11 @@
     if (window.__test__) {
       Object.assign(window.__test__, {
         M, store, Store, LocalStorageAdapter, MemoryAdapter, FileAdapter,
-        encodeShareLink, readShareFromHash, buildStandaloneHtml,
+        encodeShareLink, readShareFromHash, buildStandaloneHtml, parseChecklistFromHtml,
         materializeState, materializeChecklist, absorbChecklistImages, resolveImageSync, storeImage,
         // 原寸2段構成（3-B）
         imageMime, fullImagePlan, makeFullImage, storeImagePair,
-        showToast, notifySaveError,
+        showToast, notifySaveError, askJsonImportMode,
         STORAGE_KEY, MIGRATED_KEY,
         // 録画取り込みウィザードの純関数（2-R4）
         wizardDefaultChoice, wizardStepsFrom, wizardMergeUp, wizardBulkReplace,

@@ -178,13 +178,16 @@ centered | left-top | top-band | side-band | framed | hero | logo-top | split | 
 
 | 形式 | 取り込みの挙動 | 備考 |
 |---|---|---|
-| **state JSON** | **既存データを全置換**（確認ダイアログあり） | AI が書くのはこれ |
-| 自己完結 HTML | **同一 `id` なら更新、無ければ追加**（マージ） | アプリが書き出したもの。`<script type="application/json" id="clm-data">` を読む |
+| **state JSON** | 取り込み時に **「追加・更新する」／「すべて置き換える」** を選ばせる | AI が書くのはこれ |
+| **`clm-data` を持つ HTML** | **同一 `id` なら更新、無ければ追加**（マージ・確認なし） | **AI はこれも出せる**。`scripts/json-to-html.mjs` |
 | 共有 URL | `#share=<base64>` を開くと取り込む | **画像は落ちる** |
 | 録画セッションフォルダ | 取り込みウィザードから | `<Pictures>/CheckListMaker/…` 配下のみ |
 
-**全置換は破壊的**なので、既にデータを持っているユーザーに JSON を渡すときは
-必ずその旨を伝えること（詳細は `export-and-limits.md`）。
+HTML 取り込みは `parseChecklistFromHtml` が `DOMParser` で
+`id="clm-data"` の `<script type="application/json">` を1つ探すだけなので、
+**アプリを丸ごと埋め込んだ自己完結 HTML である必要はない**。
+そのため AI でも生成でき、しかもマージなので既存データを壊さない。
+**受け渡しの既定はこの HTML にする**（詳細は `export-and-limits.md`）。
 
 ---
 
