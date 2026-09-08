@@ -199,7 +199,7 @@ test('thumbsidebar — 取り込みウィザードの挿入先指定（画面）
 
   win.location.hash = '#/c/c1';
   await waitFor(() => doc.querySelector('#thumbs .tsb-card'), { label: 'エディタ' });
-  T.openImportWizard('D:/shots/session');
+  T.openImportWizard(T.makeSessionSource('D:/shots/session'));
   await waitFor(() => doc.querySelector('.modal.import-wiz'), { label: 'ウィザード' });
 
   await t.test('既定は「新しいフェーズとして追加」（現行の動きを変えない）', () => {

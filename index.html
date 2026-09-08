@@ -954,6 +954,13 @@
   .iw-sessions { display: grid; gap: 8px; max-height: 60vh; overflow-y: auto; }
   .iw-session { text-align: left; font: inherit; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: inherit; cursor: pointer; }
   .iw-session:hover { border-color: var(--primary); background: var(--surface-2); }
+  /* 取込入口の2択（フォルダから選択カード＋セッション一覧の区切り見出し） */
+  .modal .mode-card { width: 100%; }
+  .iw-divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 0.78rem; margin: 14px 0 8px; }
+  .iw-divider::before, .iw-divider::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+  .iw-empty { color: var(--muted); font-size: 0.85rem; margin: 4px 0; }
+  /* files モードのウィザード行に出す元ファイル名 */
+  .iw-name { color: var(--muted); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16em; }
 
   /* ---- サムネイルサイドバー（仕様は docs/spec-thumbnail-sidebar-and-import-insert.md） ----
      テンプレート型の編集画面でだけ出す固定サイドバー。#app には編集ズーム（zoom）が
@@ -4269,6 +4276,22 @@
         };
       });
     }
+    // 画像ファイル名の自然順比較（img2 < img10）。大小文字は区別しない。
+    function naturalCompareFilenames(a, b) {
+      return String(a || '').localeCompare(String(b || ''), 'ja', { numeric: true, sensitivity: 'base' });
+    }
+    // フォルダから選択した画像ファイル群（[{path, name}]）→ ウィザードのステップモデル。
+    // 名前の自然順でソートし、1ファイル = 1ステップ・文は空で取り込む。
+    // kind:'file' は「元画像1枚（拡大/全景の切替なし）」の目印（仕様は
+    // docs/spec-image-batch-import.md 3章）。
+    function wizardStepsFromFiles(files) {
+      const src = Array.isArray(files) ? files.filter((f) => f && f.path) : [];
+      src.sort((a, b) => naturalCompareFilenames(a.name, b.name));
+      return src.map((f) => ({
+        text: '',
+        shots: [{ seq: null, kind: 'file', image: f.path, name: f.name || '', zoomImage: null, choice: 'full' }],
+      }));
+    }
     // index のステップを直前のステップへ統合（文は「、」連結・ショットは結合）。
     function wizardMergeUp(steps, index) {
       if (index <= 0 || index >= steps.length) return steps;
@@ -4340,12 +4363,72 @@
       return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
     }
 
-    // 過去セッションの一覧から選んでウィザードを開く（📥「録画を取り込む」）。
+    // ウィザードの入力ソース抽象（仕様は docs/spec-image-batch-import.md 3章）。
+    // リスト編集・取り込み先パネル・取込実行はソース非依存で共用し、
+    // 「どこから画像を読むか」だけをここで出し分ける。
+    // 共通IF: { kind, load(), loadErrorMessage, read(file), canOpenDir, openDir(), markImported() }
+    //   load() … { steps, defaultTitle, newListTitle, headerHtml } か、読めなければ null
+    //   read(file) … 添付画像を dataURL で返す（失敗は null）
+    function makeSessionSource(dir) {
+      return {
+        kind: 'session',
+        async load() {
+          let data = null;
+          try { data = await window.recorderAPI.loadSession(dir); } catch (_) { /* null のまま */ }
+          if (!data || !Array.isArray(data.steps) || data.steps.length === 0) return null;
+          const badges =
+            (data.info.endedAt ? '' : '<span class="iw-badge warn">未完了（異常終了の記録）</span>') +
+            (data.info.importedAt ? '<span class="iw-badge">取り込み済み</span>' : '');
+          return {
+            steps: wizardStepsFrom(data),
+            defaultTitle: `録画 ${fmtSessionDate(data.info.startedAt)}`.trim(),
+            newListTitle: data.info.name || '録画の取り込み',
+            headerHtml:
+              `<strong>${escapeHtml(data.info.name || '')}</strong>` +
+              `<span>${fmtSessionDate(data.info.startedAt)}</span>${badges}`,
+          };
+        },
+        loadErrorMessage: '録画セッションを読み込めませんでした。',
+        read: (file) => window.recorderAPI.readImage(dir, file),
+        canOpenDir: true,
+        openDir: () => window.recorderAPI.openShotsDir(dir),
+        // 取り込み済みマークは結果に影響させない（失敗しても console のみ）
+        markImported: () => { window.recorderAPI.markImported(dir).catch(() => {}); },
+      };
+    }
+    function makeFilesSource(files) {
+      const list = Array.isArray(files) ? files : [];
+      return {
+        kind: 'files',
+        async load() {
+          const steps = wizardStepsFromFiles(list);
+          if (!steps.length) return null;
+          return {
+            steps,
+            defaultTitle: `画像 ${fmtSessionDate(new Date().toISOString())}`.trim(),
+            newListTitle: '画像の取り込み',
+            headerHtml: `<strong>選択した画像 ${steps.length}枚</strong>`,
+          };
+        },
+        loadErrorMessage: '選択した画像を読み込めませんでした。',
+        read: (file) => window.fileAPI.readPickedImage(file),
+        canOpenDir: false,
+        openDir: () => {},
+        markImported: () => {},
+      };
+    }
+
+    // 📥「画像インポート」の入口。「フォルダから選択」と「キャプチャを取込む
+    // （録画セッション一覧）」の2択（仕様は docs/spec-image-batch-import.md 1章）。
     async function openImportPicker() {
-      if (!window.recorderAPI) return;
+      const canPickFiles = !!(window.fileAPI && window.fileAPI.pickImages);
+      const canSessions = !!window.recorderAPI;
+      if (!canPickFiles && !canSessions) return;
       let sessions = [];
-      try { sessions = (await window.recorderAPI.listSessions()) || []; } catch (_) { /* 下の0件表示へ */ }
-      if (!sessions.length) {
+      if (canSessions) {
+        try { sessions = (await window.recorderAPI.listSessions()) || []; } catch (_) { /* 0件扱い */ }
+      }
+      if (!canPickFiles && !sessions.length) {
         showToast('取り込める録画セッションがありません。まず録画してください。');
         return;
       }
@@ -4361,32 +4444,62 @@
           </button>`;
         })
         .join('');
+      const pickCard = canPickFiles
+        ? `<button class="mode-card" data-iw-pick-files type="button">
+             <b>🖼 フォルダから画像を選択…</b>
+             <span>ダイアログで画像を複数選択し、1枚＝1手順として取り込みます</span>
+           </button>`
+        : '';
+      const sessionsBlock = canSessions
+        ? `<div class="iw-divider">キャプチャを取込む（録画セッション・新しい順）</div>` +
+          (sessions.length
+            ? `<div class="iw-sessions">${rows}</div>`
+            : `<p class="iw-empty">取り込める録画セッションがありません。まず録画してください。</p>`)
+        : '';
       const overlay = buildModal(`
-        <h3>録画を取り込む</h3>
-        <p>取り込むセッションを選んでください（新しい順）。</p>
-        <div class="iw-sessions">${rows}</div>
+        <h3>画像を取り込む</h3>
+        <p>${canPickFiles ? '取り込み方法を選んでください。' : '取り込むセッションを選んでください（新しい順）。'}</p>
+        ${pickCard}
+        ${sessionsBlock}
         <div class="modal-actions"><button class="btn" data-close>閉じる</button></div>
       `);
+      const pickBtn = overlay.querySelector('[data-iw-pick-files]');
+      if (pickBtn) {
+        pickBtn.addEventListener('click', async () => {
+          pickBtn.disabled = true;
+          let res = null;
+          try { res = await window.fileAPI.pickImages(); }
+          catch (_) { res = { error: true }; }
+          pickBtn.disabled = false;
+          if (!res || res.canceled) return; // キャンセルはモーダルに留まる
+          if (res.error || !Array.isArray(res.files) || !res.files.length) {
+            showToast('画像を選択できませんでした。', { type: 'error' });
+            return;
+          }
+          closeModal(overlay);
+          openImportWizard(makeFilesSource(res.files));
+        });
+      }
       overlay.querySelectorAll('.iw-session').forEach((btn) => {
         btn.addEventListener('click', () => {
           const s = sessions[Number(btn.dataset.i)];
           closeModal(overlay);
-          openImportWizard(s.dir);
+          openImportWizard(makeSessionSource(s.dir));
         });
       });
     }
 
-    // 取り込みウィザード本体。dir はセッションフォルダ（メイン側で検証される）。
-    async function openImportWizard(dir) {
-      if (!window.recorderAPI) return;
-      let data = null;
-      try { data = await window.recorderAPI.loadSession(dir); } catch (_) { /* 下の失敗表示へ */ }
-      if (!data || !Array.isArray(data.steps) || data.steps.length === 0) {
-        showToast('録画セッションを読み込めませんでした。', { type: 'error' });
+    // 取り込みウィザード本体。source は makeSessionSource / makeFilesSource が返す
+    // 入力ソース（画像の読み方だけが異なり、編集・取込パイプラインは共通）。
+    async function openImportWizard(source) {
+      if (!source) return;
+      const loaded = await source.load();
+      if (!loaded) {
+        showToast(source.loadErrorMessage, { type: 'error' });
         return;
       }
-      const steps = wizardStepsFrom(data);
-      const defaultTitle = `録画 ${fmtSessionDate(data.info.startedAt)}`.trim();
+      const steps = loaded.steps;
+      const defaultTitle = loaded.defaultTitle;
 
       // 取り込み先の既定: 録画開始時のリスト → 現在開いているリスト → 先頭のリスト
       const route = parseHash();
@@ -4399,16 +4512,11 @@
           .join('') +
         `<option value="__new__"${destDefault === '__new__' ? ' selected' : ''}>（新しいリストを作成）</option>`;
 
-      const badges =
-        (data.info.endedAt ? '' : '<span class="iw-badge warn">未完了（異常終了の記録）</span>') +
-        (data.info.importedAt ? '<span class="iw-badge">取り込み済み</span>' : '');
       const overlay = buildModal(`
-        <h3>録画の取り込み</h3>
+        <h3>${source.kind === 'files' ? '画像の取り込み' : '録画の取り込み'}</h3>
         <p class="iw-meta">
-          <strong>${escapeHtml(data.info.name || '')}</strong>
-          <span>${fmtSessionDate(data.info.startedAt)}</span>
-          ${badges}
-          <button class="btn" data-iw-open-dir type="button">📂 フォルダを開く</button>
+          ${loaded.headerHtml}
+          ${source.canOpenDir ? '<button class="btn" data-iw-open-dir type="button">📂 フォルダを開く</button>' : ''}
         </p>
         <div class="iw-bulk">
           <input class="iw-find" placeholder="検索する文字列" />→
@@ -4558,7 +4666,7 @@
       function thumbFor(file) {
         if (!thumbCache.has(file)) {
           thumbCache.set(file, (async () => {
-            const raw = await window.recorderAPI.readImage(dir, file);
+            const raw = await source.read(file);
             if (!raw) return null;
             try { return await compressImage(raw, 320, 0.7); } catch (_) { return raw; }
           })());
@@ -4572,8 +4680,10 @@
             const shot = st.shots[0];
             const canZoom = st.shots.some((sh) => sh.zoomImage);
             // ドラッグは「拡大」スロットに終点画像が入っているため、表示だけ読み替える。
+            // フォルダから選択（kind:'file'）は元画像1枚のため切替セグメント自体を出さない。
+            const isFile = st.shots.some((sh) => sh.kind === 'file');
             const isDrag = st.shots.some((sh) => sh.kind === 'drag');
-            const seg = (isDrag
+            const seg = isFile ? '' : (isDrag
               ? [['full', '始点'], ['zoom', '終点'], ['both', '両方']]
               : [['zoom', '拡大'], ['full', '全景'], ['both', '両方']])
               .map(([val, label]) => {
@@ -4587,7 +4697,8 @@
               <div class="iw-main">
                 <div class="iw-row-head">
                   <span class="iw-seq">${i + 1}</span>
-                  <span class="iw-seg">${seg}</span>
+                  ${seg ? `<span class="iw-seg">${seg}</span>` : ''}
+                  ${isFile && st.shots[0].name ? `<span class="iw-name" title="${escapeHtml(st.shots[0].name)}">${escapeHtml(st.shots[0].name)}</span>` : ''}
                   <span class="iw-tools">
                     <button type="button" data-iw="up" ${i === 0 ? 'disabled' : ''} title="上へ">↑</button>
                     <button type="button" data-iw="down" ${i === steps.length - 1 ? 'disabled' : ''} title="下へ">↓</button>
@@ -4641,9 +4752,8 @@
         if (row && steps[Number(row.dataset.i)]) steps[Number(row.dataset.i)].text = e.target.value;
       });
 
-      overlay.querySelector('[data-iw-open-dir]').addEventListener('click', () => {
-        window.recorderAPI.openShotsDir(dir);
-      });
+      const openDirBtn = overlay.querySelector('[data-iw-open-dir]');
+      if (openDirBtn) openDirBtn.addEventListener('click', () => source.openDir());
       overlay.querySelector('[data-iw-replace]').addEventListener('click', () => {
         const find = overlay.querySelector('.iw-find').value;
         const repl = overlay.querySelector('.iw-repl').value;
@@ -4665,7 +4775,7 @@
             for (const shot of st.shots) {
               for (const f of wizardShotFiles(shot)) {
                 try {
-                  const raw = await window.recorderAPI.readImage(dir, f);
+                  const raw = await source.read(f);
                   if (raw) imgs.push(await storeImagePair(raw)); // 原寸＋サムネの2段構成
                 } catch (err) {
                   console.error('画像の取り込みに失敗しました（文のみ取り込みます）:', f, err);
@@ -4686,7 +4796,7 @@
           store.commit((s) => {
             let c = destSel === '__new__' ? null : M.findChecklist(s, destSel);
             if (!c) {
-              c = M.createChecklist(M.MODES.TEMPLATE, data.info.name || '録画の取り込み');
+              c = M.createChecklist(M.MODES.TEMPLATE, loaded.newListTitle);
               c.sections = []; // createChecklist が作る空セクションは使わない
               M.addChecklist(s, c);
               destId = c.id;
@@ -4706,8 +4816,8 @@
             notifySaveError('保存容量の上限に達したため、取り込めませんでした（変更は取り消しました）。', { force: true });
             return;
           }
-          // 取り込み済みマークは結果に影響させない（失敗しても console のみ）
-          window.recorderAPI.markImported(dir).catch(() => {});
+          // 取り込み済みマークは結果に影響させない（session ソースのみ・files は no-op）
+          source.markImported();
           closeModal(overlay);
           goEditor(destId);
           showToast(
@@ -5088,7 +5198,10 @@
     function updateImportButton() {
       const btn = document.querySelector('[data-action="import-rec"]');
       if (!btn) return;
-      if (!window.recorderAPI) { btn.style.display = 'none'; return; }
+      // キャプチャ取込（recorderAPI）もフォルダ選択（fileAPI.pickImages）も無い
+      // 環境（ブラウザ単体・単体HTML）では非表示。どちらかがあれば出す。
+      const canImport = !!(window.recorderAPI || (window.fileAPI && window.fileAPI.pickImages));
+      if (!canImport) { btn.style.display = 'none'; return; }
       btn.disabled = isRecording;
     }
 
@@ -7522,7 +7635,7 @@
           showToast('撮影された画像がなかったため、取り込みは行いません。');
           return;
         }
-        openImportWizard(d.dir);
+        openImportWizard(makeSessionSource(d.dir));
       });
     }
     updateRecordButton();
@@ -7554,6 +7667,8 @@
         wizardDefaultChoice, wizardStepsFrom, wizardMergeUp, wizardBulkReplace,
         wizardShotFiles, buildImportSection, buildImportItems, clampInsertIndex, insertItemsAt,
         openImportWizard,
+        // 画像一括インポート（フォルダから選択）
+        naturalCompareFilenames, wizardStepsFromFiles, makeFilesSource, makeSessionSource,
         // サムネイルサイドバー
         thumbStepModel, renderThumbSidebar, updateThumbSidebar, thumbsCollapsed, setThumbsCollapsed,
         // 実行モード（3-R5）とガイド小窓（3-R6）
