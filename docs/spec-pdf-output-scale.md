@@ -1,0 +1,42 @@
+# 仕様: PDF出力の倍率・用紙・向き指定
+
+ユーザー要望（2026-09-08）。ワイド画面のスライド画像だけを貼ったリストを PDF 出力すると
+余白が大きすぎて不格好になるため、**出力の倍率**を操作して1ページに3枚入るように
+したい。UI はユーザー提示のイメージどおり「倍率 [100]%」「用紙 [A4▼][縦▼]」の2行。
+
+## UI（印刷プレビューのバーに追加）
+
+`openPrintPreview` のバー（「画像の配置」の行の下）に2行を追加する。
+
+- **倍率** … 数値入力（30〜200・5刻み・既定 100）＋「%」。**PDF 出力にのみ効く**
+  （🖨 印刷は OS の印刷ダイアログ側に倍率があるため触らない）。Electron 版のみ表示。
+- **用紙** … サイズ（A4／A3／B4／B5／Letter）と向き（縦／横）のドロップダウン。
+  **印刷と PDF の両方**に効く（@page の size を差し替える）。
+- 値は `state.settings.pdfScale / pdfPaper / pdfOrient` に保存（`commitInPlace`・
+  `history:false`＝Undo 履歴に積まない。サムネイルサイドバーの開閉と同じ扱い）。
+  初期値は 100％・A4・縦。
+- ツールバー直下の 📕 PDF（プレビューを経ない出力）も同じ設定値を使う。
+- プレビューは用紙サイズ・向きで紙面の幅を変え、倍率は `zoom` で近似表示する
+  （正確な改ページ位置は実出力で確認）。
+
+## 実装
+
+- **倍率**: `printAPI.savePdf({ title, scale })` に倍率（1=100%）を渡し、main.js の
+  `printToPDF` に `scale` オプションとして与える（Chromium の対応範囲に合わせ
+  0.3〜2.0 にクランプ）。
+- **用紙・向き**: `preferCSSPageSize:true` のため printToPDF の pageSize/landscape は
+  効かない。`<style id="print-page-style">` を head 末尾に注入して
+  `@page { size: <幅>mm <高さ>mm; }` と `@page coverpage { size: … }` を上書きする
+  （後勝ちのカスケードで基本の margin 15mm 25mm / coverpage margin 0 は維持）。
+- 用紙寸法は CSS キーワードでなく **mm 実寸**で指定する。B4/B5 は日本で一般的な
+  **JIS 寸法**（B4=257×364・B5=182×257）を使う（CSS の `size: B4` は ISO 寸法で
+  日本の B4 と異なるため）。A4=210×297・A3=297×420・Letter=215.9×279.4。
+- 純関数 `clampPdfScale(v)` / `pdfPaperDims(paper, orient)` / `pdfPageStyleCss(paper, orient)`
+  を `window.__test__` に公開し、`test/pdfout.test.js` で検証する。
+
+## 制約（既知）
+
+- 表紙（カバーページ）は A4 実寸（794×1123px）で作られているため、A4 以外の用紙では
+  表紙が紙面いっぱいに広がらない（左上寄せ）。表紙付きリストは A4 のまま使う想定。
+- 倍率はページ全体の描画スケール。余白（15mm/25mm）は紙側の値のままで、
+  内容だけが縮む（＝ワイド画像なら 70% 前後で3枚/ページに入る想定）。

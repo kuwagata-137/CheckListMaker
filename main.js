@@ -1332,7 +1332,7 @@ async function saveCsv(event, payload) {
 // printToPDF は @media print の CSS で描画されるため、画面と同じ見た目で
 // 印刷ビューだけが出力される。
 async function savePdfFile(event, payload) {
-  const { title } = payload || {};
+  const { title, scale } = payload || {};
   const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
   const safe =
     String(title || 'checklist')
@@ -1348,9 +1348,14 @@ async function savePdfFile(event, payload) {
     // preferCSSPageSize で CSS の @page（本文=A4/余白 上下15mm・左右25mm、表紙=A4/余白0）を尊重する。
     // これを付けないと printToPDF は既定余白を全ページに強制し、@page coverpage の
     // 余白0が効かず、A4 と等寸(794x1123px)の表紙が余白分だけはみ出してしまう。
+    // scale: 出力倍率（1=100%）。UI 側で 30〜200% に制限しているが、Chromium の
+    // 対応範囲（0.1〜2.0）に収まるようここでも防御的にクランプする。
+    const n = Number(scale);
+    const pdfScale = Number.isFinite(n) ? Math.max(0.3, Math.min(2, n)) : 1;
     const buf = await event.sender.printToPDF({
       printBackground: true,
       preferCSSPageSize: true,
+      scale: pdfScale,
     });
     fs.writeFileSync(filePath, buf);
     // 出力結果をすぐ確認できるよう、既定のPDFビューアで開く。

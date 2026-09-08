@@ -1140,6 +1140,19 @@
   }
   .print-preview-bar .pp-label { color: var(--muted); font-size: 0.9rem; }
   .print-preview-bar .pp-spacer { flex: 1; }
+  /* PDF出力の倍率・用紙・向き（仕様は docs/spec-pdf-output-scale.md） */
+  .print-preview-bar.pp-out { margin-top: -4px; row-gap: 6px; }
+  .pp-out .pp-row { display: inline-flex; align-items: center; gap: 6px; margin-right: 14px; }
+  .pp-out .pp-scale {
+    width: 64px; font: inherit; text-align: right; padding: 4px 6px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
+  }
+  .pp-out .pp-unit { color: var(--muted); font-size: 0.9rem; }
+  .pp-out select {
+    font: inherit; font-size: 0.9rem; padding: 4px 6px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
+  }
+  .pp-out .pp-hint { color: var(--muted); font-size: 0.75rem; flex-basis: 100%; }
   .pp-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
   .pp-seg button {
     font: inherit;
@@ -5366,6 +5379,57 @@
       return printImgLayout() === '1col' ? 'print-cols-1' : 'print-cols-2';
     }
 
+    // ---- PDF出力の倍率・用紙・向き（仕様は docs/spec-pdf-output-scale.md）----
+    // 倍率のクランプ（30〜200%・既定100）。数値でなければ既定に倒す。
+    function clampPdfScale(v) {
+      if (v == null || v === '') return 100; // 未設定・空欄は既定（Number(null)=0 に落とさない）
+      const n = Math.round(Number(v));
+      if (!Number.isFinite(n)) return 100;
+      return Math.max(30, Math.min(200, n));
+    }
+    // 用紙寸法（mm）。B4/B5 は日本で一般的な JIS 寸法（CSS の keyword は ISO 寸法で
+    // 日本の B4 と異なるため、@page には mm 実寸で渡す）。
+    const PDF_PAPER_MM = {
+      A4: [210, 297], A3: [297, 420], B4: [257, 364], B5: [182, 257], Letter: [215.9, 279.4],
+    };
+    function pdfPaperDims(paper, orient) {
+      const [w, h] = PDF_PAPER_MM[paper] || PDF_PAPER_MM.A4;
+      return orient === 'landscape' ? { w: h, h: w } : { w, h };
+    }
+    // @page の size 上書き CSS。coverpage（表紙・余白0）も同じ用紙に合わせる。
+    function pdfPageStyleCss(paper, orient) {
+      const d = pdfPaperDims(paper, orient);
+      const size = `${d.w}mm ${d.h}mm`;
+      return `@page { size: ${size}; }\n@page coverpage { size: ${size}; }`;
+    }
+    function pdfOutSettings() {
+      const s = store.state.settings || {};
+      return {
+        scale: clampPdfScale(s.pdfScale != null ? s.pdfScale : 100),
+        paper: PDF_PAPER_MM[s.pdfPaper] ? s.pdfPaper : 'A4',
+        orient: s.pdfOrient === 'landscape' ? 'landscape' : 'portrait',
+      };
+    }
+    function setPdfOutSettings(patch) {
+      commitInPlace((s) => {
+        s.settings = s.settings || {};
+        if ('scale' in patch) s.settings.pdfScale = clampPdfScale(patch.scale);
+        if ('paper' in patch) s.settings.pdfPaper = PDF_PAPER_MM[patch.paper] ? patch.paper : 'A4';
+        if ('orient' in patch) s.settings.pdfOrient = patch.orient === 'landscape' ? 'landscape' : 'portrait';
+      }, { history: false });
+    }
+    // head 末尾に @page の上書き <style> を注入（後勝ちで基本CSSの margin は維持）。
+    function applyPrintPageStyle() {
+      const { paper, orient } = pdfOutSettings();
+      let el = document.getElementById('print-page-style');
+      if (!el) {
+        el = document.createElement('style');
+        el.id = 'print-page-style';
+        document.head.appendChild(el);
+      }
+      el.textContent = pdfPageStyleCss(paper, orient);
+    }
+
     // #print-root に印刷ビューを流し込む（window.print / printToPDF の直前に呼ぶ）。
     function fillPrintRoot(checklist) {
       let root = document.getElementById('print-root');
@@ -5407,10 +5471,12 @@
         // 画像参照を dataURL に戻してから印刷ビューを組む（ツールバー直下から呼ばれた
         // ときは未 materialize の checklist が渡るため。dataURL は素通しなので二重適用も安全）。
         checklist = await materializeChecklist(checklist);
+        applyPrintPageStyle(); // 用紙・向きの @page 上書き（倍率は printToPDF の scale で渡す）
         const root = fillPrintRoot(checklist);
         await waitForPrintImages(root); // 画像のデコード完了を待ってから撮る（欠け防止）
         const res = await window.printAPI.savePdf({
           title: sanitizeFilename(checklist.title || 'checklist'),
+          scale: pdfOutSettings().scale / 100,
         });
         if (res && res.error) alert('PDF の保存に失敗しました: ' + res.error);
       } catch (e) {
@@ -5423,6 +5489,7 @@
     // 印刷ビューを差し込んでブラウザの印刷ダイアログを開く。
     // 印刷後（またはキャンセル後）は中身を空にして画面に残らないようにする。
     function printChecklist(checklist) {
+      applyPrintPageStyle(); // 用紙・向きは印刷にも効く（倍率はOSダイアログ側に任せる）
       fillPrintRoot(checklist);
       const cleanup = () => {
         clearPrintRoot();
@@ -5451,21 +5518,62 @@
           ${window.printAPI ? '<button type="button" class="btn" data-pp-pdf>📄 PDFに保存</button>' : ''}
           <button type="button" class="btn" data-close>閉じる</button>
         </div>
+        <div class="print-preview-bar pp-out">
+          ${window.printAPI ? `
+          <span class="pp-row">
+            <span class="pp-label">倍率</span>
+            <input class="pp-scale" type="number" min="30" max="200" step="5" aria-label="PDF出力の倍率（％）" />
+            <span class="pp-unit">%</span>
+          </span>` : ''}
+          <span class="pp-row">
+            <span class="pp-label">用紙</span>
+            <select class="pp-paper" aria-label="用紙サイズ">
+              <option value="A4">A4</option>
+              <option value="A3">A3</option>
+              <option value="B4">B4</option>
+              <option value="B5">B5</option>
+              <option value="Letter">Letter</option>
+            </select>
+            <select class="pp-orient" aria-label="用紙の向き">
+              <option value="portrait">縦</option>
+              <option value="landscape">横</option>
+            </select>
+          </span>
+          ${window.printAPI ? '<span class="pp-hint">倍率は PDF 出力に効きます（印刷は OS のダイアログで指定）</span>' : ''}
+        </div>
         <div class="print-preview-body"><div class="print-preview-page"></div></div>
       `);
       overlay.querySelector('.modal').classList.add('print-preview');
       const page = overlay.querySelector('.print-preview-page');
+      const scaleInput = overlay.querySelector('.pp-scale');
+      const paperSelect = overlay.querySelector('.pp-paper');
+      const orientSelect = overlay.querySelector('.pp-orient');
       const renderPreview = () => {
+        const out = pdfOutSettings();
         page.className = 'print-preview-page ' + printColsClass();
-        page.innerHTML = renderPrintView(checklist);
+        // 用紙・向きで紙面の幅を変え、倍率は zoom で近似表示（正確な改ページは実出力で）
+        page.style.width = `${pdfPaperDims(out.paper, out.orient).w}mm`;
+        page.innerHTML =
+          `<div class="pp-zoom" style="zoom:${out.scale / 100}">${renderPrintView(checklist)}</div>`;
         overlay.querySelectorAll('[data-pp-cols]').forEach((b) =>
           b.classList.toggle('active', b.dataset.ppCols === printImgLayout())
         );
+        if (scaleInput && document.activeElement !== scaleInput) scaleInput.value = out.scale;
+        paperSelect.value = out.paper;
+        orientSelect.value = out.orient;
       };
       renderPreview();
       overlay.querySelectorAll('[data-pp-cols]').forEach((b) =>
         b.addEventListener('click', () => { setPrintImgLayout(b.dataset.ppCols); renderPreview(); })
       );
+      if (scaleInput) {
+        scaleInput.addEventListener('change', () => {
+          setPdfOutSettings({ scale: scaleInput.value });
+          renderPreview();
+        });
+      }
+      paperSelect.addEventListener('change', () => { setPdfOutSettings({ paper: paperSelect.value }); renderPreview(); });
+      orientSelect.addEventListener('change', () => { setPdfOutSettings({ orient: orientSelect.value }); renderPreview(); });
       overlay.querySelector('[data-pp-print]').addEventListener('click', () => printChecklist(checklist));
       const pdfBtn = overlay.querySelector('[data-pp-pdf]');
       if (pdfBtn) {
@@ -7931,6 +8039,8 @@
         naturalCompareFilenames, wizardStepsFromFiles, makeFilesSource, makeSessionSource,
         // 画像編集の図形ジオメトリ（8ハンドル・フリーフォーム・線分距離）
         freeformBounds, distSeg, objHandles, applyObjDrag,
+        // PDF出力の倍率・用紙・向き
+        clampPdfScale, pdfPaperDims, pdfPageStyleCss, pdfOutSettings, setPdfOutSettings,
         // サムネイルサイドバー
         thumbStepModel, renderThumbSidebar, updateThumbSidebar, thumbsCollapsed, setThumbsCollapsed,
         // 実行モード（3-R5）とガイド小窓（3-R6）
