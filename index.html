@@ -118,6 +118,16 @@
   .icon:hover { background: var(--surface-2); color: var(--text); }
   .icon:disabled { opacity: 0.35; cursor: default; }
   .icon.danger:hover { color: var(--danger); }
+  /* トップバーのボタンだけ、アイコンの下に小さい文字ラベルを縦積みで出す。
+     .icon は項目行の ↑↓⤒✕ などとも共有のため、#topbar 配下に限定する。 */
+  #topbar .icon {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 9px;
+  }
+  #topbar .tb-lb { font-size: 0.65rem; line-height: 1; letter-spacing: 0.02em; }
   /* 録画ボタン: 黒い四角の中心に赤い丸のアイコン（一般的な録画マーク）。 */
   .icon .rec-ico { display: block; }
   .icon.recording { animation: rec-blink 1.4s infinite; }
@@ -944,6 +954,13 @@
   .iw-sessions { display: grid; gap: 8px; max-height: 60vh; overflow-y: auto; }
   .iw-session { text-align: left; font: inherit; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: inherit; cursor: pointer; }
   .iw-session:hover { border-color: var(--primary); background: var(--surface-2); }
+  /* 取込入口の2択（フォルダから選択カード＋セッション一覧の区切り見出し） */
+  .modal .mode-card { width: 100%; }
+  .iw-divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 0.78rem; margin: 14px 0 8px; }
+  .iw-divider::before, .iw-divider::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+  .iw-empty { color: var(--muted); font-size: 0.85rem; margin: 4px 0; }
+  /* files モードのウィザード行に出す元ファイル名 */
+  .iw-name { color: var(--muted); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16em; }
 
   /* ---- サムネイルサイドバー（仕様は docs/spec-thumbnail-sidebar-and-import-insert.md） ----
      テンプレート型の編集画面でだけ出す固定サイドバー。#app には編集ズーム（zoom）が
@@ -1123,6 +1140,19 @@
   }
   .print-preview-bar .pp-label { color: var(--muted); font-size: 0.9rem; }
   .print-preview-bar .pp-spacer { flex: 1; }
+  /* PDF出力の倍率・用紙・向き（仕様は docs/spec-pdf-output-scale.md） */
+  .print-preview-bar.pp-out { margin-top: -4px; row-gap: 6px; }
+  .pp-out .pp-row { display: inline-flex; align-items: center; gap: 6px; margin-right: 14px; }
+  .pp-out .pp-scale {
+    width: 64px; font: inherit; text-align: right; padding: 4px 6px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
+  }
+  .pp-out .pp-unit { color: var(--muted); font-size: 0.9rem; }
+  .pp-out select {
+    font: inherit; font-size: 0.9rem; padding: 4px 6px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
+  }
+  .pp-out .pp-hint { color: var(--muted); font-size: 0.75rem; flex-basis: 100%; }
   .pp-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
   .pp-seg button {
     font: inherit;
@@ -1382,15 +1412,16 @@
   <div id="topbar">
     <span class="topbar-brand">✓ チェックリスト</span>
     <span class="topbar-spacer"></span>
-    <button class="icon" data-action="undo" title="元に戻す (Undo)">↶</button>
-    <button class="icon" data-action="redo" title="やり直す (Redo)">↷</button>
+    <button class="icon" data-action="undo" title="元に戻す (Undo)">↶<span class="tb-lb">元に戻す</span></button>
+    <button class="icon" data-action="redo" title="やり直す (Redo)">↷<span class="tb-lb">やり直す</span></button>
     <button class="icon" data-action="record" title="録画ガジェットを開く（ガジェットの「録画開始」で撮影開始）">
       <svg class="rec-ico" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
         <rect x="1" y="1" width="18" height="18" rx="4" fill="#111827" />
         <circle cx="10" cy="10" r="5" fill="#ef4444" />
       </svg>
+      <span class="tb-lb">キャプチャ撮影</span>
     </button>
-    <button class="icon" data-action="import-rec" title="録画を取り込む（過去のセッション一覧から選択）">📥</button>
+    <button class="icon" data-action="import-rec" title="画像を取り込む（キャプチャ／フォルダから）">📥<span class="tb-lb">画像インポート</span></button>
   </div>
 
   <main id="app"></main>
@@ -2119,8 +2150,8 @@
         '  <div id="topbar">\n' +
         '    <span class="topbar-brand">✓ チェックリスト</span>\n' +
         '    <span class="topbar-spacer"></span>\n' +
-        '    <button class="icon" data-action="undo" title="元に戻す (Undo)">↶</button>\n' +
-        '    <button class="icon" data-action="redo" title="やり直す (Redo)">↷</button>\n' +
+        '    <button class="icon" data-action="undo" title="元に戻す (Undo)">↶<span class="tb-lb">元に戻す</span></button>\n' +
+        '    <button class="icon" data-action="redo" title="やり直す (Redo)">↷<span class="tb-lb">やり直す</span></button>\n' +
         '  </div>\n' +
         '  <main id="app"></main>\n' +
         '  <input id="file-input" type="file" accept="application/json,.json,text/html,.html" hidden />\n' +
@@ -2791,7 +2822,7 @@
           ${renderImages(sectionId, item)}
           <button class="insert-after" data-action="insert-item-after"
                   data-section="${sectionId}" data-item="${item.id}"
-                  title="この下に項目を追加">＋ ここに追加</button>
+                  title="この下に項目を追加">＋ ここに項目を追加</button>
         </li>`;
     }
     // テンプレート型の手順ステップ（番号バッジ＋連結線＋メモ＋所要時間）
@@ -2836,7 +2867,7 @@
           </div>
           <button class="insert-after" data-action="insert-item-after"
                   data-section="${sectionId}" data-item="${item.id}"
-                  title="この下に手順を追加">＋ ここに追加</button>
+                  title="この下に手順を追加">＋ ここに手順を追加</button>
         </li>`;
     }
     // =========================================================================
@@ -4210,6 +4241,9 @@
       btn.title = isRecording
         ? '録画停止'
         : '録画ガジェットを開く（ガジェットの「録画開始」で撮影開始）';
+      // 文字ラベルも title と同期して切り替える（トップバーのラベル表示）
+      const lb = btn.querySelector('.tb-lb');
+      if (lb) lb.textContent = isRecording ? '録画停止' : 'キャプチャ撮影';
     }
     function toggleRecording() {
       if (!window.recorderAPI) {
@@ -4254,6 +4288,22 @@
           shots: [{ seq: s.seq, kind, image: s.image, zoomImage, choice: wizardDefaultChoice(s) }],
         };
       });
+    }
+    // 画像ファイル名の自然順比較（img2 < img10）。大小文字は区別しない。
+    function naturalCompareFilenames(a, b) {
+      return String(a || '').localeCompare(String(b || ''), 'ja', { numeric: true, sensitivity: 'base' });
+    }
+    // フォルダから選択した画像ファイル群（[{path, name}]）→ ウィザードのステップモデル。
+    // 名前の自然順でソートし、1ファイル = 1ステップ・文は空で取り込む。
+    // kind:'file' は「元画像1枚（拡大/全景の切替なし）」の目印（仕様は
+    // docs/spec-image-batch-import.md 3章）。
+    function wizardStepsFromFiles(files) {
+      const src = Array.isArray(files) ? files.filter((f) => f && f.path) : [];
+      src.sort((a, b) => naturalCompareFilenames(a.name, b.name));
+      return src.map((f) => ({
+        text: '',
+        shots: [{ seq: null, kind: 'file', image: f.path, name: f.name || '', zoomImage: null, choice: 'full' }],
+      }));
     }
     // index のステップを直前のステップへ統合（文は「、」連結・ショットは結合）。
     function wizardMergeUp(steps, index) {
@@ -4326,12 +4376,72 @@
       return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
     }
 
-    // 過去セッションの一覧から選んでウィザードを開く（📥「録画を取り込む」）。
+    // ウィザードの入力ソース抽象（仕様は docs/spec-image-batch-import.md 3章）。
+    // リスト編集・取り込み先パネル・取込実行はソース非依存で共用し、
+    // 「どこから画像を読むか」だけをここで出し分ける。
+    // 共通IF: { kind, load(), loadErrorMessage, read(file), canOpenDir, openDir(), markImported() }
+    //   load() … { steps, defaultTitle, newListTitle, headerHtml } か、読めなければ null
+    //   read(file) … 添付画像を dataURL で返す（失敗は null）
+    function makeSessionSource(dir) {
+      return {
+        kind: 'session',
+        async load() {
+          let data = null;
+          try { data = await window.recorderAPI.loadSession(dir); } catch (_) { /* null のまま */ }
+          if (!data || !Array.isArray(data.steps) || data.steps.length === 0) return null;
+          const badges =
+            (data.info.endedAt ? '' : '<span class="iw-badge warn">未完了（異常終了の記録）</span>') +
+            (data.info.importedAt ? '<span class="iw-badge">取り込み済み</span>' : '');
+          return {
+            steps: wizardStepsFrom(data),
+            defaultTitle: `録画 ${fmtSessionDate(data.info.startedAt)}`.trim(),
+            newListTitle: data.info.name || '録画の取り込み',
+            headerHtml:
+              `<strong>${escapeHtml(data.info.name || '')}</strong>` +
+              `<span>${fmtSessionDate(data.info.startedAt)}</span>${badges}`,
+          };
+        },
+        loadErrorMessage: '録画セッションを読み込めませんでした。',
+        read: (file) => window.recorderAPI.readImage(dir, file),
+        canOpenDir: true,
+        openDir: () => window.recorderAPI.openShotsDir(dir),
+        // 取り込み済みマークは結果に影響させない（失敗しても console のみ）
+        markImported: () => { window.recorderAPI.markImported(dir).catch(() => {}); },
+      };
+    }
+    function makeFilesSource(files) {
+      const list = Array.isArray(files) ? files : [];
+      return {
+        kind: 'files',
+        async load() {
+          const steps = wizardStepsFromFiles(list);
+          if (!steps.length) return null;
+          return {
+            steps,
+            defaultTitle: `画像 ${fmtSessionDate(new Date().toISOString())}`.trim(),
+            newListTitle: '画像の取り込み',
+            headerHtml: `<strong>選択した画像 ${steps.length}枚</strong>`,
+          };
+        },
+        loadErrorMessage: '選択した画像を読み込めませんでした。',
+        read: (file) => window.fileAPI.readPickedImage(file),
+        canOpenDir: false,
+        openDir: () => {},
+        markImported: () => {},
+      };
+    }
+
+    // 📥「画像インポート」の入口。「フォルダから選択」と「キャプチャを取込む
+    // （録画セッション一覧）」の2択（仕様は docs/spec-image-batch-import.md 1章）。
     async function openImportPicker() {
-      if (!window.recorderAPI) return;
+      const canPickFiles = !!(window.fileAPI && window.fileAPI.pickImages);
+      const canSessions = !!window.recorderAPI;
+      if (!canPickFiles && !canSessions) return;
       let sessions = [];
-      try { sessions = (await window.recorderAPI.listSessions()) || []; } catch (_) { /* 下の0件表示へ */ }
-      if (!sessions.length) {
+      if (canSessions) {
+        try { sessions = (await window.recorderAPI.listSessions()) || []; } catch (_) { /* 0件扱い */ }
+      }
+      if (!canPickFiles && !sessions.length) {
         showToast('取り込める録画セッションがありません。まず録画してください。');
         return;
       }
@@ -4347,32 +4457,62 @@
           </button>`;
         })
         .join('');
+      const pickCard = canPickFiles
+        ? `<button class="mode-card" data-iw-pick-files type="button">
+             <b>🖼 フォルダから画像を選択…</b>
+             <span>ダイアログで画像を複数選択し、1枚＝1手順として取り込みます</span>
+           </button>`
+        : '';
+      const sessionsBlock = canSessions
+        ? `<div class="iw-divider">キャプチャを取込む（録画セッション・新しい順）</div>` +
+          (sessions.length
+            ? `<div class="iw-sessions">${rows}</div>`
+            : `<p class="iw-empty">取り込める録画セッションがありません。まず録画してください。</p>`)
+        : '';
       const overlay = buildModal(`
-        <h3>録画を取り込む</h3>
-        <p>取り込むセッションを選んでください（新しい順）。</p>
-        <div class="iw-sessions">${rows}</div>
+        <h3>画像を取り込む</h3>
+        <p>${canPickFiles ? '取り込み方法を選んでください。' : '取り込むセッションを選んでください（新しい順）。'}</p>
+        ${pickCard}
+        ${sessionsBlock}
         <div class="modal-actions"><button class="btn" data-close>閉じる</button></div>
       `);
+      const pickBtn = overlay.querySelector('[data-iw-pick-files]');
+      if (pickBtn) {
+        pickBtn.addEventListener('click', async () => {
+          pickBtn.disabled = true;
+          let res = null;
+          try { res = await window.fileAPI.pickImages(); }
+          catch (_) { res = { error: true }; }
+          pickBtn.disabled = false;
+          if (!res || res.canceled) return; // キャンセルはモーダルに留まる
+          if (res.error || !Array.isArray(res.files) || !res.files.length) {
+            showToast('画像を選択できませんでした。', { type: 'error' });
+            return;
+          }
+          closeModal(overlay);
+          openImportWizard(makeFilesSource(res.files));
+        });
+      }
       overlay.querySelectorAll('.iw-session').forEach((btn) => {
         btn.addEventListener('click', () => {
           const s = sessions[Number(btn.dataset.i)];
           closeModal(overlay);
-          openImportWizard(s.dir);
+          openImportWizard(makeSessionSource(s.dir));
         });
       });
     }
 
-    // 取り込みウィザード本体。dir はセッションフォルダ（メイン側で検証される）。
-    async function openImportWizard(dir) {
-      if (!window.recorderAPI) return;
-      let data = null;
-      try { data = await window.recorderAPI.loadSession(dir); } catch (_) { /* 下の失敗表示へ */ }
-      if (!data || !Array.isArray(data.steps) || data.steps.length === 0) {
-        showToast('録画セッションを読み込めませんでした。', { type: 'error' });
+    // 取り込みウィザード本体。source は makeSessionSource / makeFilesSource が返す
+    // 入力ソース（画像の読み方だけが異なり、編集・取込パイプラインは共通）。
+    async function openImportWizard(source) {
+      if (!source) return;
+      const loaded = await source.load();
+      if (!loaded) {
+        showToast(source.loadErrorMessage, { type: 'error' });
         return;
       }
-      const steps = wizardStepsFrom(data);
-      const defaultTitle = `録画 ${fmtSessionDate(data.info.startedAt)}`.trim();
+      const steps = loaded.steps;
+      const defaultTitle = loaded.defaultTitle;
 
       // 取り込み先の既定: 録画開始時のリスト → 現在開いているリスト → 先頭のリスト
       const route = parseHash();
@@ -4385,16 +4525,11 @@
           .join('') +
         `<option value="__new__"${destDefault === '__new__' ? ' selected' : ''}>（新しいリストを作成）</option>`;
 
-      const badges =
-        (data.info.endedAt ? '' : '<span class="iw-badge warn">未完了（異常終了の記録）</span>') +
-        (data.info.importedAt ? '<span class="iw-badge">取り込み済み</span>' : '');
       const overlay = buildModal(`
-        <h3>録画の取り込み</h3>
+        <h3>${source.kind === 'files' ? '画像の取り込み' : '録画の取り込み'}</h3>
         <p class="iw-meta">
-          <strong>${escapeHtml(data.info.name || '')}</strong>
-          <span>${fmtSessionDate(data.info.startedAt)}</span>
-          ${badges}
-          <button class="btn" data-iw-open-dir type="button">📂 フォルダを開く</button>
+          ${loaded.headerHtml}
+          ${source.canOpenDir ? '<button class="btn" data-iw-open-dir type="button">📂 フォルダを開く</button>' : ''}
         </p>
         <div class="iw-bulk">
           <input class="iw-find" placeholder="検索する文字列" />→
@@ -4544,7 +4679,7 @@
       function thumbFor(file) {
         if (!thumbCache.has(file)) {
           thumbCache.set(file, (async () => {
-            const raw = await window.recorderAPI.readImage(dir, file);
+            const raw = await source.read(file);
             if (!raw) return null;
             try { return await compressImage(raw, 320, 0.7); } catch (_) { return raw; }
           })());
@@ -4558,8 +4693,10 @@
             const shot = st.shots[0];
             const canZoom = st.shots.some((sh) => sh.zoomImage);
             // ドラッグは「拡大」スロットに終点画像が入っているため、表示だけ読み替える。
+            // フォルダから選択（kind:'file'）は元画像1枚のため切替セグメント自体を出さない。
+            const isFile = st.shots.some((sh) => sh.kind === 'file');
             const isDrag = st.shots.some((sh) => sh.kind === 'drag');
-            const seg = (isDrag
+            const seg = isFile ? '' : (isDrag
               ? [['full', '始点'], ['zoom', '終点'], ['both', '両方']]
               : [['zoom', '拡大'], ['full', '全景'], ['both', '両方']])
               .map(([val, label]) => {
@@ -4573,7 +4710,8 @@
               <div class="iw-main">
                 <div class="iw-row-head">
                   <span class="iw-seq">${i + 1}</span>
-                  <span class="iw-seg">${seg}</span>
+                  ${seg ? `<span class="iw-seg">${seg}</span>` : ''}
+                  ${isFile && st.shots[0].name ? `<span class="iw-name" title="${escapeHtml(st.shots[0].name)}">${escapeHtml(st.shots[0].name)}</span>` : ''}
                   <span class="iw-tools">
                     <button type="button" data-iw="up" ${i === 0 ? 'disabled' : ''} title="上へ">↑</button>
                     <button type="button" data-iw="down" ${i === steps.length - 1 ? 'disabled' : ''} title="下へ">↓</button>
@@ -4627,9 +4765,8 @@
         if (row && steps[Number(row.dataset.i)]) steps[Number(row.dataset.i)].text = e.target.value;
       });
 
-      overlay.querySelector('[data-iw-open-dir]').addEventListener('click', () => {
-        window.recorderAPI.openShotsDir(dir);
-      });
+      const openDirBtn = overlay.querySelector('[data-iw-open-dir]');
+      if (openDirBtn) openDirBtn.addEventListener('click', () => source.openDir());
       overlay.querySelector('[data-iw-replace]').addEventListener('click', () => {
         const find = overlay.querySelector('.iw-find').value;
         const repl = overlay.querySelector('.iw-repl').value;
@@ -4651,7 +4788,7 @@
             for (const shot of st.shots) {
               for (const f of wizardShotFiles(shot)) {
                 try {
-                  const raw = await window.recorderAPI.readImage(dir, f);
+                  const raw = await source.read(f);
                   if (raw) imgs.push(await storeImagePair(raw)); // 原寸＋サムネの2段構成
                 } catch (err) {
                   console.error('画像の取り込みに失敗しました（文のみ取り込みます）:', f, err);
@@ -4672,7 +4809,7 @@
           store.commit((s) => {
             let c = destSel === '__new__' ? null : M.findChecklist(s, destSel);
             if (!c) {
-              c = M.createChecklist(M.MODES.TEMPLATE, data.info.name || '録画の取り込み');
+              c = M.createChecklist(M.MODES.TEMPLATE, loaded.newListTitle);
               c.sections = []; // createChecklist が作る空セクションは使わない
               M.addChecklist(s, c);
               destId = c.id;
@@ -4692,8 +4829,8 @@
             notifySaveError('保存容量の上限に達したため、取り込めませんでした（変更は取り消しました）。', { force: true });
             return;
           }
-          // 取り込み済みマークは結果に影響させない（失敗しても console のみ）
-          window.recorderAPI.markImported(dir).catch(() => {});
+          // 取り込み済みマークは結果に影響させない（session ソースのみ・files は no-op）
+          source.markImported();
           closeModal(overlay);
           goEditor(destId);
           showToast(
@@ -5074,7 +5211,10 @@
     function updateImportButton() {
       const btn = document.querySelector('[data-action="import-rec"]');
       if (!btn) return;
-      if (!window.recorderAPI) { btn.style.display = 'none'; return; }
+      // キャプチャ取込（recorderAPI）もフォルダ選択（fileAPI.pickImages）も無い
+      // 環境（ブラウザ単体・単体HTML）では非表示。どちらかがあれば出す。
+      const canImport = !!(window.recorderAPI || (window.fileAPI && window.fileAPI.pickImages));
+      if (!canImport) { btn.style.display = 'none'; return; }
       btn.disabled = isRecording;
     }
 
@@ -5239,6 +5379,57 @@
       return printImgLayout() === '1col' ? 'print-cols-1' : 'print-cols-2';
     }
 
+    // ---- PDF出力の倍率・用紙・向き（仕様は docs/spec-pdf-output-scale.md）----
+    // 倍率のクランプ（30〜200%・既定100）。数値でなければ既定に倒す。
+    function clampPdfScale(v) {
+      if (v == null || v === '') return 100; // 未設定・空欄は既定（Number(null)=0 に落とさない）
+      const n = Math.round(Number(v));
+      if (!Number.isFinite(n)) return 100;
+      return Math.max(30, Math.min(200, n));
+    }
+    // 用紙寸法（mm）。B4/B5 は日本で一般的な JIS 寸法（CSS の keyword は ISO 寸法で
+    // 日本の B4 と異なるため、@page には mm 実寸で渡す）。
+    const PDF_PAPER_MM = {
+      A4: [210, 297], A3: [297, 420], B4: [257, 364], B5: [182, 257], Letter: [215.9, 279.4],
+    };
+    function pdfPaperDims(paper, orient) {
+      const [w, h] = PDF_PAPER_MM[paper] || PDF_PAPER_MM.A4;
+      return orient === 'landscape' ? { w: h, h: w } : { w, h };
+    }
+    // @page の size 上書き CSS。coverpage（表紙・余白0）も同じ用紙に合わせる。
+    function pdfPageStyleCss(paper, orient) {
+      const d = pdfPaperDims(paper, orient);
+      const size = `${d.w}mm ${d.h}mm`;
+      return `@page { size: ${size}; }\n@page coverpage { size: ${size}; }`;
+    }
+    function pdfOutSettings() {
+      const s = store.state.settings || {};
+      return {
+        scale: clampPdfScale(s.pdfScale != null ? s.pdfScale : 100),
+        paper: PDF_PAPER_MM[s.pdfPaper] ? s.pdfPaper : 'A4',
+        orient: s.pdfOrient === 'landscape' ? 'landscape' : 'portrait',
+      };
+    }
+    function setPdfOutSettings(patch) {
+      commitInPlace((s) => {
+        s.settings = s.settings || {};
+        if ('scale' in patch) s.settings.pdfScale = clampPdfScale(patch.scale);
+        if ('paper' in patch) s.settings.pdfPaper = PDF_PAPER_MM[patch.paper] ? patch.paper : 'A4';
+        if ('orient' in patch) s.settings.pdfOrient = patch.orient === 'landscape' ? 'landscape' : 'portrait';
+      }, { history: false });
+    }
+    // head 末尾に @page の上書き <style> を注入（後勝ちで基本CSSの margin は維持）。
+    function applyPrintPageStyle() {
+      const { paper, orient } = pdfOutSettings();
+      let el = document.getElementById('print-page-style');
+      if (!el) {
+        el = document.createElement('style');
+        el.id = 'print-page-style';
+        document.head.appendChild(el);
+      }
+      el.textContent = pdfPageStyleCss(paper, orient);
+    }
+
     // #print-root に印刷ビューを流し込む（window.print / printToPDF の直前に呼ぶ）。
     function fillPrintRoot(checklist) {
       let root = document.getElementById('print-root');
@@ -5280,10 +5471,12 @@
         // 画像参照を dataURL に戻してから印刷ビューを組む（ツールバー直下から呼ばれた
         // ときは未 materialize の checklist が渡るため。dataURL は素通しなので二重適用も安全）。
         checklist = await materializeChecklist(checklist);
+        applyPrintPageStyle(); // 用紙・向きの @page 上書き（倍率は printToPDF の scale で渡す）
         const root = fillPrintRoot(checklist);
         await waitForPrintImages(root); // 画像のデコード完了を待ってから撮る（欠け防止）
         const res = await window.printAPI.savePdf({
           title: sanitizeFilename(checklist.title || 'checklist'),
+          scale: pdfOutSettings().scale / 100,
         });
         if (res && res.error) alert('PDF の保存に失敗しました: ' + res.error);
       } catch (e) {
@@ -5296,6 +5489,7 @@
     // 印刷ビューを差し込んでブラウザの印刷ダイアログを開く。
     // 印刷後（またはキャンセル後）は中身を空にして画面に残らないようにする。
     function printChecklist(checklist) {
+      applyPrintPageStyle(); // 用紙・向きは印刷にも効く（倍率はOSダイアログ側に任せる）
       fillPrintRoot(checklist);
       const cleanup = () => {
         clearPrintRoot();
@@ -5324,21 +5518,62 @@
           ${window.printAPI ? '<button type="button" class="btn" data-pp-pdf>📄 PDFに保存</button>' : ''}
           <button type="button" class="btn" data-close>閉じる</button>
         </div>
+        <div class="print-preview-bar pp-out">
+          ${window.printAPI ? `
+          <span class="pp-row">
+            <span class="pp-label">倍率</span>
+            <input class="pp-scale" type="number" min="30" max="200" step="5" aria-label="PDF出力の倍率（％）" />
+            <span class="pp-unit">%</span>
+          </span>` : ''}
+          <span class="pp-row">
+            <span class="pp-label">用紙</span>
+            <select class="pp-paper" aria-label="用紙サイズ">
+              <option value="A4">A4</option>
+              <option value="A3">A3</option>
+              <option value="B4">B4</option>
+              <option value="B5">B5</option>
+              <option value="Letter">Letter</option>
+            </select>
+            <select class="pp-orient" aria-label="用紙の向き">
+              <option value="portrait">縦</option>
+              <option value="landscape">横</option>
+            </select>
+          </span>
+          ${window.printAPI ? '<span class="pp-hint">倍率は PDF 出力に効きます（印刷は OS のダイアログで指定）</span>' : ''}
+        </div>
         <div class="print-preview-body"><div class="print-preview-page"></div></div>
       `);
       overlay.querySelector('.modal').classList.add('print-preview');
       const page = overlay.querySelector('.print-preview-page');
+      const scaleInput = overlay.querySelector('.pp-scale');
+      const paperSelect = overlay.querySelector('.pp-paper');
+      const orientSelect = overlay.querySelector('.pp-orient');
       const renderPreview = () => {
+        const out = pdfOutSettings();
         page.className = 'print-preview-page ' + printColsClass();
-        page.innerHTML = renderPrintView(checklist);
+        // 用紙・向きで紙面の幅を変え、倍率は zoom で近似表示（正確な改ページは実出力で）
+        page.style.width = `${pdfPaperDims(out.paper, out.orient).w}mm`;
+        page.innerHTML =
+          `<div class="pp-zoom" style="zoom:${out.scale / 100}">${renderPrintView(checklist)}</div>`;
         overlay.querySelectorAll('[data-pp-cols]').forEach((b) =>
           b.classList.toggle('active', b.dataset.ppCols === printImgLayout())
         );
+        if (scaleInput && document.activeElement !== scaleInput) scaleInput.value = out.scale;
+        paperSelect.value = out.paper;
+        orientSelect.value = out.orient;
       };
       renderPreview();
       overlay.querySelectorAll('[data-pp-cols]').forEach((b) =>
         b.addEventListener('click', () => { setPrintImgLayout(b.dataset.ppCols); renderPreview(); })
       );
+      if (scaleInput) {
+        scaleInput.addEventListener('change', () => {
+          setPdfOutSettings({ scale: scaleInput.value });
+          renderPreview();
+        });
+      }
+      paperSelect.addEventListener('change', () => { setPdfOutSettings({ paper: paperSelect.value }); renderPreview(); });
+      orientSelect.addEventListener('change', () => { setPdfOutSettings({ orient: orientSelect.value }); renderPreview(); });
       overlay.querySelector('[data-pp-print]').addEventListener('click', () => printChecklist(checklist));
       const pdfBtn = overlay.querySelector('[data-pp-pdf]');
       if (pdfBtn) {
@@ -5781,6 +6016,73 @@
 
     // ペイント編集モーダル。矢印/四角/丸・ペン・ハイライト・テキスト・モザイク・
     // トリミングに対応。Undo は標準搭載。保存時に JPEG 圧縮して item に書き戻す。
+    // ---- 画像編集の図形ジオメトリ（純関数。テスト対象で window.__test__ に公開）----
+    // 仕様は docs/spec-image-editor-enhancements.md 参照。
+    // フリーフォームの外接矩形（プレビュー中の頂点列にも使う）。
+    function freeformBounds(pts) {
+      const list = Array.isArray(pts) ? pts.filter((p) => p) : [];
+      if (!list.length) return { x: 0, y: 0, w: 0, h: 0 };
+      let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+      for (const p of list) {
+        x1 = Math.min(x1, p.x); y1 = Math.min(y1, p.y);
+        x2 = Math.max(x2, p.x); y2 = Math.max(y2, p.y);
+      }
+      return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+    }
+    // 点 p と線分 (x1,y1)-(x2,y2) の距離（線系図形のヒットテスト用）。
+    function distSeg(p, x1, y1, x2, y2) {
+      const dx = x2 - x1, dy = y2 - y1;
+      const len2 = dx * dx + dy * dy;
+      const t = len2 ? Math.max(0, Math.min(1, ((p.x - x1) * dx + (p.y - y1) * dy) / len2)) : 0;
+      return Math.hypot(p.x - (x1 + t * dx), p.y - (y1 + t * dy));
+    }
+    // 選択オブジェクトの操作ハンドル一覧（kind はドラッグ時の役割）。
+    function objHandles(o) {
+      if (o.type === 'arrow' || o.type === 'line') {
+        return [{ kind: 'p1', x: o.x1, y: o.y1 }, { kind: 'p2', x: o.x2, y: o.y2 }];
+      }
+      if (o.type === 'rect' || o.type === 'ellipse' || o.type === 'cross') {
+        const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+        return [
+          // 四つ角＋各辺の中点の8か所。n/s/e/w は縦のみ／横のみのリサイズ
+          { kind: 'nw', x: o.x, y: o.y }, { kind: 'n', x: cx, y: o.y }, { kind: 'ne', x: o.x + o.w, y: o.y },
+          { kind: 'w', x: o.x, y: cy }, { kind: 'e', x: o.x + o.w, y: cy },
+          { kind: 'sw', x: o.x, y: o.y + o.h }, { kind: 's', x: cx, y: o.y + o.h }, { kind: 'se', x: o.x + o.w, y: o.y + o.h },
+        ];
+      }
+      if (o.type === 'freeform') {
+        return (Array.isArray(o.pts) ? o.pts : []).map((p, i) => ({ kind: `pt${i}`, x: p.x, y: p.y }));
+      }
+      if (o.type === 'callout') return [{ kind: 'tip', x: o.tip.x, y: o.tip.y }];
+      return []; // text は移動のみ
+    }
+    // 選択オブジェクトのドラッグ（移動・端点・四隅/辺・頂点・尻尾）を適用する。
+    // d.orig（ドラッグ開始時の複製）基準で差分を足すので累積誤差が出ない。
+    function applyObjDrag(d, p) {
+      const dx = p.x - d.sx, dy = p.y - d.sy;
+      const o = d.obj, s = d.orig;
+      if (d.mode === 'move') {
+        if (o.type === 'arrow' || o.type === 'line') { o.x1 = s.x1 + dx; o.y1 = s.y1 + dy; o.x2 = s.x2 + dx; o.y2 = s.y2 + dy; }
+        else if (o.type === 'freeform') { o.pts = s.pts.map((pt) => ({ x: pt.x + dx, y: pt.y + dy })); }
+        else { o.x = s.x + dx; o.y = s.y + dy; }
+        if (o.tip) { o.tip.x = s.tip.x + dx; o.tip.y = s.tip.y + dy; }
+      } else if (d.mode === 'p1') { o.x1 = s.x1 + dx; o.y1 = s.y1 + dy; }
+      else if (d.mode === 'p2') { o.x2 = s.x2 + dx; o.y2 = s.y2 + dy; }
+      else if (d.mode === 'tip') { o.tip.x = s.tip.x + dx; o.tip.y = s.tip.y + dy; }
+      else if (d.mode.startsWith('pt')) { // freeform の頂点を個別に動かす
+        const i = Number(d.mode.slice(2));
+        if (o.pts && o.pts[i] && s.pts && s.pts[i]) { o.pts[i].x = s.pts[i].x + dx; o.pts[i].y = s.pts[i].y + dy; }
+      }
+      else { // nw/n/ne/w/e/sw/s/se（rect・ellipse・cross のリサイズ。単字は縦のみ／横のみ）
+        let x1 = s.x, y1 = s.y, x2 = s.x + s.w, y2 = s.y + s.h;
+        if (d.mode.includes('w')) x1 = Math.min(x2 - 4, x1 + dx);
+        if (d.mode.includes('e')) x2 = Math.max(x1 + 4, x2 + dx);
+        if (d.mode.includes('n')) y1 = Math.min(y2 - 4, y1 + dy);
+        if (d.mode.includes('s')) y2 = Math.max(y1 + 4, y2 + dy);
+        o.x = x1; o.y = y1; o.w = x2 - x1; o.h = y2 - y1;
+      }
+    }
+
     async function openImageEditor(c, sectionId, itemId, index) {
       const item = findItemLive(c.id, sectionId, itemId);
       if (!item || !Array.isArray(item.images) || item.images[index] === undefined) return;
@@ -5810,6 +6112,8 @@
               <button class="ie-tool" data-tool="line" title="直線（Shiftで45°刻み）">╱</button>
               <button class="ie-tool" data-tool="rect" title="四角">▢</button>
               <button class="ie-tool" data-tool="ellipse" title="丸">◯</button>
+              <button class="ie-tool" data-tool="cross" title="×マーク">✕</button>
+              <button class="ie-tool" data-tool="freeform" title="フリーフォーム（クリックで頂点を追加・始点をクリックで閉じて確定・ダブルクリックで開いたまま確定・Escで中止）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4 14 8 5l8 2 4 7-6 6-8-2z"/><circle cx="4" cy="14" r="1.7" fill="currentColor" stroke="none"/><circle cx="8" cy="5" r="1.7" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1.7" fill="currentColor" stroke="none"/><circle cx="20" cy="14" r="1.7" fill="currentColor" stroke="none"/><circle cx="14" cy="20" r="1.7" fill="currentColor" stroke="none"/></svg></button>
               <button class="ie-tool" data-tool="callout" title="吹き出し（コメント）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></button>
               <button class="ie-tool" data-tool="pen" title="フリーハンドペン"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
               <button class="ie-tool" data-tool="marker" title="ハイライト"><svg class="ie-ic" viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button>
@@ -5846,10 +6150,11 @@
               <input type="number" class="ie-zoom-num" min="10" max="400" step="5" value="100" aria-label="表示倍率（％）" />%
               <button type="button" class="ie-zoom-fit" title="画面に収まる倍率に合わせる">フィット</button>
             </span>
-            <button class="btn ie-undo" title="元に戻す">↶ 元に戻す</button>
+            <button class="btn ie-undo" title="元に戻す (Ctrl+Z)">↶ 元に戻す</button>
+            <button class="btn ie-redo" title="やり直す (Ctrl+Y)">↷ やり直す</button>
           </div>
           <div class="ie-canvas-wrap"><canvas class="ie-canvas"></canvas></div>
-          <p class="ie-hint">ドラッグで描画。矢印・直線・図形・テキスト・吹き出しはクリックで選択→ドラッグで移動、ハンドルで変形、Delete または右クリック→削除で消せます。テキスト・吹き出しはダブルクリックで文字を再編集できます。消しゴムは描いた注釈を消します（線はなぞって、図形などは触れると丸ごと。スクショ本体は残る）。トリミングは範囲を決めて「トリミング適用」。ハンドで画像を移動、ホイール（他ツールはCtrl+ホイール）でズームできます。</p>
+          <p class="ie-hint">ドラッグで描画（配置はマウスを離した時。描画中に右クリックで取りやめてハンドツールへ）。矢印・直線・図形・×・テキスト・吹き出しはクリックで選択→ドラッグで移動、白丸ハンドルで変形（辺の中央は縦横のみ）、図形の外をクリックで選択解除、Ctrl＋ドラッグでコピー、Delete または右クリック→削除で消せます。フリーフォームはクリックで頂点を追加し、始点をクリックで閉じて確定（ダブルクリックで開いたまま確定・Escで中止）。テキスト・吹き出しはダブルクリックで文字を再編集。消しゴムは描いた注釈を消します（スクショ本体は残る）。元に戻す=Ctrl+Z・やり直す=Ctrl+Y。トリミングは範囲を決めて「トリミング適用」。ハンドで画像を移動、ホイール（他ツールはCtrl+ホイール）でズームできます。</p>
           <div class="ie-actions">
             <button class="btn primary ie-save">保存</button>
             <button class="btn ie-cancel">キャンセル</button>
@@ -5865,6 +6170,7 @@
       const toolBtns = overlay.querySelectorAll('.ie-tool');
       let tool = null; // null = ツール未選択（初期状態。選択・移動のみ、描画しない）
       const undoStack = [];
+      const redoStack = []; // やり直し（Redo）。新規操作で空になる
 
       // ---- ベクター注釈オブジェクト ----
       // 矢印・直線・四角・丸・テキスト・吹き出しはラスタライズせずオブジェクトとして
@@ -5878,7 +6184,7 @@
       const selectedObj = () => objects.find((o) => o.id === selectedId) || null;
 
       // ---- ツール別の透過率（%）。スライダーはツール切替でそのツールの値に同期 ----
-      const toolOpacity = { pen: 0, marker: 60, arrow: 0, line: 0, rect: 0, ellipse: 0, text: 0, callout: 0 };
+      const toolOpacity = { pen: 0, marker: 60, arrow: 0, line: 0, rect: 0, ellipse: 0, cross: 0, freeform: 0, text: 0, callout: 0 };
       const opacityWrap = overlay.querySelector('.ie-opacity');
       const opacityInput = overlay.querySelector('.ie-opacity input');
       const opacityVal = overlay.querySelector('.ie-opacity-val');
@@ -6137,6 +6443,7 @@
 
       function selectTool(t) {
         commitCallout(); // 別ツールへ移るときは編集中の吹き出しを確定
+        finishFreeformIfAny(); // 描きかけのフリーフォームも確定（頂点不足なら破棄）
         if (t !== 'crop') exitCropMode(); // crop 以外へ移ると選択枠を破棄
         tool = t;
         selectedId = null; // ツール切替で選択解除
@@ -6167,17 +6474,21 @@
       };
       baseImg.src = baseSrc;
 
-      // ---- Undo（base+anno のスナップショット＋オブジェクト一覧の複製） ----
+      // ---- Undo / Redo（base+anno のスナップショット＋オブジェクト一覧の複製） ----
+      const IE_HISTORY_MAX = 20;
+      function snapshotEdit() {
+        return {
+          w: canvas.width, h: canvas.height,
+          base: baseCanvas.toDataURL('image/png'),
+          anno: annoCanvas.toDataURL('image/png'),
+          objects: JSON.parse(JSON.stringify(objects)),
+        };
+      }
       function pushUndo() {
-        try {
-          undoStack.push({
-            w: canvas.width, h: canvas.height,
-            base: baseCanvas.toDataURL('image/png'),
-            anno: annoCanvas.toDataURL('image/png'),
-            objects: JSON.parse(JSON.stringify(objects)),
-          });
-        } catch (_) {}
-        if (undoStack.length > 20) undoStack.shift();
+        try { undoStack.push(snapshotEdit()); } catch (_) {}
+        if (undoStack.length > IE_HISTORY_MAX) undoStack.shift();
+        redoStack.length = 0; // 新規操作でやり直し履歴は消える（一般的な履歴規約）
+        syncHistoryButtons();
       }
       function restore(snap) {
         objects = JSON.parse(JSON.stringify(snap.objects || []));
@@ -6194,10 +6505,31 @@
         ai.onerror = done;
         ai.src = snap.anno;
       }
-      overlay.querySelector('.ie-undo').addEventListener('click', () => {
+      function undoEdit() {
+        if (!undoStack.length) return;
         exitCropMode();
-        if (undoStack.length) restore(undoStack.pop());
-      });
+        try { redoStack.push(snapshotEdit()); } catch (_) {}
+        if (redoStack.length > IE_HISTORY_MAX) redoStack.shift();
+        restore(undoStack.pop());
+        syncHistoryButtons();
+      }
+      function redoEdit() {
+        if (!redoStack.length) return;
+        exitCropMode();
+        try { undoStack.push(snapshotEdit()); } catch (_) {}
+        if (undoStack.length > IE_HISTORY_MAX) undoStack.shift();
+        restore(redoStack.pop());
+        syncHistoryButtons();
+      }
+      const ieUndoBtn = overlay.querySelector('.ie-undo');
+      const ieRedoBtn = overlay.querySelector('.ie-redo');
+      function syncHistoryButtons() {
+        ieUndoBtn.disabled = !undoStack.length;
+        ieRedoBtn.disabled = !redoStack.length;
+      }
+      ieUndoBtn.addEventListener('click', undoEdit);
+      ieRedoBtn.addEventListener('click', redoEdit);
+      syncHistoryButtons();
 
       function xy(e) {
         const r = canvas.getBoundingClientRect();
@@ -6263,6 +6595,25 @@
         g.ellipse(o.x + o.w / 2, o.y + o.h / 2, o.w / 2, o.h / 2, 0, 0, Math.PI * 2);
         g.stroke(); g.restore();
       }
+      // ×マーク：矩形（x,y,w,h）の対角2本の線分として描く（rect と同じ矩形ベース）。
+      function drawCrossObj(g, o) {
+        g.save(); setupObjStroke(g, o);
+        g.beginPath();
+        g.moveTo(o.x, o.y); g.lineTo(o.x + o.w, o.y + o.h);
+        g.moveTo(o.x + o.w, o.y); g.lineTo(o.x, o.y + o.h);
+        g.stroke(); g.restore();
+      }
+      // フリーフォーム：頂点列（pts）を結ぶ折れ線。closed なら始点へ戻して閉じる。
+      function drawFreeformObj(g, o) {
+        const pts = Array.isArray(o.pts) ? o.pts : [];
+        if (pts.length < 2) return;
+        g.save(); setupObjStroke(g, o);
+        g.beginPath();
+        g.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+        if (o.closed) g.closePath();
+        g.stroke(); g.restore();
+      }
       function drawTextObj(g, o) {
         g.save();
         g.globalAlpha = o.opacity;
@@ -6279,6 +6630,8 @@
         else if (o.type === 'line') drawLineObj(g, o);
         else if (o.type === 'rect') drawRectObj(g, o);
         else if (o.type === 'ellipse') drawEllipseObj(g, o);
+        else if (o.type === 'cross') drawCrossObj(g, o);
+        else if (o.type === 'freeform') drawFreeformObj(g, o);
         else if (o.type === 'text') drawTextObj(g, o);
         else if (o.type === 'callout') drawCalloutObj(g, o, true);
       }
@@ -6293,6 +6646,7 @@
           bb = { x: a.x + d * Math.cos(ang), y: a.y + d * Math.sin(ang) };
         }
         if (t === 'arrow' || t === 'line') return { ...common, type: t, x1: a.x, y1: a.y, x2: bb.x, y2: bb.y };
+        // rect / ellipse / cross は矩形ベースで共通
         return {
           ...common, type: t,
           x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
@@ -6304,7 +6658,8 @@
         if (o.type === 'arrow' || o.type === 'line') {
           return { x: Math.min(o.x1, o.x2), y: Math.min(o.y1, o.y2), w: Math.abs(o.x2 - o.x1), h: Math.abs(o.y2 - o.y1) };
         }
-        if (o.type === 'rect' || o.type === 'ellipse') return { x: o.x, y: o.y, w: o.w, h: o.h };
+        if (o.type === 'rect' || o.type === 'ellipse' || o.type === 'cross') return { x: o.x, y: o.y, w: o.w, h: o.h };
+        if (o.type === 'freeform') return freeformBounds(o.pts);
         if (o.type === 'text') {
           ctx.save();
           ctx.font = objFont(o);
@@ -6329,42 +6684,56 @@
         g.save();
         g.setTransform(1, 0, 0, 1, 0, 0);
         g.globalAlpha = 1;
-        const b = objBounds(o);
+        // 線系（直線・矢印）は長方形の選択枠を出さず、線に沿った点線＋端点ハンドル
+        // だけにする（線を線として扱う。Office の直線選択と同じ見え方）。
+        if (o.type === 'arrow' || o.type === 'line') {
+          g.strokeStyle = '#1a73e8';
+          g.lineWidth = 1.5 * s;
+          g.setLineDash([5 * s, 4 * s]);
+          g.beginPath(); g.moveTo(o.x1, o.y1); g.lineTo(o.x2, o.y2); g.stroke();
+          g.setLineDash([]);
+        } else {
+          const b = objBounds(o);
+          g.strokeStyle = '#1a73e8';
+          g.lineWidth = 1.5 * s;
+          g.setLineDash([5 * s, 4 * s]);
+          g.strokeRect(b.x - 4 * s, b.y - 4 * s, b.w + 8 * s, b.h + 8 * s);
+          g.setLineDash([]);
+        }
+        // ハンドルは白塗り＋青枠の丸（トリミングの白地スタイルに合わせる）
+        const hr = 5.5 * s;
+        g.fillStyle = '#ffffff';
         g.strokeStyle = '#1a73e8';
-        g.lineWidth = 1.5 * s;
-        g.setLineDash([5 * s, 4 * s]);
-        g.strokeRect(b.x - 4 * s, b.y - 4 * s, b.w + 8 * s, b.h + 8 * s);
-        g.setLineDash([]);
-        const hs = 9 * s;
-        g.fillStyle = '#1a73e8';
-        objHandles(o).forEach((h) => g.fillRect(h.x - hs / 2, h.y - hs / 2, hs, hs));
+        g.lineWidth = 2 * s;
+        objHandles(o).forEach((h) => {
+          g.beginPath();
+          g.arc(h.x, h.y, hr, 0, Math.PI * 2);
+          g.fill();
+          g.stroke();
+        });
         g.restore();
       }
-      // 選択オブジェクトの操作ハンドル一覧（kind はドラッグ時の役割）。
-      function objHandles(o) {
-        if (o.type === 'arrow' || o.type === 'line') {
-          return [{ kind: 'p1', x: o.x1, y: o.y1 }, { kind: 'p2', x: o.x2, y: o.y2 }];
-        }
-        if (o.type === 'rect' || o.type === 'ellipse') {
-          return [
-            { kind: 'nw', x: o.x, y: o.y }, { kind: 'ne', x: o.x + o.w, y: o.y },
-            { kind: 'sw', x: o.x, y: o.y + o.h }, { kind: 'se', x: o.x + o.w, y: o.y + o.h },
-          ];
-        }
-        if (o.type === 'callout') return [{ kind: 'tip', x: o.tip.x, y: o.tip.y }];
-        return []; // text は移動のみ
-      }
       // ---- オブジェクトのヒットテスト（クリック選択・消しゴム削除用） ----
-      function distSeg(p, x1, y1, x2, y2) {
-        const dx = x2 - x1, dy = y2 - y1;
-        const len2 = dx * dx + dy * dy;
-        const t = len2 ? Math.max(0, Math.min(1, ((p.x - x1) * dx + (p.y - y1) * dy) / len2)) : 0;
-        return Math.hypot(p.x - (x1 + t * dx), p.y - (y1 + t * dy));
-      }
       // pad: 判定を広げる追加量（消しゴムの半径など）
       function objHit(o, p, pad) {
         const tol = Math.max((o.size || 0) / 2 + 4, 8 * dispScale()) + (pad || 0);
         if (o.type === 'arrow' || o.type === 'line') return distSeg(p, o.x1, o.y1, o.x2, o.y2) <= tol;
+        if (o.type === 'cross') {
+          // 対角2本の線分への距離判定（塗り無しなので内側は素通し）
+          return distSeg(p, o.x, o.y, o.x + o.w, o.y + o.h) <= tol
+            || distSeg(p, o.x + o.w, o.y, o.x, o.y + o.h) <= tol;
+        }
+        if (o.type === 'freeform') {
+          const pts = Array.isArray(o.pts) ? o.pts : [];
+          for (let i = 1; i < pts.length; i++) {
+            if (distSeg(p, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y) <= tol) return true;
+          }
+          if (o.closed && pts.length > 2) {
+            const a = pts[pts.length - 1], b0 = pts[0];
+            if (distSeg(p, a.x, a.y, b0.x, b0.y) <= tol) return true;
+          }
+          return false;
+        }
         if (o.type === 'rect') {
           // 枠線の近傍だけ当たり（塗り無しなので内側は素通しにして下の物を掴める）
           const inOuter = p.x >= o.x - tol && p.x <= o.x + o.w + tol && p.y >= o.y - tol && p.y <= o.y + o.h + tol;
@@ -6398,27 +6767,6 @@
         }
         return null;
       }
-      // 選択オブジェクトのドラッグ（移動・端点・四隅・尻尾）を適用する。
-      // d.orig（ドラッグ開始時の複製）基準で差分を足すので累積誤差が出ない。
-      function applyObjDrag(d, p) {
-        const dx = p.x - d.sx, dy = p.y - d.sy;
-        const o = d.obj, s = d.orig;
-        if (d.mode === 'move') {
-          if (o.type === 'arrow' || o.type === 'line') { o.x1 = s.x1 + dx; o.y1 = s.y1 + dy; o.x2 = s.x2 + dx; o.y2 = s.y2 + dy; }
-          else { o.x = s.x + dx; o.y = s.y + dy; }
-          if (o.tip) { o.tip.x = s.tip.x + dx; o.tip.y = s.tip.y + dy; }
-        } else if (d.mode === 'p1') { o.x1 = s.x1 + dx; o.y1 = s.y1 + dy; }
-        else if (d.mode === 'p2') { o.x2 = s.x2 + dx; o.y2 = s.y2 + dy; }
-        else if (d.mode === 'tip') { o.tip.x = s.tip.x + dx; o.tip.y = s.tip.y + dy; }
-        else { // nw / ne / sw / se（rect・ellipse のリサイズ）
-          let x1 = s.x, y1 = s.y, x2 = s.x + s.w, y2 = s.y + s.h;
-          if (d.mode.includes('w')) x1 = Math.min(x2 - 4, x1 + dx);
-          if (d.mode.includes('e')) x2 = Math.max(x1 + 4, x2 + dx);
-          if (d.mode.includes('n')) y1 = Math.min(y2 - 4, y1 + dy);
-          if (d.mode.includes('s')) y2 = Math.max(y1 + 4, y2 + dy);
-          o.x = x1; o.y = y1; o.w = x2 - x1; o.h = y2 - y1;
-        }
-      }
       // 消しゴムが触れたオブジェクトを丸ごと削除する（要件：元画像以外はすべて消せる）
       function eraseObjectsAt(p) {
         const radius = Math.max(4, Number(sizeInput.value) * 2) / 2;
@@ -6428,6 +6776,95 @@
           return true;
         });
         return objects.length !== before;
+      }
+      // ── フリーフォーム（Office 互換：クリックで頂点追加・始点クリックで閉じて確定・
+      //    ダブルクリックで開いたまま確定・Esc で中止。仕様は
+      //    docs/spec-image-editor-enhancements.md 4章）──────────────────────
+      let activeFreeform = null; // { pts: [{x,y}], cursor: {x,y}|null } 描画中だけ非 null
+      const FREEFORM_CLOSE_R = 12; // 始点クリックで閉じる許容半径（表示px基準）
+      function freeformClick(p) {
+        if (!activeFreeform) {
+          activeFreeform = { pts: [p], cursor: null };
+          renderFreeformPreview();
+          return;
+        }
+        const pts = activeFreeform.pts;
+        const first = pts[0];
+        if (pts.length >= 3 && Math.hypot(p.x - first.x, p.y - first.y) <= FREEFORM_CLOSE_R * dispScale()) {
+          commitFreeform(true); // 始点クリックで閉じて確定
+          return;
+        }
+        pts.push(p);
+        renderFreeformPreview();
+      }
+      function commitFreeform(closed) {
+        const ff = activeFreeform;
+        activeFreeform = null;
+        if (!ff) { return; }
+        // ダブルクリック確定などで重なった連続頂点は間引く
+        const pts = [];
+        for (const pt of ff.pts) {
+          const prev = pts[pts.length - 1];
+          if (!prev || Math.hypot(pt.x - prev.x, pt.y - prev.y) > 2) pts.push(pt);
+        }
+        if (pts.length < 2) { recomposite(); return; } // 頂点1つ以下は破棄
+        pushUndo();
+        const o = {
+          id: newObjId(), type: 'freeform', pts, closed: !!closed,
+          color: colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha('freeform'),
+        };
+        objects.push(o);
+        selectedId = o.id; // 描いた直後は選択状態（すぐ動かせる）
+        recomposite();
+      }
+      function finishFreeformIfAny() { if (activeFreeform) commitFreeform(false); }
+      function cancelFreeform() {
+        if (!activeFreeform) return false;
+        activeFreeform = null;
+        recomposite();
+        return true;
+      }
+      function renderFreeformPreview() {
+        recomposite();
+        const ff = activeFreeform;
+        if (!ff) return;
+        const s = dispScale();
+        const g = ctx;
+        g.save();
+        // 確定済みの辺
+        if (ff.pts.length >= 2) {
+          drawFreeformObj(g, {
+            pts: ff.pts, closed: false,
+            color: colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha('freeform'),
+          });
+        }
+        // カーソルまでの次の辺（点線プレビュー）
+        const last = ff.pts[ff.pts.length - 1];
+        if (ff.cursor) {
+          g.globalAlpha = 0.7;
+          g.strokeStyle = colorInput.value;
+          g.lineWidth = Math.max(1, Number(sizeInput.value) / 2);
+          g.setLineDash([6 * s, 5 * s]);
+          g.beginPath(); g.moveTo(last.x, last.y); g.lineTo(ff.cursor.x, ff.cursor.y); g.stroke();
+          g.setLineDash([]);
+        }
+        // 頂点は白丸。始点は大きめ＋閉じられる状態なら許容半径の点線円で強調
+        g.globalAlpha = 1;
+        g.fillStyle = '#ffffff';
+        g.strokeStyle = '#1a73e8';
+        g.lineWidth = 2 * s;
+        ff.pts.forEach((pt, i) => {
+          const r = (i === 0 ? 6.5 : 4.5) * s;
+          g.beginPath(); g.arc(pt.x, pt.y, r, 0, Math.PI * 2); g.fill(); g.stroke();
+        });
+        if (ff.pts.length >= 3) {
+          const f0 = ff.pts[0];
+          g.setLineDash([3 * s, 3 * s]);
+          g.lineWidth = 1.2 * s;
+          g.beginPath(); g.arc(f0.x, f0.y, FREEFORM_CLOSE_R * s, 0, Math.PI * 2); g.stroke();
+          g.setLineDash([]);
+        }
+        g.restore();
       }
       // ── 吹き出し（クリック挿入・文字で自動リサイズ・尻尾を好きな向きへ）──────
       // calloutBox: 文字から本体（尻尾を除く）の寸法を測る。
@@ -6480,7 +6917,10 @@
         g.globalAlpha = o.opacity;
         calloutPath(g, o.x, o.y, box.w, box.h, r, o.tip, tW);
         g.strokeStyle = o.color;
-        g.fillStyle = 'rgba(255,255,255,0.92)';
+        // 白地は不透明にする。透け具合は透過率スライダー（globalAlpha=o.opacity）だけで
+        // 決まり、透過0%のときは一切透けない（以前は固定で 0.92 を掛けており
+        // 0% でも8%透けていた。ユーザー要望 2026-09-08）。
+        g.fillStyle = '#ffffff';
         g.lineWidth = Math.max(2, o.size);
         g.lineJoin = 'round';
         g.fill(); g.stroke();
@@ -6849,6 +7289,7 @@
         // 消さずに残す＝描画時にクリップされるだけで、移動で戻せる）。
         objects.forEach((o) => {
           if (o.type === 'arrow' || o.type === 'line') { o.x1 -= rx; o.y1 -= ry; o.x2 -= rx; o.y2 -= ry; }
+          else if (o.type === 'freeform') { (o.pts || []).forEach((pt) => { pt.x -= rx; pt.y -= ry; }); }
           else { o.x -= rx; o.y -= ry; }
           if (o.tip) { o.tip.x -= rx; o.tip.y -= ry; }
         });
@@ -6872,7 +7313,10 @@
       // オブジェクトを配置する系のツール＋ハンドでは、既存オブジェクトのクリックを
       // 「選択・移動」として扱う（Excel と同じ感覚）。ペン・ハイライト・消しゴム・
       // モザイク・トリミングは描く／消すが優先なので選択しない。
-      const OBJECT_TOOLS = ['hand', 'arrow', 'line', 'rect', 'ellipse', 'text', 'callout'];
+      const OBJECT_TOOLS = ['hand', 'arrow', 'line', 'rect', 'ellipse', 'cross', 'freeform', 'text', 'callout'];
+      // ドラッグ（押して離す）で1つの図形を配置するツール群
+      const SHAPE_DRAG_TOOLS = ['arrow', 'line', 'rect', 'ellipse', 'cross'];
+      let suppressCtxMenu = false; // 描画中の右クリックでハンドへ切替えた直後のメニュー抑止
 
       canvas.addEventListener('pointerdown', (e) => {
         e.preventDefault();
@@ -6898,6 +7342,8 @@
           commitCallout();
           return; // 外側クリックは確定のみ。新規吹き出しは作らない
         }
+        // フリーフォーム描画中：クリックは頂点の追加（始点なら閉じて確定）だけ。
+        if (activeFreeform) { freeformClick(p); return; }
         // 既存オブジェクトの選択・ドラッグ開始（ツール本来の動作より優先）。
         // 未選択（null）でも選択・移動はできる（描画しないだけ）。
         if (tool === null || OBJECT_TOOLS.includes(tool)) {
@@ -6911,12 +7357,18 @@
           const hit = hitObject(p);
           if (hit) {
             selectedId = hit.id;
-            objDrag = { mode: 'move', obj: hit, sx: p.x, sy: p.y, orig: JSON.parse(JSON.stringify(hit)), moved: false };
+            // copy: Ctrl（Mac は Cmd）を押しながらのドラッグは複製を動かす（Office と同じ）
+            objDrag = {
+              mode: 'move', obj: hit, sx: p.x, sy: p.y,
+              orig: JSON.parse(JSON.stringify(hit)), moved: false,
+              copy: !!(e.ctrlKey || e.metaKey),
+            };
             canvas.setPointerCapture(e.pointerId);
             recomposite();
             return;
           }
-          if (selectedId) { selectedId = null; recomposite(); } // 空白クリックで選択解除して通常動作へ
+          // 空白クリックは選択解除のみ（新しい図形は配置しない。もう一度クリックで描画開始）
+          if (selectedId) { selectedId = null; recomposite(); return; }
         }
         if (tool === null) return; // 未選択時は描画・パンへ進まない（選択・移動のみ）
         if (tool === 'hand') { startPan(e); return; }
@@ -6928,6 +7380,7 @@
         }
         if (tool === 'text') { beginText(p); return; }
         if (tool === 'callout') { beginCallout(p); return; }
+        if (tool === 'freeform') { freeformClick(p); return; }
         drawing = true;
         start = p;
         if (tool === 'pen' || tool === 'marker' || tool === 'eraser') {
@@ -6967,12 +7420,34 @@
           canvas.style.cursor = hov ? 'grab' : (tool === 'callout' ? 'crosshair' : '');
           return;
         }
+        // フリーフォーム描画中：カーソルまでの次の辺をプレビュー。
+        if (activeFreeform) { activeFreeform.cursor = xy(e); renderFreeformPreview(); return; }
+        // 図形のドラッグ描画中に右ボタンが押されたら、描きかけを破棄してハンドツールへ
+        // 切り替える（配置は左ボタンを離した時だけ。右クリックメニューは開かない。
+        // 仕様は docs/spec-image-editor-enhancements.md 6章）。
+        if (drawing && (e.buttons & 2) && SHAPE_DRAG_TOOLS.includes(tool)) {
+          drawing = false;
+          suppressCtxMenu = true;
+          recomposite(); // プレビューを消す
+          selectTool('hand');
+          return;
+        }
         // 選択オブジェクトのドラッグ（移動・変形）。undo は実際に動いた時だけ積む。
         if (objDrag) {
           const p = xy(e);
           if (!objDrag.moved) {
             if (Math.hypot(p.x - objDrag.sx, p.y - objDrag.sy) < 2 * dispScale()) return; // クリックの揺れは無視
             pushUndo();
+            if (objDrag.copy && objDrag.mode === 'move') {
+              // Ctrl＋ドラッグ：元の図形は残し、同位置に作った複製を掴んで動かす。
+              // 実際にドラッグが始まった時だけ複製する（Ctrl＋クリックでは何もしない）。
+              const clone = JSON.parse(JSON.stringify(objDrag.orig));
+              delete clone.hidden;
+              clone.id = newObjId();
+              objects.push(clone);
+              objDrag.obj = clone;
+              selectedId = clone.id;
+            }
             objDrag.moved = true;
           }
           applyObjDrag(objDrag, p);
@@ -6988,7 +7463,10 @@
             const p2 = xy(e);
             const sel = selectedObj();
             const hk = sel && hitObjHandle(sel, p2);
-            canvas.style.cursor = hk ? 'grab' : (hitObject(p2) ? 'move' : '');
+            // 辺の中点ハンドルは縦のみ／横のみのリサイズなので専用カーソルを出す
+            canvas.style.cursor = hk
+              ? (hk === 'n' || hk === 's' ? 'ns-resize' : hk === 'e' || hk === 'w' ? 'ew-resize' : 'grab')
+              : (hitObject(p2) ? 'move' : '');
           }
           return;
         }
@@ -7004,7 +7482,7 @@
         }
         // 図形はプレビューを表示 ctx に上描き（objects へは確定時のみ追加）。
         recomposite();
-        if (tool === 'arrow' || tool === 'line' || tool === 'rect' || tool === 'ellipse') {
+        if (SHAPE_DRAG_TOOLS.includes(tool)) {
           drawObject(ctx, shapeFromDrag(tool, start, p, e.shiftKey));
         } else if (tool === 'mosaic') {
           ctx.save();
@@ -7043,9 +7521,9 @@
           recomposite();
           return;
         }
-        if (tool === 'arrow' || tool === 'line' || tool === 'rect' || tool === 'ellipse') {
+        if (SHAPE_DRAG_TOOLS.includes(tool)) {
           const o = shapeFromDrag(tool, start, p, e.shiftKey);
-          const tiny = (o.type === 'rect' || o.type === 'ellipse')
+          const tiny = (o.type === 'rect' || o.type === 'ellipse' || o.type === 'cross')
             ? (o.w < 2 && o.h < 2)
             : Math.hypot(o.x2 - o.x1, o.y2 - o.y1) < 2;
           if (!tiny) { // 点クリックのゴミ図形は作らない
@@ -7070,6 +7548,8 @@
       });
       // ダブルクリックでテキスト・吹き出しを再編集（Excel と同じ操作感）
       canvas.addEventListener('dblclick', (e) => {
+        // フリーフォーム描画中のダブルクリックは「開いたまま確定」（Office と同じ）
+        if (activeFreeform) { e.preventDefault(); commitFreeform(false); return; }
         if (activeCallout || cropMode) return;
         if (!(tool === null || OBJECT_TOOLS.includes(tool))) return; // 未選択でも再編集可
         const p = xy(e);
@@ -7094,6 +7574,10 @@
       // 誤右クリックの即消滅を避けるため、選択枠で対象を見せてから「削除」を選ばせる。
       canvas.addEventListener('contextmenu', (e) => {
         e.preventDefault(); // 既定メニュー・選択系の既定動作を抑止（Electron では通常出ないが保険）
+        // 描画ドラッグ中の右クリックでハンドへ切替えた直後はメニューを開かない
+        if (suppressCtxMenu) { suppressCtxMenu = false; return; }
+        // フリーフォーム描画中の右クリックは描きかけを破棄してハンドツールへ
+        if (activeFreeform) { cancelFreeform(); selectTool('hand'); return; }
         if (cropMode || activeCallout) return;
         if (!(tool === null || OBJECT_TOOLS.includes(tool))) return; // クリック選択と同じ対象（未選択含む）に限定
         const hit = hitObject(xy(e));
@@ -7127,6 +7611,7 @@
 
       function close() {
         cancelCallout(); // 編集中の吹き出しは破棄
+        cancelFreeform(); // 描きかけのフリーフォームも破棄（閉じる＝保存しない）
         rbClosePalette(); // 右クリックメニューを開いたまま閉じた場合の取り残し防止
         window.removeEventListener('resize', onResize);
         document.removeEventListener('keydown', onKey);
@@ -7138,11 +7623,20 @@
         const t = ev.target;
         const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
         if (ev.key === 'Escape') {
+          if (cancelFreeform()) return; // 描きかけのフリーフォームは破棄だけ
           if (selectedId) { selectedId = null; recomposite(); return; } // まず選択解除、もう一度で閉じる
           close();
         } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedId && !inField) {
           ev.preventDefault();
           deleteSelectedObject();
+        } else if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && !inField && ev.key.toLowerCase() === 'z') {
+          // Ctrl+Z＝元に戻す / Ctrl+Shift+Z＝やり直す（テキスト入力中は素通し）
+          ev.preventDefault();
+          if (ev.shiftKey) redoEdit(); else undoEdit();
+        } else if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && !ev.shiftKey && !inField && ev.key.toLowerCase() === 'y') {
+          // Ctrl+Y＝やり直す
+          ev.preventDefault();
+          redoEdit();
         }
       }
       document.addEventListener('keydown', onKey);
@@ -7157,6 +7651,7 @@
       }
       overlay.querySelector('.ie-save').addEventListener('click', async () => {
         commitCallout(); // 未確定の吹き出しを確定してから書き出す
+        finishFreeformIfAny(); // 描きかけのフリーフォームも確定してから書き出す
         exitCropMode();
         selectedId = null;
         // 合成結果（crop オーバーレイ無し）を別 canvas に作って書き出す。
@@ -7508,7 +8003,7 @@
           showToast('撮影された画像がなかったため、取り込みは行いません。');
           return;
         }
-        openImportWizard(d.dir);
+        openImportWizard(makeSessionSource(d.dir));
       });
     }
     updateRecordButton();
@@ -7540,6 +8035,12 @@
         wizardDefaultChoice, wizardStepsFrom, wizardMergeUp, wizardBulkReplace,
         wizardShotFiles, buildImportSection, buildImportItems, clampInsertIndex, insertItemsAt,
         openImportWizard,
+        // 画像一括インポート（フォルダから選択）
+        naturalCompareFilenames, wizardStepsFromFiles, makeFilesSource, makeSessionSource,
+        // 画像編集の図形ジオメトリ（8ハンドル・フリーフォーム・線分距離）
+        freeformBounds, distSeg, objHandles, applyObjDrag,
+        // PDF出力の倍率・用紙・向き
+        clampPdfScale, pdfPaperDims, pdfPageStyleCss, pdfOutSettings, setPdfOutSettings,
         // サムネイルサイドバー
         thumbStepModel, renderThumbSidebar, updateThumbSidebar, thumbsCollapsed, setThumbsCollapsed,
         // 実行モード（3-R5）とガイド小窓（3-R6）

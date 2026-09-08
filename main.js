@@ -1332,7 +1332,7 @@ async function saveCsv(event, payload) {
 // printToPDF は @media print の CSS で描画されるため、画面と同じ見た目で
 // 印刷ビューだけが出力される。
 async function savePdfFile(event, payload) {
-  const { title } = payload || {};
+  const { title, scale } = payload || {};
   const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
   const safe =
     String(title || 'checklist')
@@ -1348,9 +1348,14 @@ async function savePdfFile(event, payload) {
     // preferCSSPageSize で CSS の @page（本文=A4/余白 上下15mm・左右25mm、表紙=A4/余白0）を尊重する。
     // これを付けないと printToPDF は既定余白を全ページに強制し、@page coverpage の
     // 余白0が効かず、A4 と等寸(794x1123px)の表紙が余白分だけはみ出してしまう。
+    // scale: 出力倍率（1=100%）。UI 側で 30〜200% に制限しているが、Chromium の
+    // 対応範囲（0.1〜2.0）に収まるようここでも防御的にクランプする。
+    const n = Number(scale);
+    const pdfScale = Number.isFinite(n) ? Math.max(0.3, Math.min(2, n)) : 1;
     const buf = await event.sender.printToPDF({
       printBackground: true,
       preferCSSPageSize: true,
+      scale: pdfScale,
     });
     fs.writeFileSync(filePath, buf);
     // 出力結果をすぐ確認できるよう、既定のPDFビューアで開く。
@@ -1359,6 +1364,16 @@ async function savePdfFile(event, payload) {
   } catch (e) {
     return { error: e.message };
   }
+}
+
+// 画像ファイルの拡張子 → MIME。単一選択（pickImageFile）と複数選択の読み込み
+// （readPickedImage）で共用する。
+const IMAGE_PICK_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'];
+function imageMimeFromExt(ext) {
+  return ({
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp',
+  })[ext] || 'application/octet-stream';
 }
 
 // 画像挿入ボタン用のネイティブ「開く」ダイアログ。既定フォルダはユーザーの
@@ -1372,20 +1387,57 @@ async function pickImageFile(event) {
     title: '画像を選択',
     defaultPath: dir,
     properties: ['openFile'],
-    filters: [{ name: '画像', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'] }],
+    filters: [{ name: '画像', extensions: IMAGE_PICK_EXTENSIONS }],
   });
   if (canceled || !filePaths || !filePaths[0]) return { canceled: true };
   try {
     const p = filePaths[0];
     const buf = fs.readFileSync(p);
     const ext = path.extname(p).toLowerCase().replace('.', '');
-    const mime = ({
-      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-      gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp',
-    })[ext] || 'application/octet-stream';
-    return { dataUrl: `data:${mime};base64,${buf.toString('base64')}` };
+    return { dataUrl: `data:${imageMimeFromExt(ext)};base64,${buf.toString('base64')}` };
   } catch (e) {
     return { error: e.message || '画像の読み込みに失敗しました' };
+  }
+}
+
+// 画像一括インポート（フォルダから選択）用の複数選択ダイアログ。
+// base64 を一括で返すとメモリが重いため、ここでは選択パスの一覧だけを返し、
+// 実際の読み込みは image:readPicked で1枚ずつ行う（rec:image と同じ遅延読みの流儀）。
+// セキュリティ: ダイアログで実際に選ばれたパスだけを許可リスト（Set）に登録し、
+// readPickedImage はそこに含まれるパスしか読まない（レンダラー侵害時に任意
+// ファイルを読ませないため。仕様は docs/spec-image-batch-import.md 2章）。
+const pickedImagePaths = new Set();
+async function pickImageFiles(event) {
+  const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
+  const dir = screenshotDir();
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: '画像を選択（複数可）',
+    defaultPath: dir,
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: '画像', extensions: IMAGE_PICK_EXTENSIONS }],
+  });
+  if (canceled || !filePaths || !filePaths.length) return { canceled: true };
+  const files = filePaths.map((p) => {
+    const resolved = path.resolve(p);
+    pickedImagePaths.add(resolved);
+    return { path: resolved, name: path.basename(resolved) };
+  });
+  return { files };
+}
+
+// 許可リスト内のパスだけ dataURL で返す。不許可・読込失敗は null（rec:image と同じ）。
+function readPickedImage(_event, filePath) {
+  if (typeof filePath !== 'string' || !filePath) return null;
+  const resolved = path.resolve(filePath);
+  if (!pickedImagePaths.has(resolved)) return null;
+  try {
+    const buf = fs.readFileSync(resolved);
+    const ext = path.extname(resolved).toLowerCase().replace('.', '');
+    return `data:${imageMimeFromExt(ext)};base64,${buf.toString('base64')}`;
+  } catch (e) {
+    console.error('選択画像を読み込めませんでした:', resolved, e.message);
+    return null;
   }
 }
 
@@ -1451,6 +1503,8 @@ app.whenReady().then(() => {
   ipcMain.handle('docx:save', (e, payload) => saveDocx(e, payload));
   ipcMain.handle('file:saveHtml', (e, payload) => saveHtmlFile(e, payload));
   ipcMain.handle('image:pickFile', (e) => pickImageFile(e));
+  ipcMain.handle('image:pickFiles', (e) => pickImageFiles(e));
+  ipcMain.handle('image:readPicked', (e, p) => readPickedImage(e, p));
   ipcMain.handle('xlsx:save', (e, payload) => saveXlsx(e, payload));
   ipcMain.handle('csv:save', (e, payload) => saveCsv(e, payload));
   ipcMain.handle('print:pdf', (e, payload) => savePdfFile(e, payload));
