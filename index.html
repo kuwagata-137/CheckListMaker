@@ -118,6 +118,16 @@
   .icon:hover { background: var(--surface-2); color: var(--text); }
   .icon:disabled { opacity: 0.35; cursor: default; }
   .icon.danger:hover { color: var(--danger); }
+  /* トップバーのボタンだけ、アイコンの下に小さい文字ラベルを縦積みで出す。
+     .icon は項目行の ↑↓⤒✕ などとも共有のため、#topbar 配下に限定する。 */
+  #topbar .icon {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 9px;
+  }
+  #topbar .tb-lb { font-size: 0.65rem; line-height: 1; letter-spacing: 0.02em; }
   /* 録画ボタン: 黒い四角の中心に赤い丸のアイコン（一般的な録画マーク）。 */
   .icon .rec-ico { display: block; }
   .icon.recording { animation: rec-blink 1.4s infinite; }
@@ -1382,15 +1392,16 @@
   <div id="topbar">
     <span class="topbar-brand">✓ チェックリスト</span>
     <span class="topbar-spacer"></span>
-    <button class="icon" data-action="undo" title="元に戻す (Undo)">↶</button>
-    <button class="icon" data-action="redo" title="やり直す (Redo)">↷</button>
+    <button class="icon" data-action="undo" title="元に戻す (Undo)">↶<span class="tb-lb">元に戻す</span></button>
+    <button class="icon" data-action="redo" title="やり直す (Redo)">↷<span class="tb-lb">やり直す</span></button>
     <button class="icon" data-action="record" title="録画ガジェットを開く（ガジェットの「録画開始」で撮影開始）">
       <svg class="rec-ico" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
         <rect x="1" y="1" width="18" height="18" rx="4" fill="#111827" />
         <circle cx="10" cy="10" r="5" fill="#ef4444" />
       </svg>
+      <span class="tb-lb">キャプチャ撮影</span>
     </button>
-    <button class="icon" data-action="import-rec" title="録画を取り込む（過去のセッション一覧から選択）">📥</button>
+    <button class="icon" data-action="import-rec" title="画像を取り込む（キャプチャ／フォルダから）">📥<span class="tb-lb">画像インポート</span></button>
   </div>
 
   <main id="app"></main>
@@ -2119,8 +2130,8 @@
         '  <div id="topbar">\n' +
         '    <span class="topbar-brand">✓ チェックリスト</span>\n' +
         '    <span class="topbar-spacer"></span>\n' +
-        '    <button class="icon" data-action="undo" title="元に戻す (Undo)">↶</button>\n' +
-        '    <button class="icon" data-action="redo" title="やり直す (Redo)">↷</button>\n' +
+        '    <button class="icon" data-action="undo" title="元に戻す (Undo)">↶<span class="tb-lb">元に戻す</span></button>\n' +
+        '    <button class="icon" data-action="redo" title="やり直す (Redo)">↷<span class="tb-lb">やり直す</span></button>\n' +
         '  </div>\n' +
         '  <main id="app"></main>\n' +
         '  <input id="file-input" type="file" accept="application/json,.json,text/html,.html" hidden />\n' +
@@ -2791,7 +2802,7 @@
           ${renderImages(sectionId, item)}
           <button class="insert-after" data-action="insert-item-after"
                   data-section="${sectionId}" data-item="${item.id}"
-                  title="この下に項目を追加">＋ ここに追加</button>
+                  title="この下に項目を追加">＋ ここに項目を追加</button>
         </li>`;
     }
     // テンプレート型の手順ステップ（番号バッジ＋連結線＋メモ＋所要時間）
@@ -2836,7 +2847,7 @@
           </div>
           <button class="insert-after" data-action="insert-item-after"
                   data-section="${sectionId}" data-item="${item.id}"
-                  title="この下に手順を追加">＋ ここに追加</button>
+                  title="この下に手順を追加">＋ ここに手順を追加</button>
         </li>`;
     }
     // =========================================================================
@@ -4210,6 +4221,9 @@
       btn.title = isRecording
         ? '録画停止'
         : '録画ガジェットを開く（ガジェットの「録画開始」で撮影開始）';
+      // 文字ラベルも title と同期して切り替える（トップバーのラベル表示）
+      const lb = btn.querySelector('.tb-lb');
+      if (lb) lb.textContent = isRecording ? '録画停止' : 'キャプチャ撮影';
     }
     function toggleRecording() {
       if (!window.recorderAPI) {
