@@ -150,6 +150,11 @@ contextBridge.exposeInMainWorld('fileAPI', {
   // 画像挿入ボタン用のネイティブ「開く」ダイアログ。既定フォルダは
   // ピクチャ\CheckListMaker（無ければ作成）。戻り値 = { dataUrl } / { canceled } / { error }。
   pickImage: () => ipcRenderer.invoke('image:pickFile'),
+  // 画像一括インポート用の複数選択ダイアログ。パス一覧だけを返す。
+  // 戻り値 = { files: [{ path, name }] } / { canceled }。
+  pickImages: () => ipcRenderer.invoke('image:pickFiles'),
+  // pickImages で選んだパスを1枚ずつ dataURL で読む（許可リスト外・失敗は null）。
+  readPickedImage: (p) => ipcRenderer.invoke('image:readPicked', p),
 });
 
 // PDF 保存（Electron 版のみ）。#print-root に印刷ビューを流し込んだ状態で呼ぶと、

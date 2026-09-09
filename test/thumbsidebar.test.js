@@ -66,6 +66,11 @@ test('thumbsidebar — 表示モデル（純関数）', async (t) => {
     assert.equal(model[1].items.length, 2, '画像が無くても手順ぶんのカードは作る');
   });
 
+  await t.test('ToDo型はフェーズ名の補完が「セクション N」になる', () => {
+    const model = T.thumbStepModel(todoState().checklists[0]);
+    assert.equal(model[0].title, 'セクション 1');
+  });
+
   await t.test('チェックリストが無くても落ちない', () => {
     assert.deepEqual(plain(T.thumbStepModel(null)), []);
     assert.deepEqual(plain(T.thumbStepModel({ sections: [] })), []);
@@ -102,15 +107,20 @@ test('thumbsidebar — 画面への出方', async (t) => {
     }
   });
 
-  await t.test('ToDo型では出さない', async () => {
+  await t.test('ToDo型でも出る（文言は「セクション」「項目」）', async () => {
     const app = bootApp({ localStorage: { [STORAGE_KEY]: JSON.stringify(todoState()) } });
     try {
       await app.api();
       app.window.location.hash = '#/c/t1';
-      await waitFor(() => app.document.querySelector('.editor'), { label: 'エディタ' });
-      assert.equal(app.document.body.classList.contains('has-thumbs'), false);
-      const el = app.document.querySelector('#thumbs');
-      assert.ok(!el || !el.querySelector('.tsb-card'), 'カードは描かれない');
+      await waitFor(() => app.document.querySelector('#thumbs .tsb-card'), { label: 'サイドバー' });
+      assert.equal(app.document.body.classList.contains('has-thumbs'), true);
+      const sidebar = app.document.querySelector('#thumbs');
+      assert.equal(sidebar.querySelectorAll('.tsb-card').length, 1);
+      // 区切りの呼び名はテンプレート型の「フェーズ」ではなく「セクション」
+      assert.equal(sidebar.querySelector('.tsb-phase-head .nm').textContent, 'セクション 1');
+      assert.equal(sidebar.querySelector('.tsb-grip').getAttribute('title'),
+        'ドラッグで並べ替え（セクション間も可）');
+      assert.equal(sidebar.querySelector('.tsb-card button').getAttribute('title'), 'この項目を削除');
     } finally {
       app.close();
     }
@@ -199,7 +209,7 @@ test('thumbsidebar — 取り込みウィザードの挿入先指定（画面）
 
   win.location.hash = '#/c/c1';
   await waitFor(() => doc.querySelector('#thumbs .tsb-card'), { label: 'エディタ' });
-  T.openImportWizard('D:/shots/session');
+  T.openImportWizard(T.makeSessionSource('D:/shots/session'));
   await waitFor(() => doc.querySelector('.modal.import-wiz'), { label: 'ウィザード' });
 
   await t.test('既定は「新しいフェーズとして追加」（現行の動きを変えない）', () => {
