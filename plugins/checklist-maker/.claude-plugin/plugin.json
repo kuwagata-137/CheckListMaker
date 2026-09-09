@@ -1,0 +1,11 @@
+{
+  "name": "checklist-maker",
+  "description": "CheckListMaker で開ける手順書・チェックリストのデータ（.checklist.json / 取り込み用HTML）を AI に書かせるためのプラグイン。JSON スキーマ、手順書の書き方、依存ゼロのバリデータと HTML 生成スクリプトを同梱する。",
+  "version": "1.0.0",
+  "author": {
+    "name": "kuwagata-137"
+  },
+  "homepage": "https://github.com/kuwagata-137/CheckListMaker",
+  "repository": "https://github.com/kuwagata-137/CheckListMaker",
+  "license": "MIT"
+}
