@@ -61,6 +61,51 @@ test('imageeditor — 図形ジオメトリ（8ハンドル・フリーフォー
     assert.deepEqual(plain(obj.pts[0]), { x: 5, y: 7 }, '他の頂点は動かない');
   });
 
+  await t.test('applyObjDrag — Shift で水平・垂直に拘束（移動）', () => {
+    const move = (dx, dy, shift) => {
+      const obj = { type: 'rect', x: 10, y: 20, w: 100, h: 60 };
+      T.applyObjDrag({ mode: 'move', obj, sx: 0, sy: 0, orig: { ...obj } }, { x: dx, y: dy }, shift);
+      return plain(obj);
+    };
+    assert.deepEqual(move(30, 5, true), { type: 'rect', x: 40, y: 20, w: 100, h: 60 }, '横が大きければ水平だけ');
+    assert.deepEqual(move(5, 30, true), { type: 'rect', x: 10, y: 50, w: 100, h: 60 }, '縦が大きければ垂直だけ');
+    assert.deepEqual(move(-30, 5, true), { type: 'rect', x: -20, y: 20, w: 100, h: 60 }, '符号は絶対値で判定');
+    assert.deepEqual(move(20, 20, true), { type: 'rect', x: 30, y: 20, w: 100, h: 60 }, '同値のときは水平を採る');
+    assert.deepEqual(move(30, 5, false), { type: 'rect', x: 40, y: 25, w: 100, h: 60 }, 'Shift なしは両方向');
+    assert.deepEqual(move(30, 5, undefined), { type: 'rect', x: 40, y: 25, w: 100, h: 60 },
+      '第3引数を省略した従来の呼び出しは両方向のまま');
+  });
+
+  await t.test('applyObjDrag — Shift は端点・尻尾・頂点にも効き、リサイズには効かない', () => {
+    const line = { type: 'line', x1: 0, y1: 0, x2: 10, y2: 10 };
+    T.applyObjDrag({ mode: 'p2', obj: line, sx: 0, sy: 0, orig: { ...line } }, { x: 30, y: 4 }, true);
+    assert.deepEqual(plain(line), { type: 'line', x1: 0, y1: 0, x2: 40, y2: 10 }, '端点は水平だけ動く');
+
+    const callout = { type: 'callout', x: 0, y: 0, tip: { x: 5, y: 5 } };
+    T.applyObjDrag({ mode: 'tip', obj: callout, sx: 0, sy: 0, orig: plain(callout) }, { x: 3, y: 20 }, true);
+    assert.deepEqual(plain(callout.tip), { x: 5, y: 25 }, '吹き出しの尻尾は垂直だけ動く');
+
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }];
+    const ff = { type: 'freeform', pts: plain(pts) };
+    T.applyObjDrag({ mode: 'pt1', obj: ff, sx: 0, sy: 0, orig: { ...ff, pts: plain(pts) } }, { x: 2, y: 9 }, true);
+    assert.deepEqual(plain(ff.pts[1]), { x: 10, y: 9 }, 'freeform の頂点は垂直だけ動く');
+
+    const rect = { type: 'rect', x: 10, y: 20, w: 100, h: 60 };
+    T.applyObjDrag({ mode: 'se', obj: rect, sx: 0, sy: 0, orig: { ...rect } }, { x: 30, y: 5 }, true);
+    assert.deepEqual(plain(rect), { type: 'rect', x: 10, y: 20, w: 130, h: 65 },
+      'リサイズは Shift＝縦横比固定が一般的なので拘束の対象外');
+  });
+
+  await t.test('applyObjDrag — 掴んだ位置を渡すと開始状態へ戻る（Ctrl コピーの掴み替えの土台）', () => {
+    const orig = { type: 'rect', x: 10, y: 20, w: 100, h: 60 };
+    const obj = { ...orig };
+    const d = { mode: 'move', obj, sx: 7, sy: 9, orig: { ...orig } };
+    T.applyObjDrag(d, { x: 57, y: 39 });
+    assert.deepEqual(plain(obj), { type: 'rect', x: 60, y: 50, w: 100, h: 60 }, 'いったん動く');
+    T.applyObjDrag(d, { x: d.sx, y: d.sy });
+    assert.deepEqual(plain(obj), orig, '差分0で orig の座標へ完全復帰する');
+  });
+
   await t.test('freeformBounds — 外接矩形と不正入力', () => {
     assert.deepEqual(
       plain(T.freeformBounds([{ x: 3, y: 9 }, { x: -2, y: 4 }, { x: 7, y: 5 }])),

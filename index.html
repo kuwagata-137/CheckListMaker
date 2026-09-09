@@ -2911,7 +2911,7 @@
                   data-action="merge-item-up" data-section="${sectionId}" data-item="${item.id}">⤒</button>
           <button class="icon danger" title="削除"
                   data-action="delete-item" data-section="${sectionId}" data-item="${item.id}">✕</button>
-          ${renderImages(sectionId, item)}
+          ${renderImages(sectionId, item, true)}
           <button class="insert-after" data-action="insert-item-after"
                   data-section="${sectionId}" data-item="${item.id}"
                   title="この下に項目を追加">＋ ここに項目を追加</button>
@@ -6221,10 +6221,21 @@
       if (o.type === 'callout') return [{ kind: 'tip', x: o.tip.x, y: o.tip.y }];
       return []; // text は移動のみ
     }
+    // Shift による水平・垂直の拘束を効かせる操作。位置をそのまま動かす系だけが対象で、
+    // 四隅／辺のリサイズ（nw/n/e/…）は Shift＝縦横比固定が一般的なので含めない。
+    function dragConstrains(mode) {
+      return mode === 'move' || mode === 'p1' || mode === 'p2'
+        || mode === 'tip' || mode.startsWith('pt');
+    }
     // 選択オブジェクトのドラッグ（移動・端点・四隅/辺・頂点・尻尾）を適用する。
     // d.orig（ドラッグ開始時の複製）基準で差分を足すので累積誤差が出ない。
-    function applyObjDrag(d, p) {
-      const dx = p.x - d.sx, dy = p.y - d.sy;
+    // shift: 水平・垂直に拘束する（省略時は拘束しない＝従来どおり）。
+    function applyObjDrag(d, p, shift) {
+      let dx = p.x - d.sx, dy = p.y - d.sy;
+      if (shift && dragConstrains(d.mode)) {
+        // 動きの大きい方の軸だけ残す。ちょうど等しいときは水平を採る。
+        if (Math.abs(dx) >= Math.abs(dy)) dy = 0; else dx = 0;
+      }
       const o = d.obj, s = d.orig;
       if (d.mode === 'move') {
         if (o.type === 'arrow' || o.type === 'line') { o.x1 = s.x1 + dx; o.y1 = s.y1 + dy; o.x2 = s.x2 + dx; o.y2 = s.y2 + dy; }
@@ -6319,7 +6330,7 @@
             <button class="btn ie-redo" title="やり直す (Ctrl+Y)">↷ やり直す</button>
           </div>
           <div class="ie-canvas-wrap"><canvas class="ie-canvas"></canvas></div>
-          <p class="ie-hint">ドラッグで描画（配置はマウスを離した時。テキスト・吹き出しも同じ）。何も無い所を右クリックすると、どのツールを使っていても（未選択でも）ハンドツールへ切り替わります（描きかけがあれば取りやめ）。矢印・直線・図形・×・テキスト・吹き出しはクリックで選択→ドラッグで移動、白丸ハンドルで変形（辺の中央は縦横のみ）、図形の外をクリックで選択解除、Ctrl＋ドラッグでコピー、Delete または右クリック→削除で消せます。フリーフォームはクリックで頂点を追加し、始点をクリックで閉じて確定（ダブルクリックで開いたまま確定・Escで中止）。テキスト・吹き出しはダブルクリックで文字を再編集。消しゴムは描いた注釈を消します（スクショ本体は残る）。元に戻す=Ctrl+Z・やり直す=Ctrl+Y。トリミングは範囲を決めて「トリミング適用」。ハンドで画像を移動、ホイール（他ツールはCtrl+ホイール）でズームできます。</p>
+          <p class="ie-hint">ドラッグで描画（配置はマウスを離した時。テキスト・吹き出しも同じ）。何も無い所を右クリックすると、どのツールを使っていても（未選択でも）ハンドツールへ切り替わります（描きかけがあれば取りやめ）。矢印・直線・図形・×・テキスト・吹き出しはクリックで選択→ドラッグで移動、白丸ハンドルで変形（辺の中央は縦横のみ）、図形の外をクリックで選択解除、Ctrl＋ドラッグでコピー（ドラッグを始めた後に押しても効きます）、Shift＋ドラッグで水平・垂直に固定、Delete または右クリック→削除で消せます。フリーフォームはクリックで頂点を追加し、始点をクリックで閉じて確定（ダブルクリックで開いたまま確定・Escで中止）。テキスト・吹き出しはダブルクリックで文字を再編集。消しゴムは描いた注釈を消します（スクショ本体は残る）。元に戻す=Ctrl+Z・やり直す=Ctrl+Y。トリミングは範囲を決めて「トリミング適用」。ハンドで画像を移動、ホイール（他ツールはCtrl+ホイール）でズームできます。</p>
           <div class="ie-actions">
             <button class="btn primary ie-save">保存</button>
             <button class="btn ie-cancel">キャンセル</button>
@@ -7473,7 +7484,12 @@
       // ---- ポインタ操作 ----
       let drawing = false;
       let start = null;
-      let objDrag = null; // 選択オブジェクトのドラッグ {mode, obj, sx, sy, orig, moved}
+      // 選択オブジェクトのドラッグ。
+      //   mode … 'move' か操作中のハンドル名  obj … 今掴んでいる実体（コピー中は複製）
+      //   src  … 最初に掴んだ実体（再代入しない）  orig … 掴んだ瞬間の複製（差分の基準）
+      //   sx,sy … 掴んだ座標  p … 最後のポインタ座標  moved … しきい値を超えて動いたか
+      //   copy … 今コピーを掴んでいるか  shift … 水平・垂直に拘束中か
+      let objDrag = null;
       let colorGestureFor = null; // 選択オブジェクトへの色変更を1操作でundoするための印
       // オブジェクトを配置する系のツール＋ハンドでは、既存オブジェクトのクリックを
       // 「選択・移動」として扱う（Excel と同じ感覚）。ペン・ハイライト・消しゴム・
@@ -7494,6 +7510,37 @@
         drawing = false;
         pendingPlace = null;
         recomposite(); // プレビューを消す
+      }
+
+      // Ctrl＋ドラッグのコピー状態を切り替える。押している間だけ複製を掴み、離せば
+      // 複製を捨てて元の図形に戻る（Office・エクスプローラと同じで、ドラッグを始めた
+      // 後に押しても効く）。applyObjDrag は orig 基準の絶対計算なので、掴み替えても
+      // 位置はずれない。状態が変わったときだけ true を返す。
+      function setDragCopy(d, on) {
+        if (d.mode !== 'move' || !d.moved || !!d.copy === on) return false;
+        if (on) {
+          applyObjDrag(d, { x: d.sx, y: d.sy }); // 差分0＝元を掴んだ位置へ戻す
+          const clone = JSON.parse(JSON.stringify(d.orig));
+          delete clone.hidden;
+          clone.id = newObjId();
+          objects.push(clone); // 複製は最前面
+          d.obj = clone;
+          selectedId = clone.id;
+        } else {
+          objects = objects.filter((o) => o !== d.obj); // 作った複製を取り消す
+          d.obj = d.src;
+          selectedId = d.src.id; // 選択枠も元の図形へ戻す
+        }
+        d.copy = on;
+        canvas.style.cursor = on ? 'copy' : 'move';
+        return true;
+      }
+      // Ctrl・Shift の今の押下状態をドラッグへ反映する。pointermove とキー操作の両方から呼ぶ。
+      function syncDragMods(d, ev) {
+        const copyChanged = setDragCopy(d, !!(ev.ctrlKey || ev.metaKey));
+        const shiftChanged = !!d.shift !== !!ev.shiftKey;
+        if (shiftChanged) d.shift = !!ev.shiftKey;
+        return copyChanged || shiftChanged;
       }
 
       canvas.addEventListener('pointerdown', (e) => {
@@ -7528,18 +7575,22 @@
           const sel = selectedObj();
           const hk = sel && hitObjHandle(sel, p);
           if (hk) { // 選択中オブジェクトのハンドル（端点・四隅・尻尾）
-            objDrag = { mode: hk, obj: sel, sx: p.x, sy: p.y, orig: JSON.parse(JSON.stringify(sel)), moved: false };
+            objDrag = {
+              mode: hk, obj: sel, src: sel, sx: p.x, sy: p.y,
+              orig: JSON.parse(JSON.stringify(sel)), moved: false, copy: false, shift: false,
+            };
             canvas.setPointerCapture(e.pointerId);
             return;
           }
           const hit = hitObject(p);
           if (hit) {
             selectedId = hit.id;
-            // copy: Ctrl（Mac は Cmd）を押しながらのドラッグは複製を動かす（Office と同じ）
+            // Ctrl（コピー）と Shift（水平・垂直）は押した瞬間に決め打ちせず、
+            // ドラッグ中の押し直し・離しに追従させる（syncDragMods）。
             objDrag = {
-              mode: 'move', obj: hit, sx: p.x, sy: p.y,
+              mode: 'move', obj: hit, src: hit, sx: p.x, sy: p.y,
               orig: JSON.parse(JSON.stringify(hit)), moved: false,
-              copy: !!(e.ctrlKey || e.metaKey),
+              copy: false, shift: false,
             };
             canvas.setPointerCapture(e.pointerId);
             recomposite();
@@ -7610,20 +7661,14 @@
           const p = xy(e);
           if (!objDrag.moved) {
             if (Math.hypot(p.x - objDrag.sx, p.y - objDrag.sy) < 2 * dispScale()) return; // クリックの揺れは無視
+            // 履歴はここで1回だけ積む。以後の複製の作成・破棄は積まない
+            //（objects 丸ごとのスナップショットなので Ctrl+Z 一回で全部戻る）。
             pushUndo();
-            if (objDrag.copy && objDrag.mode === 'move') {
-              // Ctrl＋ドラッグ：元の図形は残し、同位置に作った複製を掴んで動かす。
-              // 実際にドラッグが始まった時だけ複製する（Ctrl＋クリックでは何もしない）。
-              const clone = JSON.parse(JSON.stringify(objDrag.orig));
-              delete clone.hidden;
-              clone.id = newObjId();
-              objects.push(clone);
-              objDrag.obj = clone;
-              selectedId = clone.id;
-            }
-            objDrag.moved = true;
+            objDrag.moved = true; // 先に立てる（Ctrl を押しながら掴んだ場合も初回移動で複製される）
           }
-          applyObjDrag(objDrag, p);
+          objDrag.p = p; // キー操作だけで再適用できるよう最後の座標を覚える
+          syncDragMods(objDrag, e);
+          applyObjDrag(objDrag, p, objDrag.shift);
           recomposite();
           return;
         }
@@ -7685,7 +7730,7 @@
           }
           return;
         }
-        if (objDrag) { objDrag = null; recomposite(); return; }
+        if (objDrag) { objDrag = null; canvas.style.cursor = ''; recomposite(); return; }
         if (tool === 'hand') { endPan(); return; }
         if (tool === 'crop') { cropDrag = null; return; }
         if (!drawing) return;
@@ -7724,7 +7769,9 @@
         if (activeCallout && activeCallout.dragTip) { activeCallout.dragTip = false; activeCallout.render(); return; }
         if (tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
         if (tool === 'pen' || tool === 'marker') bakeLiveStroke(); // 描きかけ分は確定させる
-        drawing = false; pendingPlace = null; cropDrag = null; objDrag = null; endPan(); recomposite();
+        drawing = false; pendingPlace = null; cropDrag = null; objDrag = null; endPan();
+        canvas.style.cursor = '';
+        recomposite();
       });
       // ダブルクリックでテキスト・吹き出しを再編集（Excel と同じ操作感）
       canvas.addEventListener('dblclick', (e) => {
@@ -7804,6 +7851,8 @@
         rbClosePalette(); // 右クリックメニューを開いたまま閉じた場合の取り残し防止
         window.removeEventListener('resize', onResize);
         document.removeEventListener('keydown', onKey);
+        document.removeEventListener('keydown', onDragMod);
+        document.removeEventListener('keyup', onDragMod);
         overlay.remove();
       }
       function onKey(ev) {
@@ -7811,6 +7860,9 @@
         // ここへは届かない。他の入力要素上でも誤動作しないようガードする。
         const t = ev.target;
         const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+        // ドラッグ中は削除・履歴を受け付けない。どちらも objects を差し替えるので、
+        // 掴んでいる objDrag.obj が迷子の実体になってしまう。
+        if (objDrag && ev.key !== 'Escape') return;
         if (ev.key === 'Escape') {
           if (cancelFreeform()) return; // 描きかけのフリーフォームは破棄だけ
           if (selectedId) { selectedId = null; recomposite(); return; } // まず選択解除、もう一度で閉じる
@@ -7829,6 +7881,17 @@
         }
       }
       document.addEventListener('keydown', onKey);
+      // ドラッグ中に Ctrl／Shift を押した・離したときも即座に反映する。pointermove は
+      // マウスが動いたときしか来ないので、手を止めたままでも効くよう document で拾う。
+      function onDragMod(ev) {
+        if (!objDrag || !objDrag.moved || !objDrag.p) return;
+        if (ev.key !== 'Control' && ev.key !== 'Meta' && ev.key !== 'Shift') return;
+        if (!syncDragMods(objDrag, ev)) return; // 変化なし（キーリピート等）は何もしない
+        applyObjDrag(objDrag, objDrag.p, objDrag.shift);
+        recomposite();
+      }
+      document.addEventListener('keydown', onDragMod);
+      document.addEventListener('keyup', onDragMod);
       overlay.querySelector('.ie-cancel').addEventListener('click', close);
       // 注釈層（手描き線）が完全に透明かどうか（空なら strokes を保存しない容量対策）
       function isCanvasBlank(cv) {
