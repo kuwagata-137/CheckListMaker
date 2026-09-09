@@ -2875,14 +2875,18 @@
     //   テンプレート型の編集画面でだけ出す。#app には編集ズーム(zoom)が掛かるため
     //   #app の外（兄弟）に置き、等倍のまま保つ。
     // =========================================================================
+    // 区切りの呼び名。テンプレート型は「フェーズ」、ToDo 型は「セクション」（本文の
+    // 表記に合わせる）。サイドバーは両方の型で出すので、文言だけを型で切り替える。
+    const thumbUnit = (checklist) => (checklist && checklist.type === MODES.TODO ? 'セクション' : 'フェーズ');
     // チェックリスト → サイドバーの表示モデル。通し番号は本文と同じくフェーズを
     // またいで 1..N。フェーズ名が空だと区切りが読めないので連番で補う。
     function thumbStepModel(checklist) {
       const sections = (checklist && checklist.sections) || [];
+      const unit = thumbUnit(checklist);
       let no = 0;
       return sections.map((s, si) => ({
         id: s.id,
-        title: (s.title || '').trim() || `フェーズ ${si + 1}`,
+        title: (s.title || '').trim() || `${unit} ${si + 1}`,
         count: s.items.length,
         items: s.items.map((it) => {
           no += 1;
@@ -2911,6 +2915,8 @@
     }
     function renderThumbSidebar(checklist) {
       const model = thumbStepModel(checklist);
+      const unit = thumbUnit(checklist);
+      const todo = !!checklist && checklist.type === MODES.TODO;
       const phases = model
         .map((p) => {
           const cards = p.items
@@ -2927,8 +2933,8 @@
                 <span class="tsb-no">${it.no}</span>
                 <span class="tsb-fig">${fig}<span class="tsb-cap">${escapeHtml(cap)}</span></span>
                 <span class="tsb-ops">
-                  <span class="tsb-grip" title="ドラッグで並べ替え（フェーズ間も可）">⠿</span>
-                  <button type="button" title="この手順を削除"
+                  <span class="tsb-grip" title="ドラッグで並べ替え（${unit}間も可）">⠿</span>
+                  <button type="button" title="${todo ? 'この項目を削除' : 'この手順を削除'}"
                           data-action="delete-item" data-section="${p.id}" data-item="${it.id}">✕</button>
                 </span>
               </div>`;
@@ -2937,7 +2943,7 @@
           return `
           <div class="tsb-phase" data-section="${p.id}">
             <button type="button" class="tsb-phase-head" data-action="goto-section" data-section="${p.id}"
-                    title="このフェーズへ移動">
+                    title="この${unit}へ移動">
               <span class="nm">${escapeHtml(p.title)}</span>
               <span class="ct">${p.count}件</span>
             </button>
@@ -2952,7 +2958,7 @@
           <button class="icon" type="button" data-action="toggle-thumbs"
                   title="${collapsed ? 'サムネイルを開く' : 'サムネイルを閉じる'}">${collapsed ? '»' : '«'}</button>
         </div>
-        <div class="tsb-scroll">${phases || '<p class="tsb-empty">手順がありません</p>'}</div>`;
+        <div class="tsb-scroll">${phases || `<p class="tsb-empty">${todo ? '項目' : '手順'}がありません</p>`}</div>`;
     }
     // <aside id="thumbs"> を #app の前に作る（buildStandaloneHtml の body 定義に
     // 手を入れずに、単体HTMLでも同じように動かすため JS 側で生成する）。
@@ -2975,9 +2981,9 @@
       if (thumbsEl) thumbsEl.classList.toggle('is-collapsed', collapsed);
       document.documentElement.style.setProperty('--thumbs-w', on ? (collapsed ? '30px' : '220px') : '0px');
     }
-    // render() から呼ぶ。テンプレート型の編集画面のときだけ中身を作って出す。
+    // render() から呼ぶ。編集画面のときだけ中身を作って出す（テンプレート型・ToDo 型の両方）。
     function updateThumbSidebar(checklist) {
-      const on = !!checklist && checklist.type === MODES.TEMPLATE;
+      const on = !!checklist;
       document.body.classList.toggle('has-thumbs', on);
       if (!on) {
         if (thumbsEl) thumbsEl.innerHTML = '';
