@@ -6154,7 +6154,7 @@
             <button class="btn ie-redo" title="やり直す (Ctrl+Y)">↷ やり直す</button>
           </div>
           <div class="ie-canvas-wrap"><canvas class="ie-canvas"></canvas></div>
-          <p class="ie-hint">ドラッグで描画（配置はマウスを離した時。描画中に右クリックで取りやめてハンドツールへ）。矢印・直線・図形・×・テキスト・吹き出しはクリックで選択→ドラッグで移動、白丸ハンドルで変形（辺の中央は縦横のみ）、図形の外をクリックで選択解除、Ctrl＋ドラッグでコピー、Delete または右クリック→削除で消せます。フリーフォームはクリックで頂点を追加し、始点をクリックで閉じて確定（ダブルクリックで開いたまま確定・Escで中止）。テキスト・吹き出しはダブルクリックで文字を再編集。消しゴムは描いた注釈を消します（スクショ本体は残る）。元に戻す=Ctrl+Z・やり直す=Ctrl+Y。トリミングは範囲を決めて「トリミング適用」。ハンドで画像を移動、ホイール（他ツールはCtrl+ホイール）でズームできます。</p>
+          <p class="ie-hint">ドラッグで描画（配置はマウスを離した時。テキスト・吹き出しも同じ）。何も無い所を右クリックすると、どのツールを使っていても（未選択でも）ハンドツールへ切り替わります（描きかけがあれば取りやめ）。矢印・直線・図形・×・テキスト・吹き出しはクリックで選択→ドラッグで移動、白丸ハンドルで変形（辺の中央は縦横のみ）、図形の外をクリックで選択解除、Ctrl＋ドラッグでコピー、Delete または右クリック→削除で消せます。フリーフォームはクリックで頂点を追加し、始点をクリックで閉じて確定（ダブルクリックで開いたまま確定・Escで中止）。テキスト・吹き出しはダブルクリックで文字を再編集。消しゴムは描いた注釈を消します（スクショ本体は残る）。元に戻す=Ctrl+Z・やり直す=Ctrl+Y。トリミングは範囲を決めて「トリミング適用」。ハンドで画像を移動、ホイール（他ツールはCtrl+ホイール）でズームできます。</p>
           <div class="ie-actions">
             <button class="btn primary ie-save">保存</button>
             <button class="btn ie-cancel">キャンセル</button>
@@ -7316,7 +7316,20 @@
       const OBJECT_TOOLS = ['hand', 'arrow', 'line', 'rect', 'ellipse', 'cross', 'freeform', 'text', 'callout'];
       // ドラッグ（押して離す）で1つの図形を配置するツール群
       const SHAPE_DRAG_TOOLS = ['arrow', 'line', 'rect', 'ellipse', 'cross'];
-      let suppressCtxMenu = false; // 描画中の右クリックでハンドへ切替えた直後のメニュー抑止
+      // テキスト・吹き出しの「配置待ち」。押した位置を覚えておき、離した時に配置する
+      // （押している間に右クリックすればハンドツールへ逃げられる。仕様6章）。
+      let pendingPlace = null; // { tool, p } または null
+      // 描きかけ（ドラッグ描画・ペン/ハイライト・消しゴム・モザイク・配置待ち）を捨てる。
+      function discardDrawing() {
+        if (drawing && tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
+        if (liveStroke) { // ペン／ハイライトの進行中ストロークは焼かずに捨てる
+          liveStroke = null;
+          strokeCtx.clearRect(0, 0, strokeCanvas.width, strokeCanvas.height);
+        }
+        drawing = false;
+        pendingPlace = null;
+        recomposite(); // プレビューを消す
+      }
 
       canvas.addEventListener('pointerdown', (e) => {
         e.preventDefault();
@@ -7378,8 +7391,13 @@
           if (h) { cropDrag = { mode: h, sx: p.x, sy: p.y, rect: { ...cropRect } }; canvas.setPointerCapture(e.pointerId); }
           return;
         }
-        if (tool === 'text') { beginText(p); return; }
-        if (tool === 'callout') { beginCallout(p); return; }
+        // テキスト・吹き出しは押した瞬間ではなく離した時に配置する（配置座標は押下位置）。
+        // 押している間に右クリックすればハンドツールへ逃げられる（仕様6章）。
+        if (tool === 'text' || tool === 'callout') {
+          pendingPlace = { tool, p };
+          canvas.setPointerCapture(e.pointerId);
+          return;
+        }
         if (tool === 'freeform') { freeformClick(p); return; }
         drawing = true;
         start = p;
@@ -7422,16 +7440,6 @@
         }
         // フリーフォーム描画中：カーソルまでの次の辺をプレビュー。
         if (activeFreeform) { activeFreeform.cursor = xy(e); renderFreeformPreview(); return; }
-        // 図形のドラッグ描画中に右ボタンが押されたら、描きかけを破棄してハンドツールへ
-        // 切り替える（配置は左ボタンを離した時だけ。右クリックメニューは開かない。
-        // 仕様は docs/spec-image-editor-enhancements.md 6章）。
-        if (drawing && (e.buttons & 2) && SHAPE_DRAG_TOOLS.includes(tool)) {
-          drawing = false;
-          suppressCtxMenu = true;
-          recomposite(); // プレビューを消す
-          selectTool('hand');
-          return;
-        }
         // 選択オブジェクトのドラッグ（移動・変形）。undo は実際に動いた時だけ積む。
         if (objDrag) {
           const p = xy(e);
@@ -7496,6 +7504,13 @@
       });
 
       function finish(e) {
+        // テキスト・吹き出しは離した時に配置する（座標は押した位置＝見え方は従来どおり）。
+        if (pendingPlace) {
+          const { tool: pt, p: pp } = pendingPlace;
+          pendingPlace = null;
+          if (pt === 'text') beginText(pp); else beginCallout(pp);
+          return;
+        }
         // 吹き出しの尻尾ドラッグ終了（編集は継続。本文入力へ戻せるよう再フォーカス）。
         if (activeCallout) {
           if (activeCallout.dragTip) {
@@ -7544,7 +7559,7 @@
         if (activeCallout && activeCallout.dragTip) { activeCallout.dragTip = false; activeCallout.render(); return; }
         if (tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
         if (tool === 'pen' || tool === 'marker') bakeLiveStroke(); // 描きかけ分は確定させる
-        drawing = false; cropDrag = null; objDrag = null; endPan(); recomposite();
+        drawing = false; pendingPlace = null; cropDrag = null; objDrag = null; endPan(); recomposite();
       });
       // ダブルクリックでテキスト・吹き出しを再編集（Excel と同じ操作感）
       canvas.addEventListener('dblclick', (e) => {
@@ -7574,17 +7589,26 @@
       // 誤右クリックの即消滅を避けるため、選択枠で対象を見せてから「削除」を選ばせる。
       canvas.addEventListener('contextmenu', (e) => {
         e.preventDefault(); // 既定メニュー・選択系の既定動作を抑止（Electron では通常出ないが保険）
-        // 描画ドラッグ中の右クリックでハンドへ切替えた直後はメニューを開かない
-        if (suppressCtxMenu) { suppressCtxMenu = false; return; }
+        if (cropMode) return;      // トリミング中は「適用／取消」のUIに任せる
+        if (activeCallout) return; // 吹き出しの本文入力中は編集に任せる
         // フリーフォーム描画中の右クリックは描きかけを破棄してハンドツールへ
         if (activeFreeform) { cancelFreeform(); selectTool('hand'); return; }
-        if (cropMode || activeCallout) return;
-        if (!(tool === null || OBJECT_TOOLS.includes(tool))) return; // クリック選択と同じ対象（未選択含む）に限定
-        const hit = hitObject(xy(e));
-        if (!hit) return;
-        selectedId = hit.id;
-        recomposite(); // 何が消えるか選択枠で可視化してからメニューを出す
-        ieOpenContextMenu(e.clientX, e.clientY);
+        // 左ボタンを押したままの右クリック：描きかけ・配置待ちを破棄してハンドツールへ。
+        // pointermove を待たずここで発火するので、マウスを動かさなくても効く。
+        if (drawing || pendingPlace) { discardDrawing(); selectTool('hand'); return; }
+        // 図形の上ならクリック選択と同じ対象（未選択含む）に限り削除メニューを出す。
+        if (tool === null || OBJECT_TOOLS.includes(tool)) {
+          const hit = hitObject(xy(e));
+          if (hit) {
+            selectedId = hit.id;
+            recomposite(); // 何が消えるか選択枠で可視化してからメニューを出す
+            ieOpenContextMenu(e.clientX, e.clientY);
+            return;
+          }
+        }
+        // それ以外（未選択・ペン・ハイライト・消しゴム・モザイク・空白の右クリック）は
+        // いつでもハンドツールへ逃がす（仕様6章）。
+        selectTool('hand');
       });
       // カーソル位置にミニメニューを開く。id を rb-palette にすると、パレット共通の
       // グローバル mousedown 閉じ処理と rbClosePalette() がそのまま効く。
