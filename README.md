@@ -103,6 +103,43 @@ npm run dist         # dist/ に CheckListMaker のインストーラ(.exe)を�
 （矢印・四角・モザイク・トリミング等）で説明を描き込めます。手順に貼った画像は手順欄の幅
 いっぱいに大きく表示されます。
 
+## AI に手順書を作らせる（別プロジェクトでの利用）
+
+別のプロジェクトで作業している AI（Claude）に、その作業内容から CheckListMaker で開ける
+手順書データを書かせるための **Claude プラグイン**を同梱しています。
+
+```shell
+/plugin marketplace add kuwagata-137/CheckListMaker
+/plugin install checklist-maker@checklistmaker
+```
+
+一度入れれば、どのプロジェクトで作業していても「この作業の手順書を作って」で使えます。
+`/plugin` が使えない Web／クラウドセッションでは、対象プロジェクトの
+`.claude/settings.json` に次を書いてください。
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "checklistmaker": { "source": { "source": "github", "repo": "kuwagata-137/CheckListMaker" } }
+  },
+  "enabledPlugins": { "checklist-maker@checklistmaker": true }
+}
+```
+
+- **プラグイン本体**: [`plugins/checklist-maker/`](plugins/checklist-maker/skills/checklist-maker/SKILL.md)
+- **中身**: JSON スキーマの全仕様・手順書としての書き方・見本テンプレート2種・
+  依存ゼロのバリデータ（`validate-checklist.mjs`）と取り込み用 HTML 生成（`json-to-html.mjs`）
+
+AI ができるのは **データを書くところまで**です（CheckListMaker は MCP サーバーでも CLI でも
+ないため、AI がアプリを起動したり `.docx` を直接生成したりはできません）。生成物を
+ホーム画面の「インポート」で取り込み、画像を貼り、Word / PDF / Excel に出すのは利用者の操作です。
+設計判断は [`docs/spec-ai-usage-skill.md`](docs/spec-ai-usage-skill.md) に残しています。
+
+> 受け渡しは **HTML** が既定です。HTML の取り込みは「同じ ID なら更新・無ければ追加」の
+> マージなので、既存データは消えません。JSON を取り込むときは、ダイアログで
+> 「追加・更新する」か「すべて置き換える」かを選べます
+> （[`docs/spec-json-merge-import.md`](docs/spec-json-merge-import.md)）。
+
 ## 構成
 
 アプリ本体は `index.html` 1ファイルに収めています（外部依存ゼロ・ビルド不要・`file://` で

@@ -1,0 +1,19 @@
+{
+  "name": "checklistmaker",
+  "owner": {
+    "name": "kuwagata-137",
+    "url": "https://github.com/kuwagata-137/CheckListMaker"
+  },
+  "description": "CheckListMaker（手順書・チェックリスト作成デスクトップアプリ）のプラグインを配布するマーケットプレイス",
+  "plugins": [
+    {
+      "name": "checklist-maker",
+      "source": "./plugins/checklist-maker",
+      "description": "CheckListMaker で開ける手順書データ（.checklist.json / 取り込み用HTML）を AI に書かせる。JSON スキーマ、手順書の書き方、依存ゼロのバリデータと HTML 生成スクリプトを同梱。",
+      "version": "1.0.0",
+      "author": { "name": "kuwagata-137" },
+      "category": "productivity",
+      "tags": ["checklist", "手順書", "documentation", "docx", "japanese"]
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "checklists": [
+    {
+      "id": "clm-minimal-0001",
+      "title": "最小サンプル — 出社時の開店準備",
+      "type": "template",
+      "createdAt": 1753600000000,
+      "updatedAt": 1753600000000,
+      "sections": [
+        {
+          "id": "clm-minimal-sec-1",
+          "title": "① 開店前",
+          "items": [
+            {
+              "id": "clm-minimal-item-1",
+              "text": "分電盤の主幹ブレーカーを ON にする",
+              "done": false,
+              "note": "3階の分電盤。主幹→分岐の順で上げる。",
+              "time": "2",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "clm-minimal-item-2",
+              "text": "サーバー室の温度計が 18〜27℃ の範囲か確認する",
+              "done": false,
+              "note": "範囲外なら空調を確認したうえで総務へ連絡する。",
+              "time": "3",
+              "images": [],
+              "body": ""
+            },
+            {
+              "id": "clm-minimal-item-3",
+              "text": "受付端末にログインして表示を確認する",
+              "done": false,
+              "note": "",
+              "time": "5",
+              "images": [],
+              "body": ""
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "settings": { "theme": "auto" }
+}
