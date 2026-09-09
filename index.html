@@ -127,6 +127,9 @@
     gap: 2px;
     padding: 3px 9px;
   }
+  /* アイコンの箱の高さを揃える。SVG(20〜26px)と文字グリフ(行ボックス約24px)で高さが
+     違うと、その差のぶんだけラベルの縦位置がボタンごとにずれるため。 */
+  #topbar .tb-ic { height: 28px; display: flex; align-items: center; justify-content: center; line-height: 1; }
   #topbar .tb-lb { font-size: 0.65rem; line-height: 1; letter-spacing: 0.02em; }
   /* 録画ボタン: 黒い四角の中心に赤い丸のアイコン（一般的な録画マーク）。 */
   .icon .rec-ico { display: block; }
@@ -249,36 +252,67 @@
   .editor-progress { margin-bottom: 14px; }
   .editor-progress small { color: var(--muted); }
 
+  /* メニューバーは横一列。狭いときだけ折り返す（縦に段を積まない）。 */
   .editor-toolbar {
     display: flex;
-    flex-direction: column;
-    gap: 12px;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
     margin-bottom: 18px;
   }
-  /* タブ（上段）と編集バー（下段） */
-  .tb-tabs {
+  /* 編集系（フェーズを追加・表紙を編集）は右へ寄せる */
+  .editor-toolbar .tb-edit { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+
+  /* ツールバーのドロップダウン（rb-palette と同系の軽量ポップオーバー） */
+  .tb-menu {
+    position: fixed;
+    z-index: 80; /* #thumbs(20) より上・.player-overlay(90) より下 */
+    min-width: 190px;
     display: flex;
-    gap: 4px;
-    border-bottom: 1px solid var(--border);
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    padding: 5px;
   }
-  .tb-tab {
+  .tb-menu-item {
     font: inherit;
-    font-weight: 600;
+    text-align: left;
+    white-space: nowrap;
     background: transparent;
     border: none;
-    color: var(--muted);
+    color: var(--text);
     cursor: pointer;
-    padding: 8px 15px;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-    border-radius: 8px 8px 0 0;
+    padding: 8px 12px;
+    border-radius: 6px;
   }
-  .tb-tab:hover { background: var(--surface-2); color: var(--text); }
-  .tb-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
-  .tb-panel { display: flex; gap: 8px; flex-wrap: wrap; }
-  .tb-panel[hidden] { display: none; }
-  .tb-divider { height: 1px; background: var(--border); }
-  .tb-fixed { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .tb-menu-item:hover:not([disabled]) { background: var(--surface-2); }
+  .tb-menu-item[disabled] { color: var(--muted); cursor: default; }
+
+  /* ホバー／キーボードフォーカスで出る解説ポップ（data-tip） */
+  #tip-host {
+    position: fixed;
+    left: -9999px;
+    top: -9999px;
+    z-index: 85; /* .tb-menu(80) より上・.player-overlay(90) より下 */
+    max-width: 300px;
+    padding: 7px 10px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    color: var(--text);
+    font-size: 0.8rem;
+    line-height: 1.45;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+  #tip-host.on { opacity: 1; }
+  #tip-host .tip-ttl { display: block; font-weight: 700; margin-bottom: 2px; }
+  #tip-host .tip-txt { color: var(--muted); }
+  @media print { #tip-host, .tb-menu { display: none !important; } }
 
   /* セクション */
   .section {
@@ -1422,6 +1456,7 @@
 
   /* モーション控えめ設定を尊重：トランジション・ホバーのリフトを無効化 */
   @media (prefers-reduced-motion: reduce) {
+    #tip-host { transition: none; }
     .card, .item, .btn, .section, .progress-bar { transition: none; }
     .card:hover, .item:hover { transform: none; }
     .toast { animation: none; }
@@ -1450,16 +1485,36 @@
   <div id="topbar">
     <span class="topbar-brand">✓ チェックリスト</span>
     <span class="topbar-spacer"></span>
-    <button class="icon" data-action="undo" title="元に戻す (Undo)">↶<span class="tb-lb">元に戻す</span></button>
-    <button class="icon" data-action="redo" title="やり直す (Redo)">↷<span class="tb-lb">やり直す</span></button>
-    <button class="icon" data-action="record" title="録画ガジェットを開く（ガジェットの「録画開始」で撮影開始）">
-      <svg class="rec-ico" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
-        <rect x="1" y="1" width="18" height="18" rx="4" fill="#111827" />
-        <circle cx="10" cy="10" r="5" fill="#ef4444" />
-      </svg>
+    <button class="icon" data-action="undo" aria-label="元に戻す"
+            data-tip="直前の操作を取り消します（Ctrl+Z）"><span class="tb-ic">↶</span><span class="tb-lb">元に戻す</span></button>
+    <button class="icon" data-action="redo" aria-label="やり直す"
+            data-tip="取り消した操作をやり直します（Ctrl+Y）"><span class="tb-ic">↷</span><span class="tb-lb">やり直す</span></button>
+    <button class="icon" data-action="record" aria-label="キャプチャ撮影"
+            data-tip="録画ガジェットを開きます。クリックするたびに画面を自動で撮影します">
+      <span class="tb-ic">
+        <svg class="rec-ico" width="24" height="24" viewBox="0 0 20 20" aria-hidden="true">
+          <rect x="1" y="1" width="18" height="18" rx="4" fill="#111827" />
+          <circle cx="10" cy="10" r="5" fill="#ef4444" />
+        </svg>
+      </span>
       <span class="tb-lb">キャプチャ撮影</span>
     </button>
-    <button class="icon" data-action="import-rec" title="画像を取り込む（キャプチャ／フォルダから）">📥<span class="tb-lb">画像インポート</span></button>
+    <!-- 「取り込み」が絵文字では伝わらないため、開いたフォルダの口から写真がのぞく図に
+         差し替えた。録画アイコンと同じく固定色（--surface に依存しない塗り）。 -->
+    <button class="icon" data-action="import-rec" aria-label="画像インポート"
+            data-tip="撮影した画像やフォルダ内の画像を、1枚＝1手順として取り込みます">
+      <span class="tb-ic">
+        <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M2.4 6.6h6.1l1.8 2h9.3v3.2H2.4z" fill="#d99b21" />
+          <rect x="7.2" y="4.6" width="9.8" height="9" rx="1" fill="#fff" stroke="#8b95a3" stroke-width="1" />
+          <circle cx="9.7" cy="7.2" r="1.1" fill="#f5b731" />
+          <path d="M7.7 10.9 10.4 8.2l1.9 2 1.7-1.5 2.7 2.4" fill="none" stroke="#6b7684"
+                stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M2 11.3h20l-2.4 7.6H4.4z" fill="#f3c169" stroke="#d99b21" stroke-width=".8" stroke-linejoin="round" />
+        </svg>
+      </span>
+      <span class="tb-lb">画像インポート</span>
+    </button>
   </div>
 
   <main id="app"></main>
@@ -2188,8 +2243,10 @@
         '  <div id="topbar">\n' +
         '    <span class="topbar-brand">✓ チェックリスト</span>\n' +
         '    <span class="topbar-spacer"></span>\n' +
-        '    <button class="icon" data-action="undo" title="元に戻す (Undo)">↶<span class="tb-lb">元に戻す</span></button>\n' +
-        '    <button class="icon" data-action="redo" title="やり直す (Redo)">↷<span class="tb-lb">やり直す</span></button>\n' +
+        '    <button class="icon" data-action="undo" aria-label="元に戻す" data-tip="直前の操作を取り消します（Ctrl+Z）">' +
+        '<span class="tb-ic">↶</span><span class="tb-lb">元に戻す</span></button>\n' +
+        '    <button class="icon" data-action="redo" aria-label="やり直す" data-tip="取り消した操作をやり直します（Ctrl+Y）">' +
+        '<span class="tb-ic">↷</span><span class="tb-lb">やり直す</span></button>\n' +
         '  </div>\n' +
         '  <main id="app"></main>\n' +
         '  <input id="file-input" type="file" accept="application/json,.json,text/html,.html" hidden />\n' +
@@ -2715,9 +2772,6 @@
           </div>
         </article>`;
     }
-    // エディタ・ツールバーのアクティブタブ（'run' | 'export'）。エディタは innerHTML で
-    // 再描画されるため、選択中タブをここで保持して再描画後も維持する。
-    let activeToolbarTab = 'run';
     function renderEditor(checklist) {
       const p = progress(checklist);
       const isTemplate = checklist.type === MODES.TEMPLATE;
@@ -2747,32 +2801,32 @@
             <small>${p.done} / ${p.total} 完了（${p.percent}%）${timeNote}</small>
           </div>
           <div class="editor-toolbar">
-            <div class="tb-tabs" role="tablist">
-              <button class="tb-tab${activeToolbarTab === 'run' ? ' active' : ''}" data-tab="run" role="tab">▶ 実行</button>
-              <button class="tb-tab${activeToolbarTab === 'export' ? ' active' : ''}" data-tab="export" role="tab">📤 他ファイルで出力</button>
-            </div>
-            <div class="tb-panel" data-panel="run"${activeToolbarTab === 'run' ? '' : ' hidden'}>
-              <button class="btn" data-action="play" ${p.total ? '' : 'disabled '}title="1ステップずつ全画面で実行">▶ 実行</button>
-              ${window.guideAPI ? `<button class="btn" data-action="play-guide" ${p.total ? '' : 'disabled '}title="常時最前面の小窓で実行（作業しながら見られる）">🧭 小窓で実行</button>` : ''}
-            </div>
-            <div class="tb-panel" data-panel="export"${activeToolbarTab === 'export' ? '' : ' hidden'}>
-              ${window.docxAPI ? '<button class="btn" data-action="save-docx">📄 Word (.docx)</button>' : ''}
-              ${window.xlsxAPI ? '<button class="btn" data-action="save-xlsx">📊 Excel (.xlsx)</button>' : ''}
-              ${window.printAPI ? '<button class="btn" data-action="save-pdf">📕 PDF</button>' : ''}
-              <button class="btn" data-action="share">🔗 共有リンク</button>
-            </div>
-            <div class="tb-divider"></div>
-            <div class="tb-fixed">
-              <button class="btn" data-action="save-html">💾 ${IS_STANDALONE ? '保存（HTML）' : '名前を付けて保存 (HTML)'}</button>
-              <button class="btn" data-action="print">🖨 印刷</button>
-              <button class="btn" data-action="add-section">＋ ${isTemplate ? 'フェーズ' : 'セクション'}</button>
+            <button class="btn" data-action="menu-export"
+                    data-tip="Word・Excel・PDF・HTML などのファイルに書き出します">ファイルで出力 ▾</button>
+            <button class="btn" data-action="print"
+                    data-tip="印刷プレビューを開きます。用紙サイズ・向き・倍率を指定できます">印刷</button>
+            ${
+              window.guideAPI
+                ? `<button class="btn" data-action="menu-run" ${p.total ? '' : 'disabled '}data-tip="手順を1つずつ大きく表示して、チェックを付けながら順番に進めます。全画面と、作業しながら見られる小窓のどちらかを選べます。">作業を開始 ▾</button>`
+                : `<button class="btn" data-action="play" ${p.total ? '' : 'disabled '}data-tip="手順を1つずつ全画面で大きく表示して、チェックを付けながら順番に進めます。">作業を開始</button>`
+            }
+            ${
+              isTemplate
+                ? `<button class="btn" data-action="reset"
+                           data-tip="すべてのチェックを外して、最初から実施できる状態に戻します">作業をリセット</button>`
+                : `<button class="btn" data-action="clear-completed"
+                           data-tip="チェック済みの項目をまとめて削除します">完了を削除</button>`
+            }
+            <span class="tb-edit">
+              <button class="btn" data-action="add-section"
+                      data-tip="${isTemplate ? '手順' : '項目'}をまとめる区切りを末尾に追加します">${isTemplate ? 'フェーズ' : 'セクション'}を追加</button>
               ${
                 isTemplate
-                  ? `<button class="btn" data-action="cover">🪧 表紙</button>
-                     <button class="btn" data-action="reset">↺ 一括リセット</button>`
-                  : `<button class="btn" data-action="clear-completed">完了を削除</button>`
+                  ? `<button class="btn" data-action="cover"
+                             data-tip="Word・PDF の先頭に付ける表紙を作成・編集します">表紙を編集</button>`
+                  : ''
               }
-            </div>
+            </span>
           </div>
           ${
             isTemplate && checklist.coverPage && checklist.coverPage.enabled
@@ -7906,17 +7960,110 @@
       if (row && row.dataset.item !== currentItemId) markCurrentThumb(row.dataset.item);
     });
 
-    // ---- ツールバーのタブ切替（委譲。再描画に強い） ----
-    document.addEventListener('click', (e) => {
-      const tab = e.target.closest('.tb-tab');
-      if (!tab) return;
-      const key = tab.dataset.tab;
-      activeToolbarTab = key;
-      const toolbar = tab.closest('.editor-toolbar');
-      if (!toolbar) return;
-      toolbar.querySelectorAll('.tb-tab').forEach((t) => t.classList.toggle('active', t === tab));
-      toolbar.querySelectorAll('.tb-panel').forEach((p) => { p.hidden = p.dataset.panel !== key; });
+    // ---- ツールバーのドロップダウン（実行／出力） ----
+    // 項目には既存の data-action をそのまま持たせ、下の委譲ハンドラに処理させる。
+    // 環境による出し分け（guideAPI/docxAPI/xlsxAPI/printAPI）は従来の条件を踏襲する。
+    function tbRunItems() {
+      const items = [{ action: 'play', label: '全画面で実行' }];
+      if (window.guideAPI) items.push({ action: 'play-guide', label: '小窓で実行' });
+      return items;
+    }
+    function tbExportItems() {
+      const items = [{ action: 'save-html', label: IS_STANDALONE ? '保存（HTML）' : '名前を付けて保存（HTML）' }];
+      if (window.docxAPI) items.push({ action: 'save-docx', label: 'Word (.docx)' });
+      if (window.xlsxAPI) items.push({ action: 'save-xlsx', label: 'Excel (.xlsx)' });
+      if (window.printAPI) items.push({ action: 'save-pdf', label: 'PDF' });
+      items.push({ action: 'share', label: '共有リンク' });
+      return items;
+    }
+    function tbCloseMenu() { const m = document.getElementById('tb-menu'); if (m) m.remove(); }
+    function tbOpenMenu(btn, items) {
+      const open = document.getElementById('tb-menu');
+      const same = open && open.dataset.for === btn.dataset.action;
+      tbCloseMenu();
+      if (same || !items.length) return; // 同じボタンの再クリックは閉じるだけ
+      const menu = document.createElement('div');
+      menu.className = 'tb-menu';
+      menu.id = 'tb-menu';
+      menu.dataset.for = btn.dataset.action;
+      menu.setAttribute('role', 'menu');
+      menu.innerHTML = items
+        .map((it) => `<button type="button" role="menuitem" class="tb-menu-item" data-action="${it.action}">${escapeHtml(it.label)}</button>`)
+        .join('');
+      document.body.appendChild(menu);
+      const r = btn.getBoundingClientRect();
+      const w = menu.offsetWidth;
+      const h = menu.offsetHeight;
+      menu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - w - 8))}px`;
+      // 下にはみ出すときはボタンの上側に開く（rb-palette と同じ作法）
+      menu.style.top = `${r.bottom + 4 + h > window.innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4}px`;
+      const first = menu.querySelector('.tb-menu-item');
+      if (first) first.focus();
+    }
+    // 外側クリックで閉じる。メニューを開くボタン自身と項目は click 側で処理する。
+    document.addEventListener('mousedown', (e) => {
+      if (!document.getElementById('tb-menu')) return;
+      if (e.target.closest('.tb-menu, [data-action="menu-run"], [data-action="menu-export"]')) return;
+      tbCloseMenu();
     });
+
+    // ---- ホバー／フォーカスで出る解説ポップ（data-tip） ----
+    let tipEl = null;
+    let tipTimer = 0;
+    let tipFor = null;    // いま出している対象
+    let tipPending = null; // 表示待ち（400ms）の対象
+    function tipHost() {
+      if (tipEl && tipEl.isConnected) return tipEl;
+      tipEl = document.createElement('div');
+      tipEl.id = 'tip-host';
+      tipEl.setAttribute('role', 'tooltip');
+      document.body.appendChild(tipEl);
+      return tipEl;
+    }
+    function hideTip() {
+      clearTimeout(tipTimer);
+      tipPending = null;
+      tipFor = null;
+      if (tipEl) { tipEl.classList.remove('on'); tipEl.style.left = '-9999px'; tipEl.style.top = '-9999px'; }
+    }
+    function showTip(el) {
+      const txt = el.getAttribute('data-tip');
+      if (!txt || !el.isConnected) return;
+      // 1行目はボタン名。アイコンだけのボタンは aria-label、文字のボタンは表示文字（▾は落とす）。
+      const name = (el.getAttribute('aria-label') || el.textContent || '').trim().replace(/\s*▾$/, '');
+      const host = tipHost();
+      host.innerHTML =
+        (name ? `<span class="tip-ttl">${escapeHtml(name)}</span>` : '') + `<span class="tip-txt">${escapeHtml(txt)}</span>`;
+      host.style.left = '0px';
+      host.style.top = '0px';
+      const r = el.getBoundingClientRect();
+      const w = host.offsetWidth;
+      const h = host.offsetHeight;
+      const left = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - 8));
+      const below = r.bottom + 6;
+      host.style.left = `${Math.round(left)}px`;
+      host.style.top = `${Math.round(below + h > window.innerHeight ? Math.max(8, r.top - h - 6) : below)}px`;
+      host.classList.add('on');
+      tipFor = el;
+    }
+    const tipTarget = (t) => (t && t.closest ? t.closest('[data-tip]') : null);
+    document.addEventListener('mouseover', (e) => {
+      const el = tipTarget(e.target);
+      if (!el || el === tipFor || el === tipPending) return;
+      hideTip();
+      tipPending = el;
+      tipTimer = setTimeout(() => { tipPending = null; showTip(el); }, 400);
+    });
+    document.addEventListener('mouseout', (e) => {
+      const el = tipTarget(e.target);
+      if (!el) return;
+      if (e.relatedTarget && el.contains(e.relatedTarget)) return; // 同じボタン内の移動は無視
+      hideTip();
+    });
+    document.addEventListener('focusin', (e) => { const el = tipTarget(e.target); if (el) { hideTip(); showTip(el); } });
+    document.addEventListener('focusout', hideTip);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { tbCloseMenu(); hideTip(); } });
+    window.addEventListener('scroll', hideTip, true);
 
     // ---- イベント委譲 ----
     document.addEventListener('click', (e) => {
@@ -7927,7 +8074,11 @@
       const sectionId = btn.dataset.section;
       const itemId = btn.dataset.item;
       const c = currentChecklist();
+      // メニューの項目を選んだら閉じる（アクション自体はこのまま下で処理する）
+      if (btn.closest('.tb-menu')) { hideTip(); tbCloseMenu(); }
       switch (action) {
+        case 'menu-run': return tbOpenMenu(btn, tbRunItems());
+        case 'menu-export': return tbOpenMenu(btn, tbExportItems());
         case 'undo': return store.undo();
         case 'redo': return store.redo();
         case 'record': return toggleRecording();
