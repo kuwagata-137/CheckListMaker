@@ -1127,10 +1127,14 @@
 
   /* 画像はすべて同じ幅に揃える（拡大画像も引き伸ばして統一） */
   .print-img { object-fit: contain; border: 1px solid #c9ccd2; border-radius: 2px; break-inside: avoid; }
-  .print-cols-1 .print-img { width: 100%; height: auto; max-height: 210mm; }
-  .print-cols-2 .print-img { width: 48%; height: auto; max-height: 140mm; }
+  /* 出力倍率（zoom / printToPDF の scale）は「レイアウト幅を 1/倍率 に広げてから倍率で
+     描く」意味論なので、親基準の % 幅は広がった親と相殺されて縮まない。文字や余白のような
+     絶対単位だけが縮み、画像だけ取り残されていた。--print-img-scale を掛けて追従させる
+     （max-height は mm＝絶対単位なので二重には掛からない）。 */
+  .print-cols-1 .print-img { width: calc(100% * var(--print-img-scale, 1)); height: auto; max-height: 210mm; }
+  .print-cols-2 .print-img { width: calc(48% * var(--print-img-scale, 1)); height: auto; max-height: 140mm; }
   /* 方針A: 2col でも写真が1枚だけなら全幅で見せる（2枚以上は48%で左右に並ぶ）。 */
-  .print-cols-2 .print-imgs .print-img:only-child { width: 100%; max-height: 210mm; }
+  .print-cols-2 .print-imgs .print-img:only-child { width: calc(100% * var(--print-img-scale, 1)); max-height: 210mm; }
 
   /* ToDo 型はチェックが本質なので □/☑ 欄を残す（テンプレート手順書では出さない） */
   .print-todo { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; padding: 4px 0; break-inside: avoid; }
@@ -5426,10 +5430,14 @@
       return orient === 'landscape' ? { w: h, h: w } : { w, h };
     }
     // @page の size 上書き CSS。coverpage（表紙・余白0）も同じ用紙に合わせる。
-    function pdfPageStyleCss(paper, orient) {
+    // imgScale は画像の幅に掛ける倍率（1＝等倍）。printToPDF の scale と同じ値を渡すと、
+    // % 幅で相殺されてしまう画像も文字と同じだけ縮む（CSS の --print-img-scale を参照）。
+    function pdfPageStyleCss(paper, orient, imgScale) {
       const d = pdfPaperDims(paper, orient);
       const size = `${d.w}mm ${d.h}mm`;
-      return `@page { size: ${size}; }\n@page coverpage { size: ${size}; }`;
+      const n = Number(imgScale);
+      const s = Number.isFinite(n) && n > 0 ? n : 1;
+      return `@page { size: ${size}; }\n@page coverpage { size: ${size}; }\n#print-root { --print-img-scale: ${s}; }`;
     }
     function pdfOutSettings() {
       const s = store.state.settings || {};
@@ -5448,7 +5456,8 @@
       }, { history: false });
     }
     // head 末尾に @page の上書き <style> を注入（後勝ちで基本CSSの margin は維持）。
-    function applyPrintPageStyle() {
+    // imgScale 省略時は等倍（＝ブラウザの印刷。倍率は OS のダイアログ側に任せる）。
+    function applyPrintPageStyle(imgScale) {
       const { paper, orient } = pdfOutSettings();
       let el = document.getElementById('print-page-style');
       if (!el) {
@@ -5456,7 +5465,7 @@
         el.id = 'print-page-style';
         document.head.appendChild(el);
       }
-      el.textContent = pdfPageStyleCss(paper, orient);
+      el.textContent = pdfPageStyleCss(paper, orient, imgScale);
     }
 
     // #print-root に印刷ビューを流し込む（window.print / printToPDF の直前に呼ぶ）。
@@ -5500,7 +5509,9 @@
         // 画像参照を dataURL に戻してから印刷ビューを組む（ツールバー直下から呼ばれた
         // ときは未 materialize の checklist が渡るため。dataURL は素通しなので二重適用も安全）。
         checklist = await materializeChecklist(checklist);
-        applyPrintPageStyle(); // 用紙・向きの @page 上書き（倍率は printToPDF の scale で渡す）
+        // 用紙・向きの @page 上書き。ページ全体は printToPDF の scale で縮むが、画像だけは
+        // % 幅で相殺されるため、同じ倍率を --print-img-scale としても渡す。
+        applyPrintPageStyle(pdfOutSettings().scale / 100);
         const root = fillPrintRoot(checklist);
         await waitForPrintImages(root); // 画像のデコード完了を待ってから撮る（欠け防止）
         const res = await window.printAPI.savePdf({
@@ -5582,8 +5593,10 @@
         page.className = 'print-preview-page ' + printColsClass();
         // 用紙・向きで紙面の幅を変え、倍率は zoom で近似表示（正確な改ページは実出力で）
         page.style.width = `${pdfPaperDims(out.paper, out.orient).w}mm`;
+        // zoom も画像の % 幅を相殺してしまうので、同じ倍率を --print-img-scale でも降ろす
+        //（PDF 側の applyPrintPageStyle と同じ意味・同じ値）。
         page.innerHTML =
-          `<div class="pp-zoom" style="zoom:${out.scale / 100}">${renderPrintView(checklist)}</div>`;
+          `<div class="pp-zoom" style="zoom:${out.scale / 100};--print-img-scale:${out.scale / 100}">${renderPrintView(checklist)}</div>`;
         overlay.querySelectorAll('[data-pp-cols]').forEach((b) =>
           b.classList.toggle('active', b.dataset.ppCols === printImgLayout())
         );
