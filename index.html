@@ -1199,14 +1199,25 @@
     overflow: auto;
     max-height: min(68vh, 900px);
   }
+  /* 紙面は常に用紙の実寸で組み、入りきらない用紙は transform で縮小して見せる。
+     max-width:100% で潰すと padding は 15mm/25mm のまま本文幅だけ狭まり、
+     折り返し位置＝行数が実出力とずれて改ページ線が当てにならなくなるため。 */
+  .print-preview-stage { position: relative; margin: 0 auto; }
   .print-preview-page {
+    position: relative; /* 改ページ線（.pp-break）の基準 */
+    transform-origin: top left;
     background: #fff;
     color: #000;
     width: 210mm;
-    max-width: 100%;
-    margin: 0 auto;
     padding: 15mm 25mm;
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.45);
+  }
+  /* 改ページの目安線。break-inside:avoid による送りまでは再現しないので「目安」。 */
+  .pp-break { position: absolute; left: 0; right: 0; border-top: 1px dashed #b3272d; pointer-events: none; }
+  .pp-break span {
+    position: absolute; right: 3px; top: 2px;
+    font-size: 11px; line-height: 1.2; color: #b3272d;
+    background: rgba(255, 255, 255, 0.88); padding: 1px 5px; border-radius: 3px;
   }
   /* 印刷プレビュー内の表紙は、実際の印刷（@page coverpage=余白0の専用ページ）と同じく
      ページの余白（上下15mm・左右25mm）を打ち消して全面(210mm=794px)で表示する。これを
@@ -5580,18 +5591,73 @@
             </select>
           </span>
           ${window.printAPI ? '<span class="pp-hint">倍率は PDF 出力に効きます（印刷は OS のダイアログで指定）</span>' : ''}
+          <span class="pp-hint">赤い破線は改ページの目安です（図・表がページをまたぐ時の送りまでは再現しません）</span>
         </div>
-        <div class="print-preview-body"><div class="print-preview-page"></div></div>
+        <div class="print-preview-body"><div class="print-preview-stage"><div class="print-preview-page"></div></div></div>
       `);
       overlay.querySelector('.modal').classList.add('print-preview');
       const page = overlay.querySelector('.print-preview-page');
+      const stage = overlay.querySelector('.print-preview-stage');
+      const previewBody = overlay.querySelector('.print-preview-body');
       const scaleInput = overlay.querySelector('.pp-scale');
+      // 紙面が横に入りきらないとき（A3・B4・横向きなど）は縮小して見せる。
+      // transform は折り返しを変えないので、実出力と同じ行数のまま小さくなる。
+      const fitPage = () => {
+        page.style.transform = '';
+        const natW = page.offsetWidth;
+        const natH = page.offsetHeight;
+        const avail = Math.max(1, previewBody.clientWidth - 36); // .print-preview-body の padding 18px×2
+        const k = natW ? Math.min(1, avail / natW) : 1;
+        page.style.transform = k < 1 ? `scale(${k})` : '';
+        // transform はレイアウトを動かさないので、器の側で実寸を持たせる
+        stage.style.width = `${Math.round(natW * k)}px`;
+        stage.style.height = `${Math.round(natH * k)}px`;
+      };
+      // 改ページの目安線を引く。プレビューは1枚の連続した紙なので、@page の上下余白
+      // （15mm）はページごとには入らない＝本文は「1ページ分の本文高さ」で単純に積み上がる。
+      // 表紙・目次は break-after:page で1ページを丸ごと使うため、その下端を起点に取り直す。
+      const drawPageBreaks = () => {
+        page.querySelectorAll('.pp-break').forEach((el) => el.remove());
+        const { paper, orient } = pdfOutSettings();
+        const MM = 96 / 25.4; // CSS の 1mm は常に 96/25.4 px
+        const contentH = (pdfPaperDims(paper, orient).h - 30) * MM; // 上下 15mm を引いた本文高
+        if (!(contentH > 1)) return;
+        const pr = page.getBoundingClientRect();
+        const k = (page.offsetWidth ? pr.width / page.offsetWidth : 1) || 1; // 縮小表示ぶんを戻す
+        const total = pr.height / k;
+        const bottomOf = (el) => (el.getBoundingClientRect().bottom - pr.top) / k;
+        let y = 15 * MM; // 1ページ目の本文の始まり
+        let no = 1;
+        const cover = page.querySelector('.print-cover');
+        const toc = page.querySelector('.print-toc');
+        for (const el of [cover, toc]) {
+          if (!el) continue;
+          y = bottomOf(el);
+          no += 1;
+          page.insertAdjacentHTML('beforeend',
+            `<div class="pp-break" style="top:${y.toFixed(1)}px"><span>${no}ページ目</span></div>`);
+        }
+        for (let i = 1; ; i++) {
+          const at = y + i * contentH;
+          if (at >= total - 2) break;
+          no += 1;
+          page.insertAdjacentHTML('beforeend',
+            `<div class="pp-break" style="top:${at.toFixed(1)}px"><span>${no}ページ目</span></div>`);
+        }
+      };
+      const relayoutPreview = () => { fitPage(); drawPageBreaks(); };
+      // モーダル幅が変わると縮小率も変わるので引き直す。モーダルを閉じたら自分で外れる。
+      const onPreviewResize = () => {
+        if (!page.isConnected) { window.removeEventListener('resize', onPreviewResize); return; }
+        relayoutPreview();
+      };
+      window.addEventListener('resize', onPreviewResize);
       const paperSelect = overlay.querySelector('.pp-paper');
       const orientSelect = overlay.querySelector('.pp-orient');
       const renderPreview = () => {
         const out = pdfOutSettings();
         page.className = 'print-preview-page ' + printColsClass();
-        // 用紙・向きで紙面の幅を変え、倍率は zoom で近似表示（正確な改ページは実出力で）
+        // 用紙・向きで紙面の幅を変え、倍率は zoom で近似表示する
         page.style.width = `${pdfPaperDims(out.paper, out.orient).w}mm`;
         // zoom も画像の % 幅を相殺してしまうので、同じ倍率を --print-img-scale でも降ろす
         //（PDF 側の applyPrintPageStyle と同じ意味・同じ値）。
@@ -5603,6 +5669,9 @@
         if (scaleInput && document.activeElement !== scaleInput) scaleInput.value = out.scale;
         paperSelect.value = out.paper;
         orientSelect.value = out.orient;
+        relayoutPreview();
+        // 画像は読み込むまで高さ0なので、デコード完了後に引き直す（線の位置がずれるため）
+        waitForPrintImages(page).then(() => { if (page.isConnected) relayoutPreview(); });
       };
       renderPreview();
       overlay.querySelectorAll('[data-pp-cols]').forEach((b) =>
