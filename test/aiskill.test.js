@@ -314,7 +314,9 @@ test('checklist-maker スキル — プラグインのマニフェスト', async
   await t.test('スキルが plugin.json から見える場所にある', () => {
     const skillMd = path.join(PLUGIN, 'skills', 'checklist-maker', 'SKILL.md');
     assert.ok(fs.existsSync(skillMd), 'skills/<name>/SKILL.md が要る');
-    const head = fs.readFileSync(skillMd, 'utf8').slice(0, 400);
+    // core.autocrlf=true の Windows チェックアウトでは CRLF になるので、
+    // 改行を正規化してから frontmatter を見る（CI の Linux では LF）。
+    const head = fs.readFileSync(skillMd, 'utf8').replace(/\r\n/g, '\n').slice(0, 400);
     assert.match(head, /^---\n/, 'frontmatter で始まる');
     assert.match(head, /\nname: checklist-maker\n/, 'frontmatter に name がある');
     assert.match(head, /\ndescription: /, 'frontmatter に description がある');

@@ -10,8 +10,9 @@
 //   ② <script type="application/json" id="clm-data"> に取り込み用データを埋め込む
 //
 // なぜ HTML を作るのか:
-//   CheckListMaker の HTML 取り込みは「同一 id なら更新・無ければ追加」＝マージ。
-//   JSON 取り込みの「全置換」と違い、ユーザーの既存データを壊さない。
+//   CheckListMaker の HTML 取り込みは「同一 id なら更新・無ければ追加」＝マージで、
+//   確認を挟まずに安全に入る。JSON 取り込みは「追加・更新／すべて置き換える」の
+//   選択制なので、ユーザーが選び間違えると既存データが消える。HTML ならその事故が無い。
 //   本体の parseChecklistFromHtml は DOMParser で id="clm-data" を探すだけなので、
 //   アプリを丸ごと埋め込んだ自己完結 HTML である必要はない。
 //

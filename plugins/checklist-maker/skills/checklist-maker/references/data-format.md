@@ -4,7 +4,8 @@ CheckListMaker が読み書きする **state JSON** の全仕様。AI が手順�
 このスキーマどおりの JSON を1ファイル書けばよい。
 
 一次情報はアプリ本体 `index.html` のファクトリ関数（`createItem` / `createSection` /
-`createCoverPage` / `createChecklist`、1484〜1548行付近）。本書はそれを写したもの。
+`createCoverPage` / `createChecklist`）。本書はそれを写したもの。
+（行番号は改修のたびにずれるので書かない。関数名で検索すること。）
 
 ---
 
@@ -53,15 +54,16 @@ state
 ### `type` の違いは見た目だけではない
 
 `"todo"` にすると、**`time`（標準時間）・`note`（メモ）・`body`（詳細）が
-Word / Excel のどの出力にも載らない**（`index.html` の `isTemplate` 判定、
-2390〜2465行付近）。表紙も出ない。手順書を作る目的なら `"template"` 以外にしてはいけない。
+Word / Excel のどの出力にも載らない**（`index.html` の `renderDocxView` /
+`buildXlsxSheetData` にある `isTemplate` 判定）。表紙も出ない。
+手順書を作る目的なら `"template"` 以外にしてはいけない。
 
 | | `template` | `todo` |
 |---|---|---|
 | 表紙・目次 | 出る | 出ない |
 | `note` / `time` / `body` の出力 | 出る | **出ない** |
 | チェック記号 ☐/☑ の Word 出力 | 出さない | 出す |
-| 一括リセット | できる | — |
+| 作業をリセット（全チェックを外す） | できる | — |
 
 ---
 
