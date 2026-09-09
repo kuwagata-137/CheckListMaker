@@ -39,6 +39,16 @@ test('pdfout — 倍率・用紙・向き', async (t) => {
     assert.ok(!/margin/.test(css), 'margin は基本CSSに任せて上書きしない');
   });
 
+  // 画像の幅は親基準の % なので、zoom / printToPDF の scale だけでは縮まない。
+  // 同じ倍率を --print-img-scale として降ろすのが唯一の追従手段（仕様の「制約（既知）」参照）。
+  await t.test('pdfPageStyleCss — 倍率を --print-img-scale として出す', () => {
+    assert.ok(T.pdfPageStyleCss('A4', 'portrait', 0.7).includes('#print-root { --print-img-scale: 0.7; }'));
+    for (const bad of [undefined, null, 0, -1, NaN, 'あ']) {
+      assert.ok(T.pdfPageStyleCss('A4', 'portrait', bad).includes('--print-img-scale: 1;'),
+        `不正な倍率(${String(bad)})は等倍に倒す`);
+    }
+  });
+
   await t.test('pdfOutSettings / setPdfOutSettings — 既定と保存（Undo履歴に積まない）', () => {
     assert.deepEqual(plain(T.pdfOutSettings()), { scale: 100, paper: 'A4', orient: 'portrait' }, '既定は100%・A4・縦');
     const before = T.store.canUndo();
