@@ -731,31 +731,49 @@
   .pl-counter b { color: var(--text); font-size: 1.05em; }
   .pl-progress { height: 5px; background: var(--surface-2); flex: none; }
   .pl-progress i { display: block; height: 100%; background: var(--primary); border-radius: 0 3px 3px 0; transition: width 0.2s; }
+  /* 画像を画面いっぱいに使う。高さを親から流し込むため、overlay→main→shot→img の
+     どこでも縦が詰まらないよう min-height:0 を通し、余りは img に吸わせる。 */
   .pl-main {
     flex: 1;
-    overflow: auto;
+    min-height: 0;
+    overflow: hidden;
     display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(260px, 1fr);
+    grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr);
     gap: 22px;
     padding: 22px 26px;
-    align-items: start;
+    align-items: stretch;
   }
-  .pl-main.no-image { display: block; max-width: 760px; width: 100%; margin: 0 auto; }
+  .pl-main.no-image { display: block; overflow: auto; max-width: 760px; width: 100%; margin: 0 auto; }
   .pl-shot {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow-item);
     padding: 8px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
-  .pl-shot .pl-img { display: block; max-width: 100%; max-height: 62vh; margin: 0 auto; border-radius: 6px; }
-  .pl-thumbs { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  /* flex-basis:0 で主軸サイズを flex に委ね、余白を全部もらう。object-fit:contain なので
+     比率は保ったまま、小さい画像も枠まで拡大される（max-width:100% は縮小しかしない）。 */
+  .pl-shot .pl-img {
+    display: block;
+    flex: 1 1 0;
+    min-height: 0;
+    width: 100%;
+    max-width: 100%;
+    max-height: none;
+    object-fit: contain;
+    margin: 0 auto;
+    border-radius: 6px;
+  }
+  .pl-thumbs { display: flex; flex: none; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
   .pl-thumbs img {
     width: 64px; height: 48px; object-fit: cover; border-radius: 4px;
     border: 2px solid transparent; cursor: pointer;
   }
   .pl-thumbs img.active { border-color: var(--primary); }
-  .pl-pane { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .pl-pane { display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; overflow-y: auto; }
   .pl-text { font-size: 1.3rem; font-weight: 600; line-height: 1.5; margin: 0; overflow-wrap: anywhere; }
   .pl-text.empty { color: var(--muted); font-weight: 400; }
   .pl-note {
@@ -812,7 +830,12 @@
     border: 1px solid var(--border-strong); color: var(--muted); white-space: nowrap;
   }
   .pl-chip.done { color: var(--primary); border-color: var(--primary); }
-  @media (max-width: 720px) { .pl-main { grid-template-columns: 1fr; } }
+  /* 狭幅は1カラムの縦積み。伸ばす側が無くなるので、画像の高さ上限とスクロールを戻す。 */
+  @media (max-width: 720px) {
+    .pl-main { grid-template-columns: 1fr; overflow: auto; align-items: start; }
+    .pl-shot .pl-img { flex: none; max-height: 62vh; }
+    .pl-pane { overflow-y: visible; }
+  }
 
   /* ---- モーダル ---- */
   .modal-overlay {
