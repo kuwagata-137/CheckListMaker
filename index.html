@@ -8062,6 +8062,7 @@
     });
     document.addEventListener('focusin', (e) => { const el = tipTarget(e.target); if (el) { hideTip(); showTip(el); } });
     document.addEventListener('focusout', hideTip);
+    document.addEventListener('click', hideTip); // ボタンを押したら用は済んでいるので消す
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { tbCloseMenu(); hideTip(); } });
     window.addEventListener('scroll', hideTip, true);
 
