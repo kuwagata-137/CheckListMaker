@@ -292,3 +292,70 @@ pt\* のみ。四隅・辺のリサイズは Shift＝縦横比固定が一般的
 
 既存の `objHandles` / `applyObjDrag` / `freeformBounds` / `distSeg` のテストは**無変更で通る**
 （複数選択は呼び出し側のループで実現し、純関数の署名を変えていないため）。
+
+## 14. テキストの自動折り返し・幅ハンドル・Alt+Enter・全画面（2026-09-11）
+
+ユーザー要望（2026-09-11）。
+
+- 要望25: テキストボックスの**初期サイズが大きすぎる**（約1/4に）。文字の長さに応じて自動で広がる。
+- 要望26: 既定幅は**全角12文字を上限に自動改行**。幅を変えたら以降は幅に応じて文字数を
+  調整し、**幅は固定・高さだけ自動**にする。明示的に入れた改行は常に尊重する。
+- 要望27: 吹き出し・テキストの入力中に **Alt+Enter でも改行**（Shift+Enter と同じ）。
+- 要望28: 編集画面で「選択」モードのままホイールすると**背面の TODO リストがスクロール**する。
+- 要望29: 編集画面を**画面いっぱい**にする。
+
+### 行組み（要望25・26）
+
+- 純関数 `wrapTextLines(text, maxW, measure)`（`window.__test__`）。`
+` で段落に分け、各段落を
+  `measure(str)` が `maxW` を超えない位置で**1文字単位**で折る（日本語主体なので分かち書きは
+  考えない）。`maxW` が無ければ折らない。空段落は空行として残す。
+- 既定の上限幅は `TEXT_WRAP_CHARS = 12` → `fs × 12`（全角1字 ≒ 1em）。
+- text オブジェクトに `w`（本文幅・pad 除く）・`h`・`wFixed` を持たせる。
+  - `wFixed` でない: 描画のたび `w = min(最長行の幅, fs×12)`。文字が増えるほど広がり、12字で折れる。
+  - `wFixed`: `w` を維持して `wrapTextLines(text, w)` で折り、`h` だけ文字量に追従。
+    文字サイズを変えても幅は固定のまま（高さだけ変わる）。
+  - エディタ内の `textLayout(o)` が `{lines, lh, w, h}` を返し、`drawTextObj` / `objBounds` から使う。
+    `o.w / o.h` は保存されるが、旧データに無くても初回描画で埋まる（`normalizeObjColors` のような
+    移行処理は不要）。
+- **入力欄**（`.ie-text-input`）は `white-space: pre-wrap; word-break: break-all` にし、幅は
+  `textLayout` と同じ値（`w × 表示倍率 + 4px`）で置く。**生成直後に `fit()` を呼ぶ**ので、
+  新規は 1 文字ぶん（≒ 40px）から始まる（従来は textarea 既定の 20 桁幅＝24px 太字で約 260px）。
+  幅を広く取ると入力欄側だけ1文字多く入って確定後とずれるため、余白は 4px に留める。
+- **吹き出しも同じ 12 字で折る**（`calloutBox` を `wrapTextLines` に差し替え。幅ハンドルは
+  付けない。尻尾ハンドルのみ従来どおり）。新規吹き出しは尻尾を触るまで `tipAuto` で本体の
+  下に追従させる（折り返しで本体が高くなっても尻尾が本体に潜らない）。
+
+### 幅ハンドル（要望26）
+
+- `objHandles` の text に **`w` / `e`**（外接矩形の左右辺の中点。pad 込み）を足す。`o.w` が
+  未計算（描画前）なら出さない。純関数 `textBoxPadOf(o)` が pad（塗りか枠線があるときだけ
+  `round(fs×0.3)`）を返す。
+- `applyObjDrag` の矩形分岐で `o.type === 'text'` は幅だけ動かし（最小 = fs = 1文字）、
+  `o.wFixed = true` を立てる。`y` / `h` は触らない。カーソルは既存の `ew-resize` 判定がそのまま効く。
+- Undo は `objects` 丸ごとのスナップショットなので `wFixed` も一緒に戻る。
+
+### Alt+Enter（要望27）
+
+- text / callout の keydown で `Enter && altKey` を `insertNewline(ta)` に回す
+  （`setRangeText('
+')` → `input` を発火して `fit` / `render` を走らせる）。Alt 付きの Enter は
+  既定では改行が入らないため自前で差し込む。`Enter` 単独は従来どおり確定。
+
+### 背面スクロールの固定と全画面（要望28・29）
+
+- 本体の TODO リストは専用のスクロール容器を持たず **document がスクロール**している。
+  キャンバス枠（`.ie-canvas-wrap`・overflow:auto）が溢れていないときのホイールが viewport へ
+  連鎖していた。エディタを開いている間だけ `html.ie-open { overflow: hidden }` を付け、
+  `close()` で外す。`.ie-canvas-wrap` には `overscroll-behavior: contain` も足す。
+- `.modal-overlay.ie-overlay { padding: 0 }`・`.modal.img-editor { width: 100vw; height: 100vh;
+  border-radius: 0; padding: 10px 12px }`。
+
+### テスト（追加分）
+
+`test/imageeditor.test.js`: `wrapTextLines`（12字で折れる／半角は倍入る／明示改行と空行／
+上限なし／measure なし／1字ずつ）、`TEXT_WRAP_CHARS`、`textBoxPadOf`、`objHandles`（text は
+w/e の2つ・pad 込み・描画前は無し）、`applyObjDrag`（e で幅が増え `wFixed`・y/h 不変、w は x と
+幅が同時に動き最小幅は fs）。
+
+実機（Electron 31 オフスクリーン）での確認画像: `screenshots/v1.0.6-*.png`。

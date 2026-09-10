@@ -1332,7 +1332,7 @@ async function saveCsv(event, payload) {
 // printToPDF は @media print の CSS で描画されるため、画面と同じ見た目で
 // 印刷ビューだけが出力される。
 async function savePdfFile(event, payload) {
-  const { title, scale } = payload || {};
+  const { title, scale, pageRanges } = payload || {};
   const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
   const safe =
     String(title || 'checklist')
@@ -1352,11 +1352,10 @@ async function savePdfFile(event, payload) {
     // 対応範囲（0.1〜2.0）に収まるようここでも防御的にクランプする。
     const n = Number(scale);
     const pdfScale = Number.isFinite(n) ? Math.max(0.3, Math.min(2, n)) : 1;
-    const buf = await event.sender.printToPDF({
-      printBackground: true,
-      preferCSSPageSize: true,
-      scale: pdfScale,
-    });
+    // pageRanges: 1 始まりの範囲文字列（'2-5' / '3-'）。形が合わなければ無視して全ページ。
+    const opts = { printBackground: true, preferCSSPageSize: true, scale: pdfScale };
+    if (typeof pageRanges === 'string' && /^\d+(-\d*)?$/.test(pageRanges)) opts.pageRanges = pageRanges;
+    const buf = await event.sender.printToPDF(opts);
     fs.writeFileSync(filePath, buf);
     // 出力結果をすぐ確認できるよう、既定のPDFビューアで開く。
     shell.openPath(filePath);

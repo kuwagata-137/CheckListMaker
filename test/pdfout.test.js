@@ -122,3 +122,35 @@ test('pdfout — 改ページ位置（純関数）', async (t) => {
     assert.deepEqual(plain(T.paginateBreaks([], H, 2500, NaN)), [1000, 2000], 'start が非数なら0とみなす');
   });
 });
+
+// PDF のページ範囲（「ページ N 〜 M」。空欄＝最初／最後）
+test('pdfout — ページ範囲（純関数）', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+
+  await t.test('parsePdfPageRange — 空欄は最初／最後', () => {
+    assert.deepEqual(plain(T.parsePdfPageRange('', '', 7)), { from: 1, to: 7 });
+    assert.deepEqual(plain(T.parsePdfPageRange('3', '', 7)), { from: 3, to: 7 });
+    assert.deepEqual(plain(T.parsePdfPageRange('', '4', 7)), { from: 1, to: 4 });
+    assert.deepEqual(plain(T.parsePdfPageRange('2', '5', 7)), { from: 2, to: 5 });
+  });
+  await t.test('parsePdfPageRange — 逆転は入れ替え・総ページ数にクランプ・不正は空欄扱い', () => {
+    assert.deepEqual(plain(T.parsePdfPageRange('5', '2', 7)), { from: 2, to: 5 });
+    assert.deepEqual(plain(T.parsePdfPageRange('9', '12', 7)), { from: 7, to: 7 });
+    assert.deepEqual(plain(T.parsePdfPageRange('abc', '0', 7)), { from: 1, to: 7 });
+    assert.deepEqual(plain(T.parsePdfPageRange('2.9', '4.2', 7)), { from: 2, to: 4 }, '小数は切り捨て');
+  });
+  await t.test('parsePdfPageRange — 総ページ数が不明なら to は null（最後まで）', () => {
+    assert.deepEqual(plain(T.parsePdfPageRange('3', '', null)), { from: 3, to: null });
+    assert.deepEqual(plain(T.parsePdfPageRange('', '', null)), { from: 1, to: null });
+  });
+  await t.test('pdfPageRangeString — 全ページなら null、それ以外は 1 始まりの文字列', () => {
+    assert.equal(T.pdfPageRangeString({ from: 1, to: 7 }, 7), null);
+    assert.equal(T.pdfPageRangeString({ from: 1, to: null }, null), null);
+    assert.equal(T.pdfPageRangeString({ from: 2, to: 5 }, 7), '2-5');
+    assert.equal(T.pdfPageRangeString({ from: 1, to: 3 }, 7), '1-3');
+    assert.equal(T.pdfPageRangeString({ from: 3, to: null }, null), '3-');
+    assert.equal(T.pdfPageRangeString(null, 7), null);
+  });
+});

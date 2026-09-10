@@ -161,6 +161,6 @@ contextBridge.exposeInMainWorld('fileAPI', {
 // 現在のページを @media print の見た目で PDF 化して保存する。
 contextBridge.exposeInMainWorld('printAPI', {
   available: true,
-  // payload = { title }。戻り値 = { saved } / { canceled } / { error }。
+  // payload = { title, scale, pageRanges }。戻り値 = { saved } / { canceled } / { error }。
   savePdf: (payload) => ipcRenderer.invoke('print:pdf', payload),
 });
