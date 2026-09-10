@@ -1205,6 +1205,9 @@
   .print-step {
     background: #F3F6FA; border: 1px solid #E2E8F1; border-left: 5px solid var(--print-accent);
     border-radius: 3px; padding: 10px 14px; margin-bottom: 28px;
+    /* カードごと次ページへ送る。中身（.print-step-keep）だけを avoid にしていた頃は、
+       薄塗りの枠の上辺と padding だけが前ページに取り残されて切れて見えた。 */
+    break-inside: avoid;
   }
   .print-step-keep { break-inside: avoid; } /* 手順と最初の画像を同ページに保つ */
   .print-step-head { display: flex; align-items: baseline; gap: 8px; }
@@ -1310,7 +1313,8 @@
     padding: 15mm 25mm;
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.45);
   }
-  /* 改ページの目安線。break-inside:avoid による送りまでは再現しないので「目安」。 */
+  /* 改ページ線。break-inside:avoid の塊（手順カード・図・表）は丸ごと次ページへ送られるので、
+     その送りも含めて実際の位置に引く（計算は paginateBreaks）。 */
   .pp-break { position: absolute; left: 0; right: 0; border-top: 1px dashed #b3272d; pointer-events: none; }
   .pp-break span {
     position: absolute; right: 3px; top: 2px;
@@ -5682,6 +5686,32 @@
       const [w, h] = PDF_PAPER_MM[paper] || PDF_PAPER_MM.A4;
       return orient === 'landscape' ? { w: h, h: w } : { w, h };
     }
+    // 実出力で「途中では切らない」と決めてある塊。CSS の break-inside: avoid と対で持つ。
+    // .print-step の中の .print-step-keep のように入れ子になるものは外側だけを数える。
+    const PRINT_ATOM_SEL = '.print-step, .print-todo, .print-toc-sec, .print-body table, .print-img';
+    // -- 純関数（テスト対象。window.__test__ に公開） --
+    // 改ページ位置を求める。blocks は「途中では切らない塊」の { top, bottom }（上端の昇順）。
+    // ページ境界にかかった塊が1ページに収まるなら、実際の組版と同じくその塊の先頭まで
+    // 改ページを繰り上げる。収まらない塊は実際にも分割されるので、そのまま境界で切る。
+    // 送り先に塊の枠の上端を使うことで、ページ境界で捨てられる上マージンも自然に合う。
+    function paginateBreaks(blocks, contentH, total, start) {
+      const out = [];
+      if (!(Number(contentH) > 1)) return out;
+      const list = Array.isArray(blocks) ? blocks : [];
+      let top = Number(start) || 0;
+      // guard: 塊の位置が壊れていても無限ループにしない（現実には数十ページで終わる）
+      for (let guard = 0; guard < 5000; guard++) {
+        let at = top + contentH;
+        if (!(at < total - 2)) break;
+        const hit = list.find(
+          (b) => b.top > top && b.top < at && b.bottom > at && b.bottom - b.top <= contentH
+        );
+        if (hit) at = hit.top; // 丸ごと次ページへ送られる
+        out.push(at);
+        top = at;
+      }
+      return out;
+    }
     // @page の size 上書き CSS。coverpage（表紙・余白0）も同じ用紙に合わせる。
     // imgScale は画像の幅に掛ける倍率（1＝等倍）。printToPDF の scale と同じ値を渡すと、
     // % 幅で相殺されてしまう画像も文字と同じだけ縮む（CSS の --print-img-scale を参照）。
@@ -5833,7 +5863,7 @@
             </select>
           </span>
           ${window.printAPI ? '<span class="pp-hint">倍率は PDF 出力に効きます（印刷は OS のダイアログで指定）</span>' : ''}
-          <span class="pp-hint">赤い破線は改ページの目安です（図・表がページをまたぐ時の送りまでは再現しません）</span>
+          <span class="pp-hint">赤い破線は改ページ位置です（手順・図・表は途中で切らずに次ページへ送ります）</span>
         </div>
         <div class="print-preview-body"><div class="print-preview-stage"><div class="print-preview-page"></div></div></div>
       `);
@@ -5855,8 +5885,9 @@
         stage.style.width = `${Math.round(natW * k)}px`;
         stage.style.height = `${Math.round(natH * k)}px`;
       };
-      // 改ページの目安線を引く。プレビューは1枚の連続した紙なので、@page の上下余白
-      // （15mm）はページごとには入らない＝本文は「1ページ分の本文高さ」で単純に積み上がる。
+      // 改ページ線を引く。プレビューは1枚の連続した紙なので、@page の上下余白（15mm）は
+      // ページごとには入らない＝本文は「1ページ分の本文高さ」で積み上がる。そのうえで
+      // break-inside:avoid の塊（手順カード・図・表）が境界にかかったときの送りを再現する。
       // 表紙・目次は break-after:page で1ページを丸ごと使うため、その下端を起点に取り直す。
       const drawPageBreaks = () => {
         page.querySelectorAll('.pp-break').forEach((el) => el.remove());
@@ -5866,26 +5897,34 @@
         if (!(contentH > 1)) return;
         const pr = page.getBoundingClientRect();
         const k = (page.offsetWidth ? pr.width / page.offsetWidth : 1) || 1; // 縮小表示ぶんを戻す
-        const total = pr.height / k;
-        const bottomOf = (el) => (el.getBoundingClientRect().bottom - pr.top) / k;
-        let y = 15 * MM; // 1ページ目の本文の始まり
+        const total = pr.height / k - 15 * MM; // 紙面の下 padding には本文が無い
+        const boxOf = (el) => {
+          const r = el.getBoundingClientRect();
+          return { top: (r.top - pr.top) / k, bottom: (r.bottom - pr.top) / k };
+        };
         let no = 1;
-        const cover = page.querySelector('.print-cover');
-        const toc = page.querySelector('.print-toc');
-        for (const el of [cover, toc]) {
-          if (!el) continue;
-          y = bottomOf(el);
-          no += 1;
-          page.insertAdjacentHTML('beforeend',
-            `<div class="pp-break" style="top:${y.toFixed(1)}px"><span>${no}ページ目</span></div>`);
-        }
-        for (let i = 1; ; i++) {
-          const at = y + i * contentH;
-          if (at >= total - 2) break;
+        const emit = (at) => {
           no += 1;
           page.insertAdjacentHTML('beforeend',
             `<div class="pp-break" style="top:${at.toFixed(1)}px"><span>${no}ページ目</span></div>`);
+        };
+        // 途中では切らない塊。入れ子になっているものは外側だけを数える。
+        const atoms = Array.from(page.querySelectorAll(PRINT_ATOM_SEL));
+        const blocks = atoms
+          .filter((el) => !atoms.some((o) => o !== el && o.contains(el)))
+          .map(boxOf)
+          .sort((a, b) => a.top - b.top);
+        let y = 15 * MM; // 1ページ目の本文の始まり
+        const cover = page.querySelector('.print-cover');
+        if (cover) { y = boxOf(cover).bottom; emit(y); } // 表紙は余白0の専用ページを丸ごと使う
+        const toc = page.querySelector('.print-toc');
+        if (toc) {
+          const end = boxOf(toc).bottom;
+          paginateBreaks(blocks, contentH, end, y).forEach(emit); // 目次が2ページ以上のとき
+          y = end;
+          emit(y);
         }
+        paginateBreaks(blocks, contentH, total, y).forEach(emit);
       };
       const relayoutPreview = () => { fitPage(); drawPageBreaks(); };
       // モーダル幅が変わると縮小率も変わるので引き直す。モーダルを閉じたら自分で外れる。
@@ -8935,6 +8974,7 @@
         normalizeObjColors, pointInPoly, marqueeRect, rectContainsBounds,
         // PDF出力の倍率・用紙・向き
         clampPdfScale, pdfPaperDims, pdfPageStyleCss, pdfOutSettings, setPdfOutSettings,
+        paginateBreaks,
         // サムネイルサイドバー
         thumbStepModel, renderThumbSidebar, updateThumbSidebar, thumbsCollapsed, setThumbsCollapsed,
         clampThumbsWidth, thumbsWidth, setThumbsWidth,

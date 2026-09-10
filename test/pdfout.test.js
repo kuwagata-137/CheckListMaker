@@ -59,3 +59,66 @@ test('pdfout — 倍率・用紙・向き', async (t) => {
     assert.deepEqual(plain(T.pdfOutSettings()), { scale: 30, paper: 'A4', orient: 'portrait' }, '不正値は安全側に倒す');
   });
 });
+test('pdfout — 改ページ位置（純関数）', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+
+  // A4縦の本文高さ（297mm - 上下15mm）を px にしたもの。テストでは丸い 1000 を使う。
+  const H = 1000;
+
+  await t.test('切れない塊が無ければ、1ページ分の高さで等間隔に刻む', () => {
+    assert.deepEqual(plain(T.paginateBreaks([], H, 3500, 0)), [1000, 2000, 3000]);
+    assert.deepEqual(plain(T.paginateBreaks([], H, 900, 0)), [], '1ページに収まれば線は要らない');
+  });
+
+  await t.test('start から数え始める（表紙・目次の下端を起点にできる）', () => {
+    assert.deepEqual(plain(T.paginateBreaks([], H, 2600, 500)), [1500, 2500]);
+  });
+
+  await t.test('境界にかかった塊は、その塊の先頭まで改ページを繰り上げる', () => {
+    // 950〜1120 の手順カードが 1000 の境界をまたぐ → 実際は丸ごと次ページへ送られる
+    const blocks = [{ top: 950, bottom: 1120 }];
+    assert.deepEqual(plain(T.paginateBreaks(blocks, H, 2500, 0)), [950, 1950],
+      '2ページ目以降も送ったぶんだけ後ろへずれる');
+  });
+
+  await t.test('1ページに収まらない塊は送らない（実際にも分割される）', () => {
+    const blocks = [{ top: 100, bottom: 1500 }]; // 高さ1400 > 1ページ
+    assert.deepEqual(plain(T.paginateBreaks(blocks, H, 2500, 0)), [1000, 2000]);
+  });
+
+  await t.test('送りは連鎖する。位置は必ず前へ進み、無限ループしない', () => {
+    // 900〜1100 を2ページ目へ送ると、2ページ目に残るのは 900〜1900。
+    // 次の 1100〜2000 はそこへ収まらないので、さらに3ページ目へ送られる。
+    const blocks = [{ top: 900, bottom: 1100 }, { top: 1100, bottom: 2000 }];
+    const out = plain(T.paginateBreaks(blocks, H, 3000, 0));
+    assert.deepEqual(out, [900, 1100, 2100]);
+    assert.ok(out.every((v, i) => i === 0 || v > out[i - 1]), '位置は必ず前へ進む');
+  });
+
+  await t.test('ページ先頭から始まる塊は送らない（送っても同じ位置なので）', () => {
+    assert.deepEqual(plain(T.paginateBreaks([{ top: 0, bottom: 1100 }], H, 2500, 0)), [1000, 2000]);
+  });
+
+  await t.test('複数の塊があっても、境界をまたぐものだけが効く', () => {
+    const blocks = [
+      { top: 100, bottom: 300 },   // 1ページ目に収まる
+      { top: 980, bottom: 1200 },  // 1000 をまたぐ
+      { top: 1300, bottom: 1500 }, // 2ページ目に収まる
+    ];
+    assert.deepEqual(plain(T.paginateBreaks(blocks, H, 2000, 0)), [980, 1980]);
+  });
+
+  await t.test('紙面の終わりを越える線は出さない', () => {
+    assert.deepEqual(plain(T.paginateBreaks([], H, 1001, 0)), [], '残り 1px なら線は要らない');
+    assert.deepEqual(plain(T.paginateBreaks([], H, 1500, 0)), [1000]);
+  });
+
+  await t.test('壊れた入力でも落ちない', () => {
+    assert.deepEqual(plain(T.paginateBreaks(null, H, 2500, 0)), [1000, 2000], 'blocks が無くても刻む');
+    assert.deepEqual(plain(T.paginateBreaks([], 0, 2500, 0)), [], '本文高が0なら計算しない');
+    assert.deepEqual(plain(T.paginateBreaks([], NaN, 2500, 0)), []);
+    assert.deepEqual(plain(T.paginateBreaks([], H, 2500, NaN)), [1000, 2000], 'start が非数なら0とみなす');
+  });
+});
