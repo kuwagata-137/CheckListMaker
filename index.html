@@ -8021,7 +8021,10 @@
       const btn = e.target.closest('[data-action]');
       if (!btn) return;
       const action = btn.dataset.action;
-      if (!['insert-item-after', 'add-image', 'edit-image', 'delete-image', 'move-item-up', 'move-item-down', 'merge-item-up'].includes(action)) return;
+      // edit-image はここに入れないこと。サムネイル(.thumb)は draggable なドラッグソース
+      // でもあり、pointerdown の preventDefault は互換 mousedown ごと抑止するため
+      // dragstart が発火しなくなる（画像コピー D&D が丸ごと死ぬ）。click 側で処理する。
+      if (!['insert-item-after', 'add-image', 'delete-image', 'move-item-up', 'move-item-down', 'merge-item-up'].includes(action)) return;
       e.preventDefault();
       const c = currentChecklist();
       if (!c) return;
@@ -8047,8 +8050,6 @@
         });
       } else if (action === 'add-image') {
         pickAndAddImage(c, sectionId, itemId);
-      } else if (action === 'edit-image') {
-        openImageEditor(c, sectionId, itemId, index);
       } else if (action === 'delete-image') {
         if (confirm('この画像を削除しますか？')) {
           store.commit((s) =>
@@ -8199,6 +8200,7 @@
       const id = btn.dataset.id;
       const sectionId = btn.dataset.section;
       const itemId = btn.dataset.item;
+      const index = btn.dataset.index !== undefined ? Number(btn.dataset.index) : -1;
       const c = currentChecklist();
       // メニューの項目を選んだら閉じる（アクション自体はこのまま下で処理する）
       if (btn.closest('.tb-menu')) { hideTip(); tbCloseMenu(); }
@@ -8233,6 +8235,11 @@
             store.commit((s) => M.removeChecklist(s, id));
           return;
         }
+        // サムネイルは draggable なので pointerdown では処理できない（上のコメント参照）。
+        // 入力欄の確定はブラウザ標準の blur→change に任せる（commitInPlace で再描画しない
+        // ため、確定してもサムネイル自身は消えない）。
+        case 'edit-image':
+          return c && openImageEditor(c, sectionId, itemId, index);
         case 'toggle-thumbs':
           return setThumbsCollapsed(!thumbsCollapsed());
         case 'goto-section':

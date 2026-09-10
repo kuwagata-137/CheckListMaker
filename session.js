@@ -204,9 +204,17 @@ function endSession(opts = {}) {
   const s = current;
   current = null;
   if (s.seq === 0) {
+    // fs.rmSync は使わないこと。Node 24 + Windows では、パスに非ASCII文字が含まれると
+    // 成功を返しながら1件も消さない（ファイル名が非ASCIIだとプロセスごと落ちる）。
+    // セッション名はチェックリスト名＝日本語が普通なので必ず踏む。Electron 31 では
+    // 再現しないため実機は無事だが、テストは system node で走るのでここで顕在化する。
     try {
-      fs.rmSync(infoPath(s.dir), { force: true });
-      fs.rmdirSync(s.dir); // 空でなければ throw → 下の catch で残す
+      fs.unlinkSync(infoPath(s.dir));
+    } catch (err) {
+      if (err.code !== 'ENOENT') console.error('session.json を削除できませんでした:', err);
+    }
+    try {
+      fs.rmdirSync(s.dir); // 空でなければ ENOTEMPTY → 中身があるので消さずに残す
       return { dir: s.dir, shots: 0, removed: true };
     } catch (err) {
       console.error('空のセッションフォルダを削除できませんでした:', err);
