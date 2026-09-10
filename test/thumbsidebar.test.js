@@ -332,3 +332,168 @@ test('thumbsidebar — 取り込みの挿入位置（純関数）', async (t) =>
     assert.deepEqual(plain(bare.items).map((i) => i.id), ['x']);
   });
 });
+test('thumbsidebar — サイドバーの幅', async (t) => {
+  // 幅の確認は必ず --thumbs-w のインライン値で行う。jsdom は var() を解決しないので
+  // getComputedStyle(#thumbs).width は "var(--thumbs-w, 220px)" という文字列を返す。
+  const wvar = (doc) => doc.documentElement.style.getPropertyValue('--thumbs-w');
+  // jsdom に PointerEvent は無い。MouseEvent は clientX / buttons を持つので代用できる
+  // （buttons: 1 を付けないと pointermove の「窓の外で離された」判定に引っかかる）。
+  const pe = (win, type, x, buttons = 1) =>
+    new win.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, buttons });
+
+  const openEditor = async (app, w = 1400) => {
+    app.window.innerWidth = w; // 上限は「窓幅 − 本文に残す 520px」で決まるので明示する
+    const T = await app.api();
+    app.window.location.hash = '#/c/c1';
+    await waitFor(() => app.document.querySelector('#thumbs .tsb-card'), { label: 'サイドバー' });
+    return T;
+  };
+
+  await t.test('clampThumbsWidth — 上下限と、窓幅に応じた頭打ち（純関数）', async () => {
+    const app = bootApp();
+    t.after(() => app.close());
+    const T = await app.api();
+
+    assert.equal(T.clampThumbsWidth(300, 1400), 300, '範囲内はそのまま');
+    assert.equal(T.clampThumbsWidth(80, 1400), 150, '最小 150px で止まる');
+    assert.equal(T.clampThumbsWidth(9999, 1400), 520, '最大 520px で止まる');
+    assert.equal(T.clampThumbsWidth(300.4, 1400), 300, '小数は丸めて px にする');
+
+    assert.equal(T.clampThumbsWidth(null, 1400), 220, '未設定は既定の 220px');
+    assert.equal(T.clampThumbsWidth('', 1400), 220, '空欄も既定（Number(null)=0 に落とさない）');
+    assert.equal(T.clampThumbsWidth('abc', 1400), 220, '数値でなければ既定');
+    assert.equal(T.clampThumbsWidth(-40, 1400), 150, '負値は最小へ丸める');
+
+    assert.equal(T.clampThumbsWidth(500, 700), 180, '狭い窓では本文ぶん 520px を残す');
+    assert.equal(T.clampThumbsWidth(500, 400), 150, '本文ぶんが取れなくても最小は割らない');
+    assert.equal(T.clampThumbsWidth(9999, 0), 520, '窓幅が取れないときは最大まで許す');
+  });
+
+  await t.test('幅は設定に残り、Undo 履歴を汚さない', async () => {
+    const app = bootApp({ localStorage: { [STORAGE_KEY]: JSON.stringify(seedState()) } });
+    t.after(() => app.close());
+    const T = await openEditor(app);
+
+    assert.equal(T.thumbsWidth(), 220, '既定は従来と同じ 220px');
+    assert.equal(wvar(app.document), '220px');
+
+    const before = T.store.canUndo();
+    T.setThumbsWidth(360);
+
+    assert.equal(T.thumbsWidth(), 360);
+    assert.equal(T.store.state.settings.thumbsWidth, 360, '設定に保存される');
+    assert.equal(T.store.canUndo(), before, '見た目の設定は Undo 履歴に積まない');
+    assert.equal(wvar(app.document), '360px', '本文の押し出しも同じ値で追随する');
+  });
+
+  await t.test('範囲外の指定は丸めて保存する', async () => {
+    const app = bootApp({ localStorage: { [STORAGE_KEY]: JSON.stringify(seedState()) } });
+    t.after(() => app.close());
+    const T = await openEditor(app);
+
+    T.setThumbsWidth(9999);
+    assert.equal(T.store.state.settings.thumbsWidth, 520, '最大で頭打ち');
+    T.setThumbsWidth(10);
+    assert.equal(T.store.state.settings.thumbsWidth, 150, '最小で止まる');
+  });
+
+  await t.test('掴み手が出る。折りたたんでも保存幅は失われない', async () => {
+    const seed = seedState();
+    seed.settings.thumbsWidth = 300;
+    const app = bootApp({ localStorage: { [STORAGE_KEY]: JSON.stringify(seed) } });
+    t.after(() => app.close());
+    const T = await openEditor(app);
+
+    const grip = app.document.querySelector('#thumbs .tsb-resizer');
+    assert.ok(grip, '掴み手がある');
+    assert.equal(grip.getAttribute('role'), 'separator');
+    assert.equal(grip.getAttribute('aria-valuenow'), '300', '今の幅を読み上げられる');
+    assert.equal(wvar(app.document), '300px', '保存幅で開く');
+
+    const toggle = () => app.document.querySelector('[data-action="toggle-thumbs"]')
+      .dispatchEvent(new app.window.MouseEvent('click', { bubbles: true }));
+
+    toggle();
+    assert.equal(T.thumbsCollapsed(), true);
+    assert.equal(wvar(app.document), '30px', '折りたたみ幅は保存幅とは別');
+
+    toggle();
+    assert.equal(wvar(app.document), '300px', '開き直すと元の幅（220px に戻らない）');
+  });
+
+  await t.test('ドラッグ中は保存せず、離したときに1回だけ保存する', async () => {
+    const app = bootApp({ localStorage: { [STORAGE_KEY]: JSON.stringify(seedState()) } });
+    t.after(() => app.close());
+    const T = await openEditor(app);
+    const win = app.window;
+    const doc = app.document;
+
+    let saves = 0;
+    const orig = T.store.adapter.save.bind(T.store.adapter);
+    T.store.adapter.save = (s) => { saves += 1; return orig(s); };
+    const undoBefore = T.store.canUndo();
+
+    doc.querySelector('#thumbs .tsb-resizer').dispatchEvent(pe(win, 'pointerdown', 220));
+    for (const x of [240, 260, 280, 300]) doc.dispatchEvent(pe(win, 'pointermove', x));
+
+    assert.equal(wvar(doc), '300px', 'ドラッグ中も見た目は追随する');
+    assert.equal(saves, 0, 'ドラッグ中は1度も保存しない');
+    assert.equal(T.store.state.settings.thumbsWidth, undefined);
+
+    doc.dispatchEvent(pe(win, 'pointerup', 300, 0));
+    assert.equal(saves, 1, '離したときに1回だけ保存する');
+    assert.equal(T.store.state.settings.thumbsWidth, 300);
+    assert.equal(T.store.canUndo(), undoBefore, '見た目の設定は Undo 履歴に積まない');
+  });
+
+  await t.test('動かさずに離しただけなら保存しない', async () => {
+    const app = bootApp({ localStorage: { [STORAGE_KEY]: JSON.stringify(seedState()) } });
+    t.after(() => app.close());
+    const T = await openEditor(app);
+    const win = app.window;
+    const doc = app.document;
+
+    let saves = 0;
+    const orig = T.store.adapter.save.bind(T.store.adapter);
+    T.store.adapter.save = (s) => { saves += 1; return orig(s); };
+
+    doc.querySelector('#thumbs .tsb-resizer').dispatchEvent(pe(win, 'pointerdown', 220));
+    doc.dispatchEvent(pe(win, 'pointerup', 220, 0));
+
+    assert.equal(saves, 0, 'クリックしただけで保存を1世代回さない');
+    assert.equal(wvar(doc), '220px');
+  });
+
+  await t.test('ドラッグ中に再描画されても続けられる', async () => {
+    // 掴み手はサイドバーの innerHTML ごと作り直される。リスナーを掴み手に直付けしたり、
+    // applyThumbsChrome が保存値へ引き戻したりすると、ここで落ちる。
+    const app = bootApp({ localStorage: { [STORAGE_KEY]: JSON.stringify(seedState()) } });
+    t.after(() => app.close());
+    const T = await openEditor(app);
+    const win = app.window;
+    const doc = app.document;
+
+    doc.querySelector('#thumbs .tsb-resizer').dispatchEvent(pe(win, 'pointerdown', 220));
+    doc.dispatchEvent(pe(win, 'pointermove', 280));
+    assert.equal(wvar(doc), '280px');
+
+    T.updateThumbSidebar(T.store.state.checklists[0]); // 途中で再描画が走る
+    assert.equal(wvar(doc), '280px', '再描画で保存値へ引き戻されない');
+
+    doc.dispatchEvent(pe(win, 'pointermove', 320));
+    assert.equal(wvar(doc), '320px', '作り直された後もドラッグが続く');
+    doc.dispatchEvent(pe(win, 'pointerup', 320, 0));
+    assert.equal(T.store.state.settings.thumbsWidth, 320);
+  });
+
+  await t.test('保存幅が広すぎても、狭い窓では丸めるだけで保存値は残す', async () => {
+    const seed = seedState();
+    seed.settings.thumbsWidth = 500;
+    const app = bootApp({ localStorage: { [STORAGE_KEY]: JSON.stringify(seed) } });
+    t.after(() => app.close());
+    const T = await openEditor(app, 800); // 上限は 800-520 = 280px
+
+    assert.equal(T.thumbsWidth(), 280, '表示は窓に収まる幅へ丸める');
+    assert.equal(T.store.state.settings.thumbsWidth, 500, '保存値は書き換えない');
+  });
+});

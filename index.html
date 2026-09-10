@@ -578,16 +578,35 @@
     flex-direction: column;
     padding: 16px;
   }
+  /* ツールバーは2段。1段目＝描画モード（右端にヘルプ）、2段目＝色・太さ・書式・表示。
+     .ie-controls の flex-basis:100% が段を折るので、ヘルプは必ず1段目の右端＝画面の一番右上に来る。 */
   .ie-toolbar {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: flex-start;
     gap: 10px;
     margin-bottom: 12px;
   }
-  .ie-tools { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+  .ie-tools { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; flex: 1 1 auto; }
+  .ie-controls { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; flex: 1 1 100%; }
+  /* アイコンボタンと、その名前。名前はボタンの枠の外・下に別行で置く（枠の中はアイコンだけ）。 */
+  .ie-toolitem { display: inline-flex; flex-direction: column; align-items: center; min-width: 58px; }
+  .ie-toolitem[hidden] { display: none; } /* display 指定が UA の [hidden] を上書きするため明示 */
+  .ie-toolitem.ie-help { margin-left: auto; }
+  .ie-toolname {
+    margin-top: 4px;
+    font-size: 11px;
+    line-height: 1.1;
+    white-space: nowrap; /* 「トリミング」「塗りつぶし」でも折り返さない */
+    color: var(--muted);
+  }
+  .ie-tool.active + .ie-toolname { color: var(--primary); }
+  /* スライダー類も「名前が上・中身が下」に揃え、アイコンボタンと高さを合わせる。 */
+  .ie-field { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+  .ie-field[hidden] { display: none; } /* display 指定が UA の [hidden] を上書きしてしまうため明示 */
+  .ie-fieldname { font-size: 11px; line-height: 1.1; white-space: nowrap; color: var(--muted); }
+  .ie-fieldbody { display: inline-flex; align-items: center; gap: 6px; height: 44px; font-size: 0.8rem; color: var(--muted); }
   /* 編集中だけ対象画像を拡大縮小する表示用ズーム（仕上がり＝保存内容には影響しない）。 */
-  .ie-zoom { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted); }
   .ie-zoom input[type="range"] { width: 130px; vertical-align: middle; }
   .ie-zoom .ie-zoom-num {
     width: 58px;
@@ -611,8 +630,8 @@
   }
   .ie-zoom .ie-zoom-fit:hover { background: var(--surface-2); }
   .ie-tool {
-    width: 34px;
-    height: 34px;
+    width: 44px;
+    height: 44px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -620,34 +639,36 @@
     border-radius: 8px;
     background: var(--surface);
     color: var(--text);
-    font-size: 1rem;
     cursor: pointer;
+    padding: 0;
   }
-  .ie-tool:hover { background: var(--surface-2); }
+  .ie-tool:hover:not(:disabled) { background: var(--surface-2); }
   .ie-tool.active { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
-  /* SVGライン アイコン（ハンド/吹き出し/ペン/ハイライト/消しゴム）。currentColor で
+  .ie-tool:disabled { opacity: 0.45; cursor: default; }
+  .ie-tool:disabled + .ie-toolname { opacity: 0.55; }
+  /* アイコンは全て線画のインライン SVG（文字グリフは使わない）。currentColor で
      選択時の白反転（.ie-tool.active）に追従する。 */
   .ie-ic {
-    width: 19px;
-    height: 19px;
+    width: 26px;
+    height: 26px;
     display: block;
     fill: none;
     stroke: currentColor;
-    stroke-width: 1.9;
+    stroke-width: 1.7;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
-  .ie-color-btn {
-    display: inline-flex; align-items: center; gap: 4px;
-    width: auto; height: 34px; padding: 0 8px;
-    border: 1px solid var(--border); border-radius: 8px;
-    background: var(--surface); color: var(--text); cursor: pointer;
+  /* 色ボタン（線色・塗りつぶし・文字色）。枠の下端に今の色を敷く。 */
+  .ie-color-btn { position: relative; padding-bottom: 7px; }
+  .ie-color-chip {
+    position: absolute; left: 6px; right: 6px; bottom: 5px; height: 5px;
+    border-radius: 2px; border: 1px solid rgba(0,0,0,.25);
   }
-  .ie-color-chip { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(0,0,0,.25); }
+  /* 「線なし」「塗りつぶしなし」は赤い斜線ハッチで示す */
+  .ie-color-chip.none { background: repeating-linear-gradient(45deg, #fff 0 3px, #e24b4a 3px 4px); }
   .ie-size input { vertical-align: middle; }
   /* テキスト/吹き出しの書式（サイズ・太字・斜体）。対象ツール/オブジェクトのときだけ表示。
      文字サイズは本文編集と共通の Word 風コンボ（.rb-sizebox）を使う。 */
-  .ie-textfmt { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; color: var(--muted); }
   .ie-fmt {
     width: 34px;
     height: 34px;
@@ -660,7 +681,6 @@
   }
   .ie-fmt:hover { background: var(--surface-2); }
   .ie-fmt.active { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
-  .ie-opacity { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; color: var(--muted); }
   .ie-opacity input[type="range"] { width: 90px; vertical-align: middle; }
   .ie-opacity .ie-opacity-val { min-width: 3em; }
   .ie-canvas-wrap {
@@ -686,6 +706,7 @@
     touch-action: none;
     cursor: crosshair;
   }
+  .ie-canvas.tool-select { cursor: default; } /* 通常のカーソルと同じ見た目 */
   .ie-canvas.tool-hand { cursor: grab; }
   .ie-canvas.tool-hand.panning { cursor: grabbing; }
   .ie-canvas.tool-crop { cursor: default; }
@@ -720,13 +741,23 @@
     box-sizing: content-box;
     text-align: left;
   }
-  .ie-crop-actions { display: inline-flex; gap: 6px; }
+  .ie-crop-actions { display: inline-flex; align-items: center; gap: 6px; height: 44px; }
   /* display 指定が UA の [hidden]{display:none} を上書きしてしまうため明示する。
      これが無いとトリミング適用/取消ボタンが常時表示になる。 */
   .ie-crop-actions[hidden] { display: none; }
   .ie-crop-actions .btn { padding: 6px 10px; }
   .ie-actions { display: flex; gap: 8px; margin-top: 12px; }
-  .ie-hint { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
+  /* 使い方はツールバー右上の「ヘルプ」から開く読み物にする（画面下の長文は廃止）。 */
+  .modal.ie-help-doc { max-width: 760px; max-height: 84vh; display: flex; flex-direction: column; }
+  .ie-help-body { overflow: auto; margin: 0 -4px; padding: 0 4px; }
+  .ie-help-body h4 { margin: 16px 0 6px; font-size: 0.95rem; }
+  .ie-help-body h4:first-child { margin-top: 4px; }
+  .ie-help-body ul { margin: 0; padding-left: 1.25em; }
+  .ie-help-body li { margin: 3px 0; color: var(--text); line-height: 1.6; }
+  .ie-help-body kbd {
+    font: inherit; font-size: 0.85em; padding: 1px 5px; border: 1px solid var(--border-strong);
+    border-bottom-width: 2px; border-radius: 5px; background: var(--surface-2); white-space: nowrap;
+  }
 
   /* ドラッグ中 */
   .dragging { opacity: 0.5; }
@@ -1026,21 +1057,43 @@
 
   /* ---- サムネイルサイドバー（仕様は docs/spec-thumbnail-sidebar-and-import-insert.md） ----
      テンプレート型の編集画面でだけ出す固定サイドバー。#app には編集ズーム（zoom）が
-     掛かっているため、その外側（兄弟要素）に置いて等倍のまま保つ。 */
+     掛かっているため、その外側（兄弟要素）に置いて等倍のまま保つ。
+     幅は --thumbs-w だけが持つ（非表示=0 / 折りたたみ=30px / 展開=ユーザーの保存幅）。
+     サイドバー自身と本文の押し出しが同じ値を見るので、両者がずれようがない。 */
   :root { --thumbs-w: 0px; }
   body { padding-left: var(--thumbs-w); }
   #thumbs {
     position: fixed;
     top: 0; left: 0; bottom: 0;
-    width: 220px;
+    /* フォールバックを書いておく。--thumbs-w が未定義になると width は auto に落ち、
+       中身（画像）の幅まで広がってしまうため。 */
+    width: var(--thumbs-w, 220px);
     z-index: 20;
     display: none;
     flex-direction: column;
     background: var(--surface);
     border-right: 1px solid var(--border);
+    /* 幅に連れて育てる内部寸法。係数は「既定の 220px でいまと同じ値になる」ように
+       決めてある（220px のユーザーは見た目が1pxも変わらない）。 */
+    --tsb-no-w:   clamp(16px,    calc(var(--thumbs-w, 220px) * 0.091),  28px);    /* 20px    @220 */
+    --tsb-no-fs:  clamp(0.62rem, calc(var(--thumbs-w, 220px) * 0.0495), 0.82rem); /* 0.68rem @220 */
+    --tsb-cap-fs: clamp(0.68rem, calc(var(--thumbs-w, 220px) * 0.0524), 0.86rem); /* 0.72rem @220 */
+    --tsb-pad:    clamp(6px,     calc(var(--thumbs-w, 220px) * 0.036),  14px);    /* 8px     @220 */
   }
   body.has-thumbs #thumbs { display: flex; }
-  #thumbs.is-collapsed { width: 30px; }
+  /* 幅を変える掴み手。右へ少しはみ出させて掴みやすくする（枠線の上に重ねる）。 */
+  .tsb-resizer {
+    position: absolute; top: 0; bottom: 0; right: -3px; width: 7px;
+    padding: 0; border: 0; background: transparent;
+    cursor: col-resize; touch-action: none;
+  }
+  .tsb-resizer:hover, .tsb-resizer:focus-visible, body.tsb-resizing .tsb-resizer {
+    background: color-mix(in srgb, var(--primary) 35%, transparent);
+    outline: none;
+  }
+  #thumbs.is-collapsed .tsb-resizer { display: none; }
+  /* ドラッグ中は本文の文字選択とカーソルのちらつきを止める */
+  body.tsb-resizing { cursor: col-resize; user-select: none; }
   .tsb-head {
     display: flex; align-items: center; gap: 6px;
     padding: 9px 6px 9px 12px;
@@ -1051,7 +1104,10 @@
   .tsb-head .tsb-ttl { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; }
   #thumbs.is-collapsed .tsb-head { padding: 9px 2px; justify-content: center; }
   #thumbs.is-collapsed .tsb-scroll { display: none; }
-  .tsb-scroll { flex: 1; overflow-y: auto; padding: 8px 8px 14px; display: flex; flex-direction: column; }
+  .tsb-scroll {
+    flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+    padding: var(--tsb-pad) var(--tsb-pad) calc(var(--tsb-pad) * 1.75);
+  }
 
   /* フェーズの区切りは色を増やさず「見出しバー＋左の縦罫＋余白」で出す */
   .tsb-phase { display: flex; flex-direction: column; }
@@ -1076,9 +1132,12 @@
     min-height: 10px;
   }
 
+  /* サムネイルは幅に追随する。画像（.tsb-shot）は width:100% なので放っておいても
+     伸び縮みするが、番号欄と文字だけ固定値だと広げたとき絵に対して貧相になるので、
+     #thumbs の --tsb-* に連動させて一緒に育てる（clamp で行き過ぎは止める）。 */
   .tsb-card {
     position: relative;
-    display: grid; grid-template-columns: 20px 1fr; gap: 7px;
+    display: grid; grid-template-columns: var(--tsb-no-w) 1fr; gap: 7px;
     padding: 5px; border: 1px solid transparent; border-radius: 8px;
     background: transparent; color: inherit; font: inherit; text-align: left;
     cursor: pointer;
@@ -1088,7 +1147,7 @@
   .tsb-card.is-current { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
   .tsb-card.is-current .tsb-no { color: var(--primary); }
   .tsb-no {
-    font-size: 0.68rem; font-weight: 700; color: var(--muted);
+    font-size: var(--tsb-no-fs); font-weight: 700; color: var(--muted);
     text-align: center; padding-top: 2px; font-variant-numeric: tabular-nums;
   }
   .tsb-fig { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
@@ -1103,7 +1162,7 @@
     display: flex; align-items: center; justify-content: center;
   }
   .tsb-cap {
-    font-size: 0.72rem; color: var(--muted); line-height: 1.35;
+    font-size: var(--tsb-cap-fs); color: var(--muted); line-height: 1.35;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .tsb-ops {
@@ -1146,6 +1205,9 @@
   .print-step {
     background: #F3F6FA; border: 1px solid #E2E8F1; border-left: 5px solid var(--print-accent);
     border-radius: 3px; padding: 10px 14px; margin-bottom: 28px;
+    /* カードごと次ページへ送る。中身（.print-step-keep）だけを avoid にしていた頃は、
+       薄塗りの枠の上辺と padding だけが前ページに取り残されて切れて見えた。 */
+    break-inside: avoid;
   }
   .print-step-keep { break-inside: avoid; } /* 手順と最初の画像を同ページに保つ */
   .print-step-head { display: flex; align-items: baseline; gap: 8px; }
@@ -1251,7 +1313,8 @@
     padding: 15mm 25mm;
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.45);
   }
-  /* 改ページの目安線。break-inside:avoid による送りまでは再現しないので「目安」。 */
+  /* 改ページ線。break-inside:avoid の塊（手順カード・図・表）は丸ごと次ページへ送られるので、
+     その送りも含めて実際の位置に引く（計算は paginateBreaks）。 */
   .pp-break { position: absolute; left: 0; right: 0; border-top: 1px dashed #b3272d; pointer-events: none; }
   .pp-break span {
     position: absolute; right: 3px; top: 2px;
@@ -3018,6 +3081,43 @@
         }),
       }));
     }
+    // サイドバーの幅。既定は従来と同じ 220px で、150〜520px の範囲でドラッグして変えられる。
+    // 折りたたみ時の 30px は「幅」ではなく別状態なので、この範囲には含めない。
+    const THUMBS_W_DEFAULT = 220;
+    const THUMBS_W_MIN = 150;  // これ以下だとサムネイルが 85px 程度になり絵で判別できない
+    const THUMBS_W_MAX = 520;  // #app は max-width:880px の中央寄せ。本文を潰さない上限
+    const THUMBS_W_COLLAPSED = 30;
+    const THUMBS_W_STEP = 16;  // キーボード（←/→）での1回ぶん
+    const THUMBS_EDITOR_MIN_W = 520; // 本文側に必ず残す幅。#topbar は flex-wrap しないので
+                                     // ここを削ると横スクロールが出てしまう
+    // -- 純関数（テスト対象。window.__test__ に公開） --
+    // 保存幅を使える値に丸める。窓が狭いときは本文ぶんを残せる幅までしか許さない。
+    function clampThumbsWidth(px, viewportW) {
+      if (px == null || px === '') return THUMBS_W_DEFAULT; // Number(null)=0 に落とさない
+      const n = Math.round(Number(px));
+      if (!Number.isFinite(n)) return THUMBS_W_DEFAULT;
+      const vw = Number(viewportW);
+      // 下限は窓の広さに関わらず必ず守る（狭い窓でも 150px は確保する）
+      const max = Number.isFinite(vw) && vw > 0
+        ? Math.max(THUMBS_W_MIN, Math.min(THUMBS_W_MAX, vw - THUMBS_EDITOR_MIN_W))
+        : THUMBS_W_MAX;
+      return Math.max(THUMBS_W_MIN, Math.min(max, n));
+    }
+    // 読み出しでもクランプするが、保存値そのものは書き換えない（狭い窓で開いただけで
+    // ユーザーの設定した幅を失わないため）。
+    function thumbsWidth() {
+      const s = store.state.settings;
+      const saved = s && s.thumbsWidth != null ? s.thumbsWidth : THUMBS_W_DEFAULT;
+      return clampThumbsWidth(saved, window.innerWidth);
+    }
+    function setThumbsWidth(px) {
+      // 見た目の設定なので Undo 履歴には積まない（thumbsCollapsed と同じ扱い）
+      commitInPlace((s) => {
+        s.settings = s.settings || {};
+        s.settings.thumbsWidth = clampThumbsWidth(px, window.innerWidth);
+      }, { history: false });
+      applyThumbsChrome(); // commitInPlace は再描画しないので幅は自分で反映する
+    }
     function thumbsCollapsed() {
       const s = store.state.settings;
       return !!(s && s.thumbsCollapsed);
@@ -3071,6 +3171,10 @@
         .join('');
       const collapsed = thumbsCollapsed();
       return `
+        <div class="tsb-resizer" role="separator" aria-orientation="vertical"
+             aria-label="サムネイルの幅" tabindex="0"
+             aria-valuemin="${THUMBS_W_MIN}" aria-valuemax="${THUMBS_W_MAX}" aria-valuenow="${thumbsWidth()}"
+             title="ドラッグで幅を変える（ダブルクリックで既定に戻す・←/→ でも動く）"></div>
         <div class="tsb-head">
           ${collapsed ? '' : '<span class="tsb-ttl">サムネイル</span>'}
           <button class="icon" type="button" data-action="toggle-thumbs"
@@ -3092,12 +3196,19 @@
       }
       return thumbsEl;
     }
-    // 表示状態と、本文を右へ寄せるための幅（--thumbs-w）を反映する。
+    // 表示状態と幅（--thumbs-w）を反映する。この変数だけがサイドバーの幅と、
+    // 本文を右へ寄せる padding の両方を決める。
     function applyThumbsChrome() {
+      // ドラッグ中は暫定の幅を守る。この最中に render()（＝store の購読）や resize が
+      // 走ると、保存値へ引き戻されて掴んだ手とサイドバーがずれてしまう。
+      if (thumbsDrag) return;
       const on = document.body.classList.contains('has-thumbs');
       const collapsed = thumbsCollapsed();
       if (thumbsEl) thumbsEl.classList.toggle('is-collapsed', collapsed);
-      document.documentElement.style.setProperty('--thumbs-w', on ? (collapsed ? '30px' : '220px') : '0px');
+      const w = !on ? 0 : collapsed ? THUMBS_W_COLLAPSED : thumbsWidth();
+      document.documentElement.style.setProperty('--thumbs-w', w + 'px');
+      const grip = thumbsEl && thumbsEl.querySelector('.tsb-resizer');
+      if (grip) grip.setAttribute('aria-valuenow', String(w));
     }
     // render() から呼ぶ。編集画面のときだけ中身を作って出す（テンプレート型・ToDo 型の両方）。
     function updateThumbSidebar(checklist) {
@@ -3158,6 +3269,60 @@
       // Ctrl+0（または ⌘+0）で等倍に戻す。
       window.addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === '0') { editorZoom = 1; apply(); }
+      });
+    }
+    // サイドバーの右端を掴んで幅を変える。ドラッグ中は --thumbs-w を書くだけにして、
+    // 離したときに1度だけ保存する（store.commit は毎回 state 全体を書き出すため、
+    // pointermove ごとに呼ぶとカクつき、Electron では .bak が何百世代も回ってしまう）。
+    let thumbsDrag = null; // ドラッグ中 { id, x, w, applied, moved }
+    function endThumbsDrag() {
+      if (!thumbsDrag) return;
+      const { moved, applied, w } = thumbsDrag;
+      thumbsDrag = null; // 先に畳んでおく（applyThumbsChrome の早期 return を解く）
+      document.body.classList.remove('tsb-resizing');
+      if (moved && applied !== w) setThumbsWidth(applied);
+      else applyThumbsChrome(); // 動かさずに離しただけ。保存はせず表示だけ整える
+    }
+    function initThumbsResize() {
+      const gripOf = (e) => (e.target && e.target.closest ? e.target.closest('.tsb-resizer') : null);
+      document.addEventListener('pointerdown', (e) => {
+        const grip = gripOf(e);
+        if (!grip || e.button !== 0 || thumbsCollapsed()) return;
+        // preventDefault: 掴んでいる間の文字選択と、入力欄からのフォーカス移動を止める。
+        // blur させないので change → commitInPlace → 再描画の連鎖もドラッグ中は起きない。
+        e.preventDefault();
+        const w = thumbsWidth();
+        thumbsDrag = { id: e.pointerId, x: e.clientX, w, applied: w, moved: false };
+        try { grip.setPointerCapture?.(e.pointerId); } catch (_) { /* jsdom には無い */ }
+        document.body.classList.add('tsb-resizing');
+      });
+      document.addEventListener('pointermove', (e) => {
+        if (!thumbsDrag || e.pointerId !== thumbsDrag.id) return;
+        // 窓の外でボタンを離されると pointerup が来ないことがある。押されていなければ畳む。
+        if (e.buttons === 0) { endThumbsDrag(); return; }
+        const px = clampThumbsWidth(thumbsDrag.w + (e.clientX - thumbsDrag.x), window.innerWidth);
+        if (px === thumbsDrag.applied) return; // 同じ値を毎フレーム書かない
+        thumbsDrag.applied = px;
+        thumbsDrag.moved = true;
+        document.documentElement.style.setProperty('--thumbs-w', px + 'px');
+      });
+      const endDrag = (e) => {
+        if (!thumbsDrag || (e && e.pointerId !== thumbsDrag.id)) return;
+        endThumbsDrag();
+      };
+      document.addEventListener('pointerup', endDrag);
+      document.addEventListener('pointercancel', endDrag);
+      // ダブルクリックで既定幅へ戻す
+      document.addEventListener('dblclick', (e) => {
+        if (gripOf(e)) setThumbsWidth(THUMBS_W_DEFAULT);
+      });
+      // 掴み手はフォーカスできるので、←/→ でも動かせるようにする
+      document.addEventListener('keydown', (e) => {
+        if (!gripOf(e)) return;
+        const step = e.key === 'ArrowLeft' ? -THUMBS_W_STEP : e.key === 'ArrowRight' ? THUMBS_W_STEP : 0;
+        if (!step) return;
+        e.preventDefault();
+        setThumbsWidth(thumbsWidth() + step);
       });
     }
     // トップバーの実測高さを CSS 変数 --topbar-h に反映（編集画面ヘッダーの sticky top 用）。
@@ -3270,7 +3435,8 @@
       return steps.map((t) => opTint(hex, t));
     }
     // パレット DOM を組み立てる。onPick(色 or 'none') → onClose() の順で呼ぶ。
-    function buildOfficePalette({ withNone, onPick, onClose }) {
+    // noneLabel: 「なし」ボタンの文言（線の色では「線なし」など）。既定は塗り用の文言。
+    function buildOfficePalette({ withNone, noneLabel, onPick, onClose }) {
       const pal = document.createElement('div');
       const pick = (col) => { onPick(col); onClose(); };
       const swatchRow = (colors, parent) => {
@@ -3302,7 +3468,7 @@
       footer.className = 'op-footer';
       if (withNone) {
         const b = document.createElement('button');
-        b.type = 'button'; b.className = 'op-none'; b.textContent = '塗りつぶしなし';
+        b.type = 'button'; b.className = 'op-none'; b.textContent = noneLabel || '塗りつぶしなし';
         b.addEventListener('mousedown', (e) => { e.preventDefault(); pick('none'); });
         footer.appendChild(b);
       }
@@ -3686,8 +3852,8 @@
       pal.style.top = (r.bottom + 4 + h > window.innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4) + 'px';
     }
     // 色パレット（Excel/Office 風。buildOfficePalette を btn の下に開く）
-    function rbOpenPalette(btn, withNone, onPick) {
-      rbOpenPopup(btn, buildOfficePalette({ withNone, onPick, onClose: rbClosePalette }));
+    function rbOpenPalette(btn, withNone, onPick, noneLabel) {
+      rbOpenPopup(btn, buildOfficePalette({ withNone, noneLabel, onPick, onClose: rbClosePalette }));
     }
     // 表/TSV の貼り付けをセルに取り込む
     function rbTsvToTable(text) {
@@ -5520,6 +5686,32 @@
       const [w, h] = PDF_PAPER_MM[paper] || PDF_PAPER_MM.A4;
       return orient === 'landscape' ? { w: h, h: w } : { w, h };
     }
+    // 実出力で「途中では切らない」と決めてある塊。CSS の break-inside: avoid と対で持つ。
+    // .print-step の中の .print-step-keep のように入れ子になるものは外側だけを数える。
+    const PRINT_ATOM_SEL = '.print-step, .print-todo, .print-toc-sec, .print-body table, .print-img';
+    // -- 純関数（テスト対象。window.__test__ に公開） --
+    // 改ページ位置を求める。blocks は「途中では切らない塊」の { top, bottom }（上端の昇順）。
+    // ページ境界にかかった塊が1ページに収まるなら、実際の組版と同じくその塊の先頭まで
+    // 改ページを繰り上げる。収まらない塊は実際にも分割されるので、そのまま境界で切る。
+    // 送り先に塊の枠の上端を使うことで、ページ境界で捨てられる上マージンも自然に合う。
+    function paginateBreaks(blocks, contentH, total, start) {
+      const out = [];
+      if (!(Number(contentH) > 1)) return out;
+      const list = Array.isArray(blocks) ? blocks : [];
+      let top = Number(start) || 0;
+      // guard: 塊の位置が壊れていても無限ループにしない（現実には数十ページで終わる）
+      for (let guard = 0; guard < 5000; guard++) {
+        let at = top + contentH;
+        if (!(at < total - 2)) break;
+        const hit = list.find(
+          (b) => b.top > top && b.top < at && b.bottom > at && b.bottom - b.top <= contentH
+        );
+        if (hit) at = hit.top; // 丸ごと次ページへ送られる
+        out.push(at);
+        top = at;
+      }
+      return out;
+    }
     // @page の size 上書き CSS。coverpage（表紙・余白0）も同じ用紙に合わせる。
     // imgScale は画像の幅に掛ける倍率（1＝等倍）。printToPDF の scale と同じ値を渡すと、
     // % 幅で相殺されてしまう画像も文字と同じだけ縮む（CSS の --print-img-scale を参照）。
@@ -5671,7 +5863,7 @@
             </select>
           </span>
           ${window.printAPI ? '<span class="pp-hint">倍率は PDF 出力に効きます（印刷は OS のダイアログで指定）</span>' : ''}
-          <span class="pp-hint">赤い破線は改ページの目安です（図・表がページをまたぐ時の送りまでは再現しません）</span>
+          <span class="pp-hint">赤い破線は改ページ位置です（手順・図・表は途中で切らずに次ページへ送ります）</span>
         </div>
         <div class="print-preview-body"><div class="print-preview-stage"><div class="print-preview-page"></div></div></div>
       `);
@@ -5693,37 +5885,68 @@
         stage.style.width = `${Math.round(natW * k)}px`;
         stage.style.height = `${Math.round(natH * k)}px`;
       };
-      // 改ページの目安線を引く。プレビューは1枚の連続した紙なので、@page の上下余白
-      // （15mm）はページごとには入らない＝本文は「1ページ分の本文高さ」で単純に積み上がる。
+      // 改ページ線を引く。プレビューは1枚の連続した紙なので、@page の上下余白（15mm）は
+      // ページごとには入らない＝本文は「1ページ分の本文高さ」で積み上がる。そのうえで
+      // break-inside:avoid の塊（手順カード・図・表）が境界にかかったときの送りを再現する。
       // 表紙・目次は break-after:page で1ページを丸ごと使うため、その下端を起点に取り直す。
+      // 線は送られた手順の上辺に密着させず、少し上に浮かせる（見た目の要望 2026-09-10）
+      const BREAK_LINE_GAP = 6;
+      // 計測はすべて「本文の内部座標」（zoom が掛かる前の px）で行う。倍率は .pp-zoom の
+      // zoom で掛かっているので、内部座標の1ページ分は「物理の1ページ高 ÷ 倍率」になる
+      // （printToPDF の scale と同じ意味論）。zoom の中の getBoundingClientRect の座標系は
+      // Chromium の版で違うため（M128 で標準化。Electron 31 は旧挙動）、既知の高さ 100px の
+      // 物差しを本文の先頭に差し、unit（内部1pxが gBCR で何pxか。fitPage の
+      // transform:scale の縮小も込み）を実測して割る。線を置くときだけページ座標へ戻す。
       const drawPageBreaks = () => {
         page.querySelectorAll('.pp-break').forEach((el) => el.remove());
-        const { paper, orient } = pdfOutSettings();
+        const zoomWrap = page.querySelector('.pp-zoom');
+        const { paper, orient, scale } = pdfOutSettings();
+        const s = scale / 100;
         const MM = 96 / 25.4; // CSS の 1mm は常に 96/25.4 px
-        const contentH = (pdfPaperDims(paper, orient).h - 30) * MM; // 上下 15mm を引いた本文高
-        if (!(contentH > 1)) return;
-        const pr = page.getBoundingClientRect();
-        const k = (page.offsetWidth ? pr.width / page.offsetWidth : 1) || 1; // 縮小表示ぶんを戻す
-        const total = pr.height / k;
-        const bottomOf = (el) => (el.getBoundingClientRect().bottom - pr.top) / k;
-        let y = 15 * MM; // 1ページ目の本文の始まり
+        const pageContentH = (pdfPaperDims(paper, orient).h - 30) * MM; // ページ座標での1ページ分
+        if (!zoomWrap || !(pageContentH > 1) || !(s > 0)) return;
+        // 物差しと終端の印。負マージンで高さを打ち消し、レイアウトを動かさずに差し込む。
+        const ruler = document.createElement('div');
+        ruler.style.cssText = 'height:100px;margin:0 0 -100px;padding:0;border:0;visibility:hidden;';
+        const endMark = document.createElement('div');
+        endMark.style.cssText = 'height:0;margin:0;padding:0;border:0;';
+        zoomWrap.insertBefore(ruler, zoomWrap.firstChild);
+        zoomWrap.appendChild(endMark);
+        const rr = ruler.getBoundingClientRect();
+        const unit = rr.height / 100 || 1;
+        const origin = rr.top; // 本文の先頭（紙の上余白 15mm の直下）
+        const boxOf = (el) => {
+          const r = el.getBoundingClientRect();
+          return { top: (r.top - origin) / unit, bottom: (r.bottom - origin) / unit };
+        };
+        const contentH = pageContentH / s; // 内部座標の1ページ分（倍率を下げると多く入る）
+        const total = boxOf(endMark).top;  // 本文の終わり（紙の下余白は含まれない）
         let no = 1;
-        const cover = page.querySelector('.print-cover');
-        const toc = page.querySelector('.print-toc');
-        for (const el of [cover, toc]) {
-          if (!el) continue;
-          y = bottomOf(el);
+        const emit = (at) => {
           no += 1;
+          const top = 15 * MM + at * s - BREAK_LINE_GAP; // 内部座標 → ページ座標
           page.insertAdjacentHTML('beforeend',
-            `<div class="pp-break" style="top:${y.toFixed(1)}px"><span>${no}ページ目</span></div>`);
+            `<div class="pp-break" style="top:${top.toFixed(1)}px"><span>${no}ページ目</span></div>`);
+        };
+        // 途中では切らない塊。入れ子になっているものは外側だけを数える。
+        const atoms = Array.from(zoomWrap.querySelectorAll(PRINT_ATOM_SEL));
+        const blocks = atoms
+          .filter((el) => !atoms.some((o) => o !== el && o.contains(el)))
+          .map(boxOf)
+          .sort((a, b) => a.top - b.top);
+        let y = 0; // 内部座標での本文の先頭
+        const cover = zoomWrap.querySelector('.print-cover');
+        if (cover) { y = boxOf(cover).bottom; emit(y); } // 表紙は余白0の専用ページを丸ごと使う
+        const toc = zoomWrap.querySelector('.print-toc');
+        if (toc) {
+          const end = boxOf(toc).bottom;
+          paginateBreaks(blocks, contentH, end, y).forEach(emit); // 目次が2ページ以上のとき
+          y = end;
+          emit(y);
         }
-        for (let i = 1; ; i++) {
-          const at = y + i * contentH;
-          if (at >= total - 2) break;
-          no += 1;
-          page.insertAdjacentHTML('beforeend',
-            `<div class="pp-break" style="top:${at.toFixed(1)}px"><span>${no}ページ目</span></div>`);
-        }
+        paginateBreaks(blocks, contentH, total, y).forEach(emit);
+        ruler.remove();
+        endMark.remove();
       };
       const relayoutPreview = () => { fitPage(); drawPageBreaks(); };
       // モーダル幅が変わると縮小率も変わるので引き直す。モーダルを閉じたら自分で外れる。
@@ -6263,6 +6486,45 @@
       const t = len2 ? Math.max(0, Math.min(1, ((p.x - x1) * dx + (p.y - y1) * dy) / len2)) : 0;
       return Math.hypot(p.x - (x1 + t * dx), p.y - (y1 + t * dy));
     }
+    // 点が多角形（頂点列）の内側にあるか。閉じたフリーフォームを塗ったときの
+    // ヒットテストに使う（レイキャスティング＝右向きの半直線との交差数の偶奇）。
+    function pointInPoly(p, pts) {
+      const a = Array.isArray(pts) ? pts : [];
+      if (a.length < 3) return false;
+      let inside = false;
+      for (let i = 0, j = a.length - 1; i < a.length; j = i++) {
+        const yi = a[i].y, yj = a[j].y;
+        if ((yi > p.y) === (yj > p.y)) continue; // 辺が走査線をまたがない
+        const xAt = a[i].x + ((p.y - yi) / (yj - yi)) * (a[j].x - a[i].x);
+        if (p.x < xAt) inside = !inside;
+      }
+      return inside;
+    }
+    // 範囲選択の矩形。始点と終点の前後によらず正規化する。
+    function marqueeRect(m) {
+      return { x: Math.min(m.sx, m.x), y: Math.min(m.sy, m.y), w: Math.abs(m.x - m.sx), h: Math.abs(m.y - m.sy) };
+    }
+    // 図形の外接矩形が範囲へ「完全に」収まっているか。かすっただけでは選ばない
+    //（PowerPoint / Word の範囲選択と同じ）。
+    function rectContainsBounds(m, b) {
+      return b.x >= m.x && b.y >= m.y && b.x + b.w <= m.x + m.w && b.y + b.h <= m.y + m.h;
+    }
+    // 旧データ（色は color 1つだけ）を、線 color / 塗り fill / 文字 textColor の3つへ移す。
+    //  - text は color が文字色だった。textColor へ移し、枠線は無し（color = null）にする。
+    //  - callout は color が枠線かつ文字色。文字色を写し取り、塗りは従来の白ベタにする。
+    //  - null は JSON に残るので、2回目以降は何もしない（冪等）＝保存し直しても壊れない。
+    function normalizeObjColors(objects) {
+      (Array.isArray(objects) ? objects : []).forEach((o) => {
+        if (o.type === 'text' || o.type === 'callout') {
+          if (o.textColor === undefined) {
+            o.textColor = o.color || '#ff3b30';
+            if (o.type === 'text') o.color = null;
+          }
+        }
+        if (o.fill === undefined) o.fill = o.type === 'callout' ? '#ffffff' : null;
+      });
+      return objects;
+    }
     // 選択オブジェクトの操作ハンドル一覧（kind はドラッグ時の役割）。
     function objHandles(o) {
       if (o.type === 'arrow' || o.type === 'line') {
@@ -6345,54 +6607,76 @@
         <div class="modal img-editor" role="dialog" aria-modal="true">
           <div class="ie-toolbar">
             <div class="ie-tools">
-              <button class="ie-tool" data-tool="hand" title="ハンド（画像を移動）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></button>
-              <button class="ie-tool" data-tool="arrow" title="矢印">↗</button>
-              <button class="ie-tool" data-tool="line" title="直線（Shiftで45°刻み）">╱</button>
-              <button class="ie-tool" data-tool="rect" title="四角">▢</button>
-              <button class="ie-tool" data-tool="ellipse" title="丸">◯</button>
-              <button class="ie-tool" data-tool="cross" title="×マーク">✕</button>
-              <button class="ie-tool" data-tool="freeform" title="フリーフォーム（クリックで頂点を追加・始点をクリックで閉じて確定・ダブルクリックで開いたまま確定・Escで中止）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4 14 8 5l8 2 4 7-6 6-8-2z"/><circle cx="4" cy="14" r="1.7" fill="currentColor" stroke="none"/><circle cx="8" cy="5" r="1.7" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1.7" fill="currentColor" stroke="none"/><circle cx="20" cy="14" r="1.7" fill="currentColor" stroke="none"/><circle cx="14" cy="20" r="1.7" fill="currentColor" stroke="none"/></svg></button>
-              <button class="ie-tool" data-tool="callout" title="吹き出し（コメント）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></button>
-              <button class="ie-tool" data-tool="pen" title="フリーハンドペン"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-              <button class="ie-tool" data-tool="marker" title="ハイライト"><svg class="ie-ic" viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button>
-              <button class="ie-tool" data-tool="eraser" title="消しゴム（描いた注釈だけ消す）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg></button>
-              <button class="ie-tool" data-tool="text" title="テキスト">T</button>
-              <button class="ie-tool" data-tool="mosaic" title="モザイク/ぼかし">▦</button>
-              <button class="ie-tool" data-tool="crop" title="トリミング">⛶</button>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="select" title="選択（クリックで選ぶ・Ctrl＋クリックで複数選択・ドラッグで範囲選択）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M5 2.6v16.1l4.3-4 2.7 5.7 2.4-1.1-2.7-5.7 5.8-.2z"/></svg></button><span class="ie-toolname">選択</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="hand" title="ハンド（画像を移動）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></button><span class="ie-toolname">ハンド</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="arrow" title="矢印"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M5 19 19 5"/><path d="M11.5 5H19v7.5"/></svg></button><span class="ie-toolname">矢印</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="line" title="直線（Shiftで45°刻み）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4.5 19.5 19.5 4.5"/></svg></button><span class="ie-toolname">直線</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="rect" title="四角"><svg class="ie-ic" viewBox="0 0 24 24"><rect x="3.5" y="6" width="17" height="12" rx="1.5"/></svg></button><span class="ie-toolname">四角</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="ellipse" title="丸"><svg class="ie-ic" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.8" ry="6.6"/></svg></button><span class="ie-toolname">丸</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="cross" title="×マーク"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M5.5 5.5 18.5 18.5"/><path d="M18.5 5.5 5.5 18.5"/></svg></button><span class="ie-toolname">×印</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="freeform" title="フリーフォーム（クリックで頂点を追加・始点をクリックで閉じて確定・ダブルクリックで開いたまま確定・Escで中止）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4 14 8 5l8 2 4 7-6 6-8-2z"/><circle cx="4" cy="14" r="1.7" fill="currentColor" stroke="none"/><circle cx="8" cy="5" r="1.7" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1.7" fill="currentColor" stroke="none"/><circle cx="20" cy="14" r="1.7" fill="currentColor" stroke="none"/><circle cx="14" cy="20" r="1.7" fill="currentColor" stroke="none"/></svg></button><span class="ie-toolname">多角形</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="callout" title="吹き出し（コメント）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></button><span class="ie-toolname">吹き出し</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="pen" title="フリーハンドペン"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button><span class="ie-toolname">ペン</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="marker" title="ハイライト"><svg class="ie-ic" viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button><span class="ie-toolname">マーカー</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="eraser" title="消しゴム（描いた注釈だけ消す）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg></button><span class="ie-toolname">消しゴム</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="text" title="テキスト"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4.5 6.5h15"/><path d="M4.5 12h15"/><path d="M4.5 17.5h9"/></svg></button><span class="ie-toolname">テキスト</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="mosaic" title="モザイク/ぼかし"><svg class="ie-ic" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/></svg></button><span class="ie-toolname">モザイク</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="crop" title="トリミング"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M6.5 2v15.5H22"/><path d="M2 6.5h15.5V22"/></svg></button><span class="ie-toolname">トリミング</span></span>
             </div>
-            <span class="ie-crop-actions" hidden>
-              <button type="button" class="btn primary ie-crop-apply">トリミング適用</button>
-              <button type="button" class="btn ie-crop-cancel">取消</button>
-            </span>
-            <span class="ie-color" title="色">
-              <button type="button" class="ie-color-btn" title="色（Excel風パレットから選択）"><span class="ie-color-chip"></span>▾</button>
-              <input type="color" value="#ff3b30" hidden />
-            </span>
-            <label class="ie-size" title="線の太さ"><input type="range" min="1" max="40" value="6" /></label>
-            <span class="ie-textfmt" hidden>
-              文字
-              <span class="rb-sizebox" title="文字サイズ（px）">
-                <input type="number" class="rb-size-in ie-font-size" min="8" max="200" step="1" value="24"
-                       aria-label="文字サイズ（px）" />
-                <button type="button" class="rb-size-dd ie-font-size-dd" tabindex="-1" title="サイズ一覧">▾</button>
+            <span class="ie-toolitem ie-help"><button type="button" class="ie-tool ie-help-btn" title="画像編集の使い方"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M12 6.5C10 4.6 7 4.2 3.5 4.8v12.6c3.5-.6 6.5-.2 8.5 1.7 2-1.9 5-2.3 8.5-1.7V4.8C17 4.2 14 4.6 12 6.5Z"/><path d="M12 6.5v12.6"/></svg></button><span class="ie-toolname">ヘルプ</span></span>
+            <div class="ie-controls">
+              <span class="ie-crop-actions" hidden>
+                <button type="button" class="btn primary ie-crop-apply">トリミング適用</button>
+                <button type="button" class="btn ie-crop-cancel">取消</button>
               </span>
-              <button type="button" class="ie-fmt ie-fmt-grow" title="文字を大きく">A˄</button>
-              <button type="button" class="ie-fmt ie-fmt-shrink" title="文字を小さく">A˅</button>
-              <button type="button" class="ie-fmt ie-fmt-bold" title="太字"><b>B</b></button>
-              <button type="button" class="ie-fmt ie-fmt-italic" title="斜体"><i>I</i></button>
-            </span>
-            <label class="ie-opacity" title="透過率（0%=不透明）">透過<input type="range" min="0" max="90" step="10" value="0" /><span class="ie-opacity-val">0%</span></label>
-            <span class="ie-zoom" title="編集中の表示倍率（拡大縮小しても保存される画像の仕上がりは変わりません）">
-              🔍
-              <input type="range" class="ie-zoom-range" min="10" max="400" step="5" value="100" aria-label="表示倍率" />
-              <input type="number" class="ie-zoom-num" min="10" max="400" step="5" value="100" aria-label="表示倍率（％）" />%
-              <button type="button" class="ie-zoom-fit" title="画面に収まる倍率に合わせる">フィット</button>
-            </span>
-            <button class="btn ie-undo" title="元に戻す (Ctrl+Z)">↶ 元に戻す</button>
-            <button class="btn ie-redo" title="やり直す (Ctrl+Y)">↷ やり直す</button>
+              <span class="ie-toolitem ie-color">
+                <button type="button" class="ie-tool ie-color-btn" title="線の色（Excel風パレットから選択）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M3.5 17.5 20.5 6.5" stroke-width="3"/></svg><span class="ie-color-chip"></span></button>
+                <input type="color" value="#ff3b30" hidden />
+                <span class="ie-toolname">線色</span>
+              </span>
+              <span class="ie-toolitem ie-fill">
+                <button type="button" class="ie-tool ie-color-btn" title="塗りつぶしの色（Excel風パレットから選択）"><svg class="ie-ic" viewBox="0 0 24 24"><rect x="2.5" y="4.5" width="13" height="15" rx="2"/><path d="M2.5 12h13v5.5a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2z" fill="currentColor" stroke="none"/><path d="M19.5 12.6c1 1.3 1.6 2.1 1.6 2.9a1.6 1.6 0 0 1-3.2 0c0-.8.6-1.6 1.6-2.9z" fill="currentColor" stroke="none"/></svg><span class="ie-color-chip none"></span></button>
+                <span class="ie-toolname">塗りつぶし</span>
+              </span>
+              <span class="ie-toolitem ie-textcolor" hidden>
+                <button type="button" class="ie-tool ie-color-btn" title="文字の色（Excel風パレットから選択）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M12 3.2a8.8 8.8 0 0 0 0 17.6c1 0 1.7-.8 1.7-1.7 0-.5-.2-.9-.5-1.2a1.7 1.7 0 0 1 1.2-2.9h2A4.4 4.4 0 0 0 20.8 10c0-3.7-3.9-6.8-8.8-6.8z"/><circle cx="7.7" cy="11.6" r="1.2" fill="currentColor" stroke="none"/><circle cx="10.6" cy="7.4" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.4" cy="7.9" r="1.2" fill="currentColor" stroke="none"/></svg><span class="ie-color-chip"></span></button>
+                <span class="ie-toolname">文字色</span>
+              </span>
+              <label class="ie-size ie-field" title="線の太さ">
+                <span class="ie-fieldname">線の太さ</span>
+                <span class="ie-fieldbody"><input type="range" min="1" max="40" value="6" /></span>
+              </label>
+              <span class="ie-textfmt ie-field" hidden>
+                <span class="ie-fieldname">文字の書式</span>
+                <span class="ie-fieldbody">
+                  <span class="rb-sizebox" title="文字サイズ（px）">
+                    <input type="number" class="rb-size-in ie-font-size" min="8" max="200" step="1" value="24"
+                           aria-label="文字サイズ（px）" />
+                    <button type="button" class="rb-size-dd ie-font-size-dd" tabindex="-1" title="サイズ一覧">▾</button>
+                  </span>
+                  <button type="button" class="ie-fmt ie-fmt-grow" title="文字を大きく">A˄</button>
+                  <button type="button" class="ie-fmt ie-fmt-shrink" title="文字を小さく">A˅</button>
+                  <button type="button" class="ie-fmt ie-fmt-bold" title="太字"><b>B</b></button>
+                  <button type="button" class="ie-fmt ie-fmt-italic" title="斜体"><i>I</i></button>
+                </span>
+              </span>
+              <label class="ie-opacity ie-field" title="透過率（0%=不透明）">
+                <span class="ie-fieldname">透過率</span>
+                <span class="ie-fieldbody"><input type="range" min="0" max="90" step="10" value="0" /><span class="ie-opacity-val">0%</span></span>
+              </label>
+              <span class="ie-zoom ie-field" title="編集中の表示倍率（拡大縮小しても保存される画像の仕上がりは変わりません）">
+                <span class="ie-fieldname">表示倍率</span>
+                <span class="ie-fieldbody">
+                  <input type="range" class="ie-zoom-range" min="10" max="400" step="5" value="100" aria-label="表示倍率" />
+                  <input type="number" class="ie-zoom-num" min="10" max="400" step="5" value="100" aria-label="表示倍率（％）" />%
+                  <button type="button" class="ie-zoom-fit" title="画面に収まる倍率に合わせる">フィット</button>
+                </span>
+              </span>
+              <span class="ie-toolitem"><button class="ie-tool ie-undo" title="元に戻す (Ctrl+Z)"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4 9.5h11a5 5 0 0 1 0 10h-5"/><path d="M4 9.5 8 5.5"/><path d="m4 9.5 4 4"/></svg></button><span class="ie-toolname">元に戻す</span></span>
+              <span class="ie-toolitem"><button class="ie-tool ie-redo" title="やり直す (Ctrl+Y)"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M20 9.5H9a5 5 0 0 0 0 10h5"/><path d="m20 9.5-4-4"/><path d="m20 9.5-4 4"/></svg></button><span class="ie-toolname">やり直す</span></span>
+            </div>
           </div>
           <div class="ie-canvas-wrap"><canvas class="ie-canvas"></canvas></div>
-          <p class="ie-hint">ドラッグで描画（配置はマウスを離した時。テキスト・吹き出しも同じ）。何も無い所を右クリックすると、どのツールを使っていても（未選択でも）ハンドツールへ切り替わります（描きかけがあれば取りやめ）。矢印・直線・図形・×・テキスト・吹き出しはクリックで選択→ドラッグで移動、白丸ハンドルで変形（辺の中央は縦横のみ）、図形の外をクリックで選択解除、Ctrl＋ドラッグでコピー（ドラッグを始めた後に押しても効きます）、Shift＋ドラッグで水平・垂直に固定、Delete または右クリック→削除で消せます。フリーフォームはクリックで頂点を追加し、始点をクリックで閉じて確定（ダブルクリックで開いたまま確定・Escで中止）。テキスト・吹き出しはダブルクリックで文字を再編集。消しゴムは描いた注釈を消します（スクショ本体は残る）。元に戻す=Ctrl+Z・やり直す=Ctrl+Y。トリミングは範囲を決めて「トリミング適用」。ハンドで画像を移動、ホイール（他ツールはCtrl+ホイール）でズームできます。</p>
           <div class="ie-actions">
             <button class="btn primary ie-save">保存</button>
             <button class="btn ie-cancel">キャンセル</button>
@@ -6405,8 +6689,12 @@
       const ctx = canvas.getContext('2d');
       const colorInput = overlay.querySelector('.ie-color input');
       const sizeInput = overlay.querySelector('.ie-size input');
-      const toolBtns = overlay.querySelectorAll('.ie-tool');
-      let tool = null; // null = ツール未選択（初期状態。選択・移動のみ、描画しない）
+      const toolBtns = overlay.querySelectorAll('.ie-tool[data-tool]');
+      // 既定モードは2つ（選択・ハンド）。'select' は描かずに選択・移動・範囲選択だけを行う。
+      // 左ボタンを押したままの右クリックで、この2つを行き来する（lastDefaultTool）。
+      const DEFAULT_TOOLS = ['select', 'hand'];
+      let tool = 'select';
+      let lastDefaultTool = 'select'; // 描画ツール中に右クリックしたときの戻り先
       const undoStack = [];
       const redoStack = []; // やり直し（Redo）。新規操作で空になる
 
@@ -6418,8 +6706,20 @@
       let objSeq = 1;
       const newObjId = () => 'o' + Date.now().toString(36) + '-' + (objSeq++);
       objects.forEach((o) => { delete o.hidden; if (!o.id) o.id = newObjId(); }); // 保存データの保険
-      let selectedId = null; // 選択中オブジェクト（クリックで選択、Delete で削除）
-      const selectedObj = () => objects.find((o) => o.id === selectedId) || null;
+      normalizeObjColors(objects); // 旧データ（color 1色だけ）を線・塗り・文字の3色へ移す
+      // 選択は複数持てる（Ctrl＋クリックで足し引き、選択モードのドラッグで範囲選択）。
+      // 移動・削除・色や書式の変更は選択中すべてに効く。
+      let selectedIds = [];              // 選択順に並んだ id
+      let marquee = null;                // 範囲選択中 { sx, sy, x, y, add }
+      const selectedObjs = () => objects.filter((o) => selectedIds.includes(o.id));
+      const isSelected = (id) => selectedIds.includes(id);
+      // 単独選択のときだけの実体。変形ハンドルはこれがあるときだけ出す。
+      const soleSel = () => (selectedIds.length === 1 ? objects.find((o) => o.id === selectedIds[0]) || null : null);
+      // 色・書式コントロールに映す代表（最後に選んだもの）。
+      const selectedObj = () => objects.find((o) => o.id === selectedIds[selectedIds.length - 1]) || null;
+      const setSelection = (ids) => { selectedIds = ids.filter((id) => objects.some((o) => o.id === id)); };
+      const clearSelection = () => { selectedIds = []; };
+      const deselect = (id) => { const i = selectedIds.indexOf(id); if (i >= 0) selectedIds.splice(i, 1); };
 
       // ---- ツール別の透過率（%）。スライダーはツール切替でそのツールの値に同期 ----
       const toolOpacity = { pen: 0, marker: 60, arrow: 0, line: 0, rect: 0, ellipse: 0, cross: 0, freeform: 0, text: 0, callout: 0 };
@@ -6434,40 +6734,87 @@
       }
       // 選択オブジェクトへの透過率変更を1操作として undo できるよう、つまみを
       // 掴んだ時点でスナップショットを取る。
-      opacityInput.addEventListener('pointerdown', () => { if (selectedObj()) pushUndo(); });
+      opacityInput.addEventListener('pointerdown', () => { if (selectedIds.length) pushUndo(); });
       opacityInput.addEventListener('input', () => {
         const v = Math.max(0, Math.min(90, Math.round(Number(opacityInput.value) || 0)));
         opacityVal.textContent = v + '%';
         if (Object.prototype.hasOwnProperty.call(toolOpacity, tool)) toolOpacity[tool] = v;
-        const sel = selectedObj();
-        if (sel) { sel.opacity = 1 - v / 100; recomposite(); } // 選択中オブジェクトへ即時反映
+        const sels = selectedObjs();
+        if (sels.length) { sels.forEach((o) => { o.opacity = 1 - v / 100; }); recomposite(); } // 選択中すべてへ即時反映
       });
-      // 色の変更も選択中オブジェクトへ反映（連続 input を1回の undo にまとめる）
-      colorInput.addEventListener('input', () => {
+      // ---- 色は「線・塗り・文字」の3つ ----
+      // 図形の色は color（線）1つきりで、テキストは color が文字色を兼ねていたため
+      // 枠線に色を付けられなかった。3つに分けて、塗りつぶしと枠線を別々に決められるようにする。
+      //  color … 線（枠線）の色。null = 線なし
+      //  fill  … 塗りつぶしの色。null = 塗りなし
+      //  textColor … 文字の色（テキスト・吹き出しだけ）
+      let fillValue = null;              // 次に描く図形の塗り（既定は塗りなし＝従来どおり）
+      let textColorValue = '#ff3b30';    // 次に描くテキスト・吹き出しの文字色
+      let lineNone = false;              // 線なしを選んでいるか（colorInput は最後に選んだ実色を保つ）
+      // 次に描く図形の線の色。ペン・ハイライトは「線なし」があり得ないので colorInput を直に使う。
+      const lineColor = () => (lineNone ? null : colorInput.value);
+      const fillBtn = overlay.querySelector('.ie-fill .ie-color-btn');
+      const fillChip = overlay.querySelector('.ie-fill .ie-color-chip');
+      const textColorWrap = overlay.querySelector('.ie-textcolor');
+      const textColorBtn = overlay.querySelector('.ie-textcolor .ie-color-btn');
+      const textColorChip = overlay.querySelector('.ie-textcolor .ie-color-chip');
+      const colorBtn = overlay.querySelector('.ie-color .ie-color-btn');
+      const colorChip = overlay.querySelector('.ie-color .ie-color-chip');
+      // 「なし」は色ではないので、チップは赤い斜線ハッチ（.none）で示す。
+      function paintChip(chip, col) {
+        chip.classList.toggle('none', !col || col === 'none');
+        chip.style.background = !col || col === 'none' ? '' : col;
+      }
+      // 選択中があればその図形の色を、無ければ「次に描く色」をチップに映す。
+      // 文字色は書式コントロールと同じ条件（テキスト・吹き出しのとき）だけ出す。
+      function syncColorUI() {
         const sel = selectedObj();
-        if (!sel) { colorGestureFor = null; return; }
-        if (colorGestureFor !== sel.id) { pushUndo(); colorGestureFor = sel.id; }
-        sel.color = colorInput.value;
-        recomposite();
-      });
-      // 色ボタン: Excel風パレットを開く。選んだ色は隠し input(colorInput) に入れて
-      // 既存の反映ロジック（選択オブジェクト・新規描画の色）をそのまま使う。
-      const colorBtn = overlay.querySelector('.ie-color-btn');
-      const colorChip = overlay.querySelector('.ie-color-chip');
-      const syncColorChip = () => { colorChip.style.background = colorInput.value; };
-      colorInput.addEventListener('input', syncColorChip);
-      syncColorChip();
-      // 開いた状態でもう一度押したら閉じる（document の mousedown が先に閉じるため、
-      // mousedown 時点で開いていたかを覚えておく）。
+        paintChip(colorChip, sel ? sel.color : lineColor());
+        paintChip(fillChip, sel ? sel.fill : fillValue);
+        const showText = isTextObj(sel) || (!sel && (tool === 'text' || tool === 'callout'));
+        textColorWrap.hidden = !showText;
+        paintChip(textColorChip, isTextObj(sel) ? sel.textColor : textColorValue);
+      }
+      // 選択中オブジェクトへ色を反映する（連続操作を1回の undo にまとめる）。
+      // 対象外の図形（例: 直線に塗り）には効かせない。
+      function applyColor(key, col) {
+        const value = col === 'none' ? null : col;
+        if (key === 'color') { lineNone = !value; if (value) colorInput.value = value; }
+        else if (key === 'fill') fillValue = value;
+        else textColorValue = value || textColorValue; // 文字色に「なし」は無い
+        // 選択中のうち、その色を持てる図形だけに効かせる（直線に塗りは無い等）。
+        const targets = selectedObjs().filter((o) => colorTargets(o).includes(key));
+        if (!selectedIds.length) colorGestureFor = null;
+        if (targets.length) {
+          const gesture = selectedIds.join(',') + key;
+          if (colorGestureFor !== gesture) { pushUndo(); colorGestureFor = gesture; }
+          targets.forEach((o) => { o[key] = value; });
+        }
+        recomposite(); // 末尾で syncColorUI() まで走るのでチップも追随する
+      }
+      // その図形が持てる色の種類。矢印・直線は面が無いので塗れない。
+      // ×印も2本の線分なので塗る面が無い。
+      function colorTargets(o) {
+        if (!o) return [];
+        if (o.type === 'text' || o.type === 'callout') return ['color', 'fill', 'textColor'];
+        if (o.type === 'rect' || o.type === 'ellipse' || o.type === 'freeform') return ['color', 'fill'];
+        return ['color']; // arrow / line / cross
+      }
+      // 塗れる面を持つ描画ツールか（矢印・直線・×印は線だけなので塗らない）
+      const canFillShape = (t) => t === 'rect' || t === 'ellipse';
+      // 色ボタン: Excel風パレットを開く。開いた状態でもう一度押したら閉じる
+      //（document の mousedown が先に閉じるため、mousedown 時点で開いていたかを覚えておく）。
       let palWasOpen = false;
-      colorBtn.addEventListener('mousedown', () => { palWasOpen = !!document.getElementById('rb-palette'); });
-      colorBtn.addEventListener('click', () => {
-        if (palWasOpen) { palWasOpen = false; return; }
-        rbOpenPalette(colorBtn, false, (col) => {
-          colorInput.value = col;
-          colorInput.dispatchEvent(new Event('input'));
+      function wireColorButton(btn, key, withNone, noneLabel) {
+        btn.addEventListener('mousedown', () => { palWasOpen = !!document.getElementById('rb-palette'); });
+        btn.addEventListener('click', () => {
+          if (palWasOpen) { palWasOpen = false; return; }
+          rbOpenPalette(btn, withNone, (col) => applyColor(key, col), noneLabel);
         });
-      });
+      }
+      wireColorButton(colorBtn, 'color', true, '線なし');
+      wireColorButton(fillBtn, 'fill', true, '塗りつぶしなし');
+      wireColorButton(textColorBtn, 'textColor', false);
 
       // ---- テキスト/吹き出しの書式（サイズ・太字・斜体）----
       // 対象: (a) これから作るオブジェクトの既定値 (b) その場編集中の入力欄
@@ -6499,10 +6846,11 @@
       function applyTextFmt(changes) {
         Object.assign(textFmt, changes); // 次回の新規作成にも引き継ぐ
         if (fmtTarget) { fmtTarget.set(changes); syncTextFmtUI(); return; }
-        const sel = selectedObj();
-        if (isTextObj(sel)) {
-          if (fmtGestureFor !== sel.id) { pushUndo(); fmtGestureFor = sel.id; }
-          Object.assign(sel, changes);
+        const targets = selectedObjs().filter(isTextObj);
+        if (targets.length) {
+          const gesture = targets.map((o) => o.id).join(',');
+          if (fmtGestureFor !== gesture) { pushUndo(); fmtGestureFor = gesture; }
+          targets.forEach((o) => Object.assign(o, changes));
           recomposite();
         }
         syncTextFmtUI();
@@ -6675,6 +7023,7 @@
         drawSelection();
         if (cropMode && cropRect) drawCropOverlay();
         syncTextFmtUI(); // ツール・選択・編集状態に書式コントロールを追随させる
+        syncColorUI();   // 線・塗り・文字色のチップも同じタイミングで追随させる
       }
       // 表示 px / canvas px の比率（ハンドルや点線を画面上一定サイズに保つのに使う）。
       function dispScale() { return canvas.offsetWidth ? canvas.width / canvas.offsetWidth : 1; }
@@ -6684,16 +7033,23 @@
         finishFreeformIfAny(); // 描きかけのフリーフォームも確定（頂点不足なら破棄）
         if (t !== 'crop') exitCropMode(); // crop 以外へ移ると選択枠を破棄
         tool = t;
-        selectedId = null; // ツール切替で選択解除
+        if (DEFAULT_TOOLS.includes(t)) lastDefaultTool = t;
+        clearSelection(); // ツール切替で選択解除
+        marquee = null;    // 範囲選択の途中なら捨てる
         toolBtns.forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
+        canvas.classList.toggle('tool-select', t === 'select');
         canvas.classList.toggle('tool-hand', t === 'hand');
         canvas.classList.toggle('tool-crop', t === 'crop');
         syncOpacityUI();
         if (t === 'crop') enterCropMode();
         recomposite();
       }
-      // 同じツールを再クリックしたら未選択（null）へトグルする。
-      toolBtns.forEach((b) => b.addEventListener('click', () => selectTool(b.dataset.tool === tool ? null : b.dataset.tool)));
+      // 選択とハンドを行き来する（左クリック押下中の右クリック。仕様12章）
+      function toggleDefaultTool() {
+        selectTool(tool === 'hand' ? 'select' : 'hand');
+      }
+      // 同じツールを再クリックしたら既定モード（選択）へ戻す。
+      toolBtns.forEach((b) => b.addEventListener('click', () => selectTool(b.dataset.tool === tool ? 'select' : b.dataset.tool)));
 
       const baseImg = new Image();
       baseImg.onload = () => {
@@ -6730,7 +7086,7 @@
       }
       function restore(snap) {
         objects = JSON.parse(JSON.stringify(snap.objects || []));
-        selectedId = null;
+        clearSelection();
         let pending = 2;
         const done = () => { if (--pending === 0) { applyZoom(); recomposite(); } };
         setLayerSize(snap.w, snap.h);
@@ -6786,17 +7142,27 @@
         g.globalAlpha = alpha;
       }
       // オブジェクト共通のスタイル設定（色・太さ・透過率はオブジェクト自身が持つ）。
+      // color（線）と fill（塗り）は null を取り得る＝線なし・塗りなし。
+      const hasStroke = (o) => !!o.color && o.color !== 'none';
+      const hasFill = (o) => !!o.fill && o.fill !== 'none';
+      const textBoxPad = (o) => Math.round((Number(o.fs) || 16) * 0.3);
       function setupObjStroke(g, o) {
-        g.strokeStyle = o.color;
-        g.fillStyle = o.color;
+        g.strokeStyle = o.color || 'transparent';
+        g.fillStyle = o.color || 'transparent';
         g.lineWidth = o.size;
         g.lineCap = 'round';
         g.lineJoin = 'round';
         g.globalAlpha = o.opacity;
       }
+      // 組み立て済みのパスを「塗り → 線」の順で塗り分ける（枠線が塗りの上に乗る）。
+      function paintPath(g, o) {
+        if (hasFill(o)) { g.fillStyle = o.fill; g.fill(); }
+        if (hasStroke(o)) { g.strokeStyle = o.color; g.stroke(); }
+      }
       // 矢印：三角を大きめにし、線は矢先まで引かず三角の底辺で止める（太線の丸端が
       // 矢先からはみ出さない）。三角の頂点は (x2,y2)。
       function drawArrowObj(g, o) {
+        if (!hasStroke(o)) return; // 線なしの矢印は描かない
         const { x1, y1, x2, y2 } = o;
         const ang = Math.atan2(y2 - y1, x2 - x1);
         const head = Math.max(18, o.size * 4);
@@ -6818,23 +7184,26 @@
         g.restore();
       }
       function drawLineObj(g, o) {
+        if (!hasStroke(o)) return;
         g.save(); setupObjStroke(g, o);
         g.beginPath(); g.moveTo(o.x1, o.y1); g.lineTo(o.x2, o.y2); g.stroke();
         g.restore();
       }
       function drawRectObj(g, o) {
         g.save(); setupObjStroke(g, o);
-        g.strokeRect(o.x, o.y, o.w, o.h);
+        g.beginPath(); g.rect(o.x, o.y, o.w, o.h);
+        paintPath(g, o);
         g.restore();
       }
       function drawEllipseObj(g, o) {
         g.save(); setupObjStroke(g, o);
         g.beginPath();
-        g.ellipse(o.x + o.w / 2, o.y + o.h / 2, o.w / 2, o.h / 2, 0, 0, Math.PI * 2);
-        g.stroke(); g.restore();
+        g.ellipse(o.x + o.w / 2, o.y + o.h / 2, Math.abs(o.w) / 2, Math.abs(o.h) / 2, 0, 0, Math.PI * 2);
+        paintPath(g, o); g.restore();
       }
       // ×マーク：矩形（x,y,w,h）の対角2本の線分として描く（rect と同じ矩形ベース）。
       function drawCrossObj(g, o) {
+        if (!hasStroke(o)) return; // 対角2本の線分なので塗る面が無い
         g.save(); setupObjStroke(g, o);
         g.beginPath();
         g.moveTo(o.x, o.y); g.lineTo(o.x + o.w, o.y + o.h);
@@ -6849,17 +7218,31 @@
         g.beginPath();
         g.moveTo(pts[0].x, pts[0].y);
         for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
-        if (o.closed) g.closePath();
-        g.stroke(); g.restore();
+        if (o.closed) { g.closePath(); if (hasFill(o)) { g.fillStyle = o.fill; g.fill(); } }
+        if (hasStroke(o)) { g.strokeStyle = o.color; g.stroke(); }
+        g.restore();
       }
+      // テキストボックス: 文字の外接矩形を少し膨らませた箱に塗りと枠線を描いてから
+      // 文字を載せる。枠線の色（color）と文字の色（textColor）は別々に持つ。
       function drawTextObj(g, o) {
         g.save();
         g.globalAlpha = o.opacity;
-        g.fillStyle = o.color;
         g.font = objFont(o);
         g.textBaseline = 'top';
+        const lines = o.text.split('\n');
         const lh = o.fs * 1.2;
-        o.text.split('\n').forEach((line, i) => g.fillText(line, o.x, o.y + i * lh));
+        if (hasFill(o) || hasStroke(o)) {
+          let tw = 0;
+          for (const l of lines) tw = Math.max(tw, g.measureText(l.length ? l : ' ').width);
+          const P = textBoxPad(o);
+          g.lineWidth = o.size;
+          g.lineJoin = 'round';
+          g.beginPath();
+          g.rect(o.x - P, o.y - P, Math.ceil(tw) + P * 2, lines.length * lh + P * 2);
+          paintPath(g, o);
+        }
+        g.fillStyle = o.textColor || o.color || '#ff3b30';
+        lines.forEach((line, i) => g.fillText(line, o.x, o.y + i * lh));
         g.restore();
       }
       function drawObject(g, o) {
@@ -6876,7 +7259,7 @@
       function drawObjects(g) { objects.forEach((o) => drawObject(g, o)); }
       // ドラッグ中の始点・終点から図形オブジェクトを組み立てる（プレビューと確定で共用）。
       function shapeFromDrag(t, a, b, shift) {
-        const common = { color: colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha(t) };
+        const common = { color: lineColor(), fill: canFillShape(t) ? fillValue : null, size: Number(sizeInput.value), opacity: toolAlpha(t) };
         let bb = b;
         if (t === 'line' && shift) { // Shift で 45° 刻みにスナップ
           const d = Math.hypot(b.x - a.x, b.y - a.y);
@@ -6905,7 +7288,8 @@
           let tw = 0;
           for (const l of lines) tw = Math.max(tw, ctx.measureText(l.length ? l : ' ').width);
           ctx.restore();
-          return { x: o.x, y: o.y, w: Math.ceil(tw), h: lines.length * o.fs * 1.2 };
+          const pad = (hasFill(o) || hasStroke(o)) ? textBoxPad(o) : 0;
+          return { x: o.x - pad, y: o.y - pad, w: Math.ceil(tw) + pad * 2, h: lines.length * o.fs * 1.2 + pad * 2 };
         }
         if (o.type === 'callout') {
           const box = calloutBox(o.text, o.fs, o);
@@ -6915,40 +7299,52 @@
       }
       // 選択中オブジェクトの破線枠＋ハンドル（Excel 風）。
       function drawSelection() {
-        const o = selectedObj();
-        if (!o) return;
+        const sels = selectedObjs();
+        if (!sels.length && !marquee) return;
         const s = dispScale();
         const g = ctx;
         g.save();
         g.setTransform(1, 0, 0, 1, 0, 0);
         g.globalAlpha = 1;
-        // 線系（直線・矢印）は長方形の選択枠を出さず、線に沿った点線＋端点ハンドル
-        // だけにする（線を線として扱う。Office の直線選択と同じ見え方）。
-        if (o.type === 'arrow' || o.type === 'line') {
+        sels.forEach((o) => {
           g.strokeStyle = '#1a73e8';
           g.lineWidth = 1.5 * s;
           g.setLineDash([5 * s, 4 * s]);
-          g.beginPath(); g.moveTo(o.x1, o.y1); g.lineTo(o.x2, o.y2); g.stroke();
+          // 線系（直線・矢印）は長方形の選択枠を出さず、線に沿った点線だけにする
+          //（線を線として扱う。Office の直線選択と同じ見え方）。
+          if (o.type === 'arrow' || o.type === 'line') {
+            g.beginPath(); g.moveTo(o.x1, o.y1); g.lineTo(o.x2, o.y2); g.stroke();
+          } else {
+            const b = objBounds(o);
+            g.strokeRect(b.x - 4 * s, b.y - 4 * s, b.w + 8 * s, b.h + 8 * s);
+          }
           g.setLineDash([]);
-        } else {
-          const b = objBounds(o);
+        });
+        // 変形ハンドルは単独選択のときだけ（複数選択中は破線枠だけで、移動と削除ができる）。
+        const sole = soleSel();
+        if (sole) {
+          // ハンドルは白塗り＋青枠の丸（トリミングの白地スタイルに合わせる）
+          const hr = 5.5 * s;
+          g.fillStyle = '#ffffff';
+          g.strokeStyle = '#1a73e8';
+          g.lineWidth = 2 * s;
+          objHandles(sole).forEach((h) => {
+            g.beginPath();
+            g.arc(h.x, h.y, hr, 0, Math.PI * 2);
+            g.fill();
+            g.stroke();
+          });
+        }
+        if (marquee) { // 範囲選択の枠
+          const m = marqueeRect(marquee);
+          g.fillStyle = 'rgba(26,115,232,.08)';
+          g.fillRect(m.x, m.y, m.w, m.h);
           g.strokeStyle = '#1a73e8';
           g.lineWidth = 1.5 * s;
           g.setLineDash([5 * s, 4 * s]);
-          g.strokeRect(b.x - 4 * s, b.y - 4 * s, b.w + 8 * s, b.h + 8 * s);
+          g.strokeRect(m.x, m.y, m.w, m.h);
           g.setLineDash([]);
         }
-        // ハンドルは白塗り＋青枠の丸（トリミングの白地スタイルに合わせる）
-        const hr = 5.5 * s;
-        g.fillStyle = '#ffffff';
-        g.strokeStyle = '#1a73e8';
-        g.lineWidth = 2 * s;
-        objHandles(o).forEach((h) => {
-          g.beginPath();
-          g.arc(h.x, h.y, hr, 0, Math.PI * 2);
-          g.fill();
-          g.stroke();
-        });
         g.restore();
       }
       // ---- オブジェクトのヒットテスト（クリック選択・消しゴム削除用） ----
@@ -6963,6 +7359,8 @@
         }
         if (o.type === 'freeform') {
           const pts = Array.isArray(o.pts) ? o.pts : [];
+          // 塗ってあるなら内側も掴める
+          if (o.closed && hasFill(o) && pointInPoly(p, pts)) return true;
           for (let i = 1; i < pts.length; i++) {
             if (distSeg(p, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y) <= tol) return true;
           }
@@ -6973,8 +7371,10 @@
           return false;
         }
         if (o.type === 'rect') {
-          // 枠線の近傍だけ当たり（塗り無しなので内側は素通しにして下の物を掴める）
+          // 塗り無しなら枠線の近傍だけ当たり（内側は素通しにして下の物を掴める）。
+          // 塗ってあるなら内側も当たり。
           const inOuter = p.x >= o.x - tol && p.x <= o.x + o.w + tol && p.y >= o.y - tol && p.y <= o.y + o.h + tol;
+          if (hasFill(o)) return inOuter;
           const inInner = p.x >= o.x + tol && p.x <= o.x + o.w - tol && p.y >= o.y + tol && p.y <= o.y + o.h - tol;
           return inOuter && !inInner;
         }
@@ -6982,6 +7382,7 @@
           const rx = o.w / 2, ry = o.h / 2;
           if (rx < 1 || ry < 1) return false;
           const nd = Math.hypot((p.x - (o.x + rx)) / rx, (p.y - (o.y + ry)) / ry); // 正規化距離
+          if (hasFill(o)) return nd <= 1 + tol / Math.min(rx, ry);
           return Math.abs(nd - 1) * Math.min(rx, ry) <= tol;
         }
         // text / callout はバウンディングボックス（callout は尻尾先端も）
@@ -7010,7 +7411,7 @@
         const radius = Math.max(4, Number(sizeInput.value) * 2) / 2;
         const before = objects.length;
         objects = objects.filter((o) => {
-          if (!o.hidden && objHit(o, p, radius)) { if (selectedId === o.id) selectedId = null; return false; }
+          if (!o.hidden && objHit(o, p, radius)) { deselect(o.id); return false; }
           return true;
         });
         return objects.length !== before;
@@ -7049,10 +7450,11 @@
         pushUndo();
         const o = {
           id: newObjId(), type: 'freeform', pts, closed: !!closed,
-          color: colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha('freeform'),
+          color: lineColor(), fill: closed ? fillValue : null,
+          size: Number(sizeInput.value), opacity: toolAlpha('freeform'),
         };
         objects.push(o);
-        selectedId = o.id; // 描いた直後は選択状態（すぐ動かせる）
+        setSelection([o.id]); // 描いた直後は選択状態（すぐ動かせる）
         recomposite();
       }
       function finishFreeformIfAny() { if (activeFreeform) commitFreeform(false); }
@@ -7072,8 +7474,8 @@
         // 確定済みの辺
         if (ff.pts.length >= 2) {
           drawFreeformObj(g, {
-            pts: ff.pts, closed: false,
-            color: colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha('freeform'),
+            pts: ff.pts, closed: false, fill: null,
+            color: lineColor() || colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha('freeform'),
           });
         }
         // カーソルまでの次の辺（点線プレビュー）
@@ -7154,16 +7556,15 @@
         g.save();
         g.globalAlpha = o.opacity;
         calloutPath(g, o.x, o.y, box.w, box.h, r, o.tip, tW);
-        g.strokeStyle = o.color;
-        // 白地は不透明にする。透け具合は透過率スライダー（globalAlpha=o.opacity）だけで
+        // 塗りは不透明に置く。透け具合は透過率スライダー（globalAlpha=o.opacity）だけで
         // 決まり、透過0%のときは一切透けない（以前は固定で 0.92 を掛けており
-        // 0% でも8%透けていた。ユーザー要望 2026-09-08）。
-        g.fillStyle = '#ffffff';
+        // 0% でも8%透けていた。ユーザー要望 2026-09-08）。既定の塗りは従来どおり白。
         g.lineWidth = Math.max(2, o.size);
         g.lineJoin = 'round';
-        g.fill(); g.stroke();
+        if (hasFill(o)) { g.fillStyle = o.fill; g.fill(); }
+        if (hasStroke(o)) { g.strokeStyle = o.color; g.stroke(); }
         if (withText) {
-          g.fillStyle = o.color;
+          g.fillStyle = o.textColor || o.color || '#ff3b30';
           g.font = objFont(o);
           g.textBaseline = 'top';
           box.lines.forEach((l, i) => g.fillText(l, o.x + box.P, o.y + box.P + i * box.lh));
@@ -7203,13 +7604,14 @@
           ? { fs: existing.fs, bold: existing.bold !== false, italic: !!existing.italic }
           : { fs: textFmt.fs, bold: textFmt.bold, italic: textFmt.italic };
         const pos = existing ? { x: existing.x, y: existing.y } : p;
-        const color = existing ? existing.color : colorInput.value;
+        // 入力欄に映すのは文字色（枠線色 color とは別。旧データは textColor へ移行済み）
+        const textCol = existing ? existing.textColor : textColorValue;
         const ta = document.createElement('textarea');
         ta.className = 'ie-text-input';
         ta.rows = 1;
         ta.style.left = (canvas.offsetLeft + pos.x * scale) + 'px';
         ta.style.top = (canvas.offsetTop + pos.y * scale) + 'px';
-        ta.style.color = color;
+        ta.style.color = textCol;
         const applyTaStyle = () => { ta.style.font = objFont(fmt, scale); };
         applyTaStyle();
         canvasWrap.appendChild(ta);
@@ -7241,7 +7643,7 @@
               existing.fs !== fmt.fs ||
               (existing.bold !== false) !== fmt.bold ||
               !!existing.italic !== fmt.italic;
-            if (text.trim() === '') { pushUndo(); objects = objects.filter((o) => o.id !== existing.id); if (selectedId === existing.id) selectedId = null; }
+            if (text.trim() === '') { pushUndo(); objects = objects.filter((o) => o.id !== existing.id); deselect(existing.id); }
             else if (text !== existing.text || fmtChanged) {
               pushUndo();
               existing.text = text;
@@ -7255,10 +7657,11 @@
           const obj = {
             id: newObjId(), type: 'text', x: pos.x, y: pos.y, text,
             fs: fmt.fs, bold: fmt.bold, italic: fmt.italic,
-            color, size: Number(sizeInput.value), opacity: toolAlpha('text'),
+            textColor: textCol, color: null, fill: fillValue, // 新規テキストの枠線は無し（後から線色で付けられる）
+            size: Number(sizeInput.value), opacity: toolAlpha('text'),
           };
           objects.push(obj);
-          selectedId = obj.id; // 確定直後も選択状態にして、書式変更を続けられるように
+          setSelection([obj.id]); // 確定直後も選択状態にして、書式変更を続けられるように
           recomposite();
         };
         const cancel = () => {
@@ -7317,15 +7720,17 @@
         ac.render = () => {
           if (activeCallout !== ac) return;
           // 編集中の見た目は本体だけ描き、文字は textarea 側に出す。
-          const color = existing ? existing.color : colorInput.value;
+          const color = existing ? existing.color : lineColor();
+          const fill = existing ? existing.fill : (fillValue || '#ffffff');
+          const textCol = existing ? existing.textColor : textColorValue;
           const size = existing ? existing.size : Number(sizeInput.value);
           const opacity = existing ? existing.opacity : toolAlpha('callout');
-          const preview = { x: ac.x, y: ac.y, text: ta.value, fs: ac.fs, bold: ac.bold, italic: ac.italic, tip: ac.tip, color, size, opacity };
+          const preview = { x: ac.x, y: ac.y, text: ta.value, fs: ac.fs, bold: ac.bold, italic: ac.italic, tip: ac.tip, color, fill, textColor: textCol, size, opacity };
           recomposite();
           drawCalloutObj(ctx, preview, false);
           if (ac.dragTip || ac.hoverTip) {
             ctx.save();
-            ctx.fillStyle = color; ctx.strokeStyle = '#fff';
+            ctx.fillStyle = color || textCol; ctx.strokeStyle = '#fff';
             ctx.lineWidth = 2 * dispScale();
             ctx.beginPath(); ctx.arc(ac.tip.x, ac.tip.y, 7 * dispScale(), 0, Math.PI * 2);
             ctx.fill(); ctx.stroke();
@@ -7341,7 +7746,7 @@
           ta.style.height = ((box.h - box.P * 2) * s) + 'px';
           ta.style.font = objFont(ac, s);
           ta.style.lineHeight = (box.lh * s) + 'px';
-          ta.style.color = color;
+          ta.style.color = textCol;
         };
         // 編集中はツールバーの書式変更を吹き出しへ即時反映させる
         fmtTarget = {
@@ -7381,7 +7786,7 @@
           if (text.trim() === '') {
             pushUndo();
             objects = objects.filter((o) => o.id !== ex.id);
-            if (selectedId === ex.id) selectedId = null;
+            deselect(ex.id);
           } else if (text !== ex.text || ac.tip.x !== ex.tip.x || ac.tip.y !== ex.tip.y || fmtChanged) {
             pushUndo();
             ex.text = text;
@@ -7397,10 +7802,11 @@
           id: newObjId(), type: 'callout', x: ac.x, y: ac.y, text,
           fs: ac.fs, bold: ac.bold, italic: ac.italic,
           tip: { x: ac.tip.x, y: ac.tip.y },
-          color: colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha('callout'),
+          color: lineColor(), fill: fillValue || '#ffffff', textColor: textColorValue,
+          size: Number(sizeInput.value), opacity: toolAlpha('callout'),
         };
         objects.push(obj);
-        selectedId = obj.id; // 確定直後も選択状態にして、書式変更を続けられるように
+        setSelection([obj.id]); // 確定直後も選択状態にして、書式変更を続けられるように
         recomposite();
       }
       function cancelCallout() {
@@ -7533,15 +7939,15 @@
         });
         cropMode = false; cropRect = null; cropDrag = null;
         if (cropActions) cropActions.hidden = true;
-        selectTool(null);
+        selectTool('select');
         applyZoom();
         recomposite();
       }
       if (cropActions) {
         overlay.querySelector('.ie-crop-apply').addEventListener('click', applyCrop);
-        overlay.querySelector('.ie-crop-cancel').addEventListener('click', () => selectTool(null));
+        overlay.querySelector('.ie-crop-cancel').addEventListener('click', () => selectTool('select'));
       }
-      selectTool(null); // 初期は未選択（crop 系関数の定義後に呼ぶ）
+      selectTool('select'); // 初期は選択モード（crop 系関数の定義後に呼ぶ）
 
       // ---- ポインタ操作 ----
       let drawing = false;
@@ -7574,24 +7980,34 @@
         recomposite(); // プレビューを消す
       }
 
+      // 掴んでいる図形すべてを、掴んだ位置からの差分で動かす。applyObjDrag は
+      // orig 基準の絶対計算なので、何度呼んでもずれない（掴み替えの土台）。
+      function applyDrag(d, p, shift) {
+        d.items.forEach((it) => {
+          applyObjDrag({ mode: d.mode, obj: it.obj, sx: d.sx, sy: d.sy, orig: it.orig }, p, shift);
+        });
+      }
       // Ctrl＋ドラッグのコピー状態を切り替える。押している間だけ複製を掴み、離せば
       // 複製を捨てて元の図形に戻る（Office・エクスプローラと同じで、ドラッグを始めた
-      // 後に押しても効く）。applyObjDrag は orig 基準の絶対計算なので、掴み替えても
-      // 位置はずれない。状態が変わったときだけ true を返す。
+      // 後に押しても効く）。位置は orig 基準の絶対計算なので掴み替えてもずれない。
+      // 状態が変わったときだけ true を返す。
       function setDragCopy(d, on) {
         if (d.mode !== 'move' || !d.moved || !!d.copy === on) return false;
         if (on) {
-          applyObjDrag(d, { x: d.sx, y: d.sy }); // 差分0＝元を掴んだ位置へ戻す
-          const clone = JSON.parse(JSON.stringify(d.orig));
-          delete clone.hidden;
-          clone.id = newObjId();
-          objects.push(clone); // 複製は最前面
-          d.obj = clone;
-          selectedId = clone.id;
+          applyDrag(d, { x: d.sx, y: d.sy }); // 差分0＝元を掴んだ位置へ戻す
+          d.items.forEach((it) => {
+            const clone = JSON.parse(JSON.stringify(it.orig));
+            delete clone.hidden;
+            clone.id = newObjId();
+            objects.push(clone); // 複製は最前面
+            it.obj = clone;
+          });
+          setSelection(d.items.map((it) => it.obj.id));
         } else {
-          objects = objects.filter((o) => o !== d.obj); // 作った複製を取り消す
-          d.obj = d.src;
-          selectedId = d.src.id; // 選択枠も元の図形へ戻す
+          const clones = d.items.map((it) => it.obj);
+          objects = objects.filter((o) => !clones.includes(o)); // 作った複製を取り消す
+          d.items.forEach((it) => { it.obj = it.src; });
+          setSelection(d.items.map((it) => it.src.id)); // 選択枠も元の図形へ戻す
         }
         d.copy = on;
         canvas.style.cursor = on ? 'copy' : 'move';
@@ -7632,36 +8048,51 @@
         // フリーフォーム描画中：クリックは頂点の追加（始点なら閉じて確定）だけ。
         if (activeFreeform) { freeformClick(p); return; }
         // 既存オブジェクトの選択・ドラッグ開始（ツール本来の動作より優先）。
-        // 未選択（null）でも選択・移動はできる（描画しないだけ）。
-        if (tool === null || OBJECT_TOOLS.includes(tool)) {
-          const sel = selectedObj();
-          const hk = sel && hitObjHandle(sel, p);
-          if (hk) { // 選択中オブジェクトのハンドル（端点・四隅・尻尾）
+        // 選択モード（'select'）でも描画ツール中でも、図形の選択・移動はできる。
+        if (tool === 'select' || OBJECT_TOOLS.includes(tool)) {
+          const sole = soleSel();
+          const hk = sole && hitObjHandle(sole, p);
+          if (hk) { // 単独選択中のハンドル（端点・四隅・尻尾）
             objDrag = {
-              mode: hk, obj: sel, src: sel, sx: p.x, sy: p.y,
-              orig: JSON.parse(JSON.stringify(sel)), moved: false, copy: false, shift: false,
+              mode: hk, items: [{ obj: sole, src: sole, orig: JSON.parse(JSON.stringify(sole)) }],
+              sx: p.x, sy: p.y, moved: false, copy: false, shift: false,
             };
             canvas.setPointerCapture(e.pointerId);
             return;
           }
           const hit = hitObject(p);
           if (hit) {
-            selectedId = hit.id;
+            // Ctrl＋クリックは選択の足し引き。ただし Ctrl＋ドラッグはコピーなので、
+            // 選択済みを外すのは「動かさずに離した」ときだけ（pointerup で判定）。
+            const additive = !!(e.ctrlKey || e.metaKey);
+            const wasSelected = isSelected(hit.id);
+            if (additive) { if (!wasSelected) selectedIds.push(hit.id); }
+            else if (!wasSelected) setSelection([hit.id]);
             // Ctrl（コピー）と Shift（水平・垂直）は押した瞬間に決め打ちせず、
             // ドラッグ中の押し直し・離しに追従させる（syncDragMods）。
             objDrag = {
-              mode: 'move', obj: hit, src: hit, sx: p.x, sy: p.y,
-              orig: JSON.parse(JSON.stringify(hit)), moved: false,
-              copy: false, shift: false,
+              mode: 'move',
+              items: selectedObjs().map((o) => ({ obj: o, src: o, orig: JSON.parse(JSON.stringify(o)) })),
+              sx: p.x, sy: p.y, moved: false, copy: false, shift: false,
+              clickId: hit.id, additive, wasSelected,
             };
             canvas.setPointerCapture(e.pointerId);
             recomposite();
             return;
           }
-          // 空白クリックは選択解除のみ（新しい図形は配置しない。もう一度クリックで描画開始）
-          if (selectedId) { selectedId = null; recomposite(); return; }
+          // 選択モードは空白ドラッグで範囲選択。Ctrl／Shift 併用なら今の選択に足す。
+          if (tool === 'select') {
+            marquee = { sx: p.x, sy: p.y, x: p.x, y: p.y, add: !!(e.ctrlKey || e.metaKey || e.shiftKey) };
+            if (!marquee.add) clearSelection();
+            canvas.setPointerCapture(e.pointerId);
+            recomposite();
+            return;
+          }
+          // 描画ツール中の空白クリックは選択解除のみ（新しい図形は配置しない。
+          // もう一度クリックで描画開始）
+          if (selectedIds.length) { clearSelection(); recomposite(); return; }
         }
-        if (tool === null) return; // 未選択時は描画・パンへ進まない（選択・移動のみ）
+        if (tool === 'select') return; // 選択モードは描画・パンへ進まない（選択・移動のみ）
         if (tool === 'hand') { startPan(e); return; }
         if (tool === 'crop') {
           if (!cropRect) return;
@@ -7718,6 +8149,7 @@
         }
         // フリーフォーム描画中：カーソルまでの次の辺をプレビュー。
         if (activeFreeform) { activeFreeform.cursor = xy(e); renderFreeformPreview(); return; }
+        if (marquee) { const mp = xy(e); marquee.x = mp.x; marquee.y = mp.y; recomposite(); return; }
         // 選択オブジェクトのドラッグ（移動・変形）。undo は実際に動いた時だけ積む。
         if (objDrag) {
           const p = xy(e);
@@ -7730,7 +8162,7 @@
           }
           objDrag.p = p; // キー操作だけで再適用できるよう最後の座標を覚える
           syncDragMods(objDrag, e);
-          applyObjDrag(objDrag, p, objDrag.shift);
+          applyDrag(objDrag, p, objDrag.shift);
           recomposite();
           return;
         }
@@ -7738,10 +8170,10 @@
         if (tool === 'crop') { if (cropDrag) updateCrop(xy(e)); return; }
         if (!drawing) {
           // ホバー中のカーソル表示（ハンドル＝grab、本体＝move）。hand はパン用カーソル優先。
-          // 未選択（null）でも選択・移動できるのでカーソルを出す。
-          if ((tool === null || OBJECT_TOOLS.includes(tool)) && tool !== 'hand') {
+          // 選択モードでも描画ツール中でも図形は掴めるのでカーソルを出す。
+          if ((tool === 'select' || OBJECT_TOOLS.includes(tool)) && tool !== 'hand') {
             const p2 = xy(e);
-            const sel = selectedObj();
+            const sel = soleSel();
             const hk = sel && hitObjHandle(sel, p2);
             // 辺の中点ハンドルは縦のみ／横のみのリサイズなので専用カーソルを出す
             canvas.style.cursor = hk
@@ -7792,7 +8224,24 @@
           }
           return;
         }
-        if (objDrag) { objDrag = null; canvas.style.cursor = ''; recomposite(); return; }
+        if (marquee) { // 範囲に完全に収まった図形を選ぶ
+          const m = marqueeRect(marquee);
+          const ids = objects.filter((o) => !o.hidden && rectContainsBounds(m, objBounds(o))).map((o) => o.id);
+          if (marquee.add) ids.forEach((id) => { if (!isSelected(id)) selectedIds.push(id); });
+          else setSelection(ids);
+          marquee = null;
+          recomposite();
+          return;
+        }
+        if (objDrag) {
+          // 動かさずに離したクリックの後始末。Ctrl＋クリックは選択済みを外し、
+          // 素のクリックは掴んだ1つだけの選択に畳む（Office と同じ）。
+          if (!objDrag.moved && objDrag.mode === 'move' && objDrag.clickId) {
+            if (objDrag.additive) { if (objDrag.wasSelected) deselect(objDrag.clickId); }
+            else setSelection([objDrag.clickId]);
+          }
+          objDrag = null; canvas.style.cursor = ''; recomposite(); return;
+        }
         if (tool === 'hand') { endPan(); return; }
         if (tool === 'crop') { cropDrag = null; return; }
         if (!drawing) return;
@@ -7817,7 +8266,7 @@
             pushUndo();
             o.id = newObjId();
             objects.push(o);
-            selectedId = o.id; // 描いた直後は選択状態（すぐ動かせる）
+            setSelection([o.id]); // 描いた直後は選択状態（すぐ動かせる）
           }
         } else if (tool === 'mosaic') {
           pushUndo();
@@ -7831,7 +8280,7 @@
         if (activeCallout && activeCallout.dragTip) { activeCallout.dragTip = false; activeCallout.render(); return; }
         if (tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
         if (tool === 'pen' || tool === 'marker') bakeLiveStroke(); // 描きかけ分は確定させる
-        drawing = false; pendingPlace = null; cropDrag = null; objDrag = null; endPan();
+        drawing = false; pendingPlace = null; cropDrag = null; objDrag = null; marquee = null; endPan();
         canvas.style.cursor = '';
         recomposite();
       });
@@ -7840,23 +8289,23 @@
         // フリーフォーム描画中のダブルクリックは「開いたまま確定」（Office と同じ）
         if (activeFreeform) { e.preventDefault(); commitFreeform(false); return; }
         if (activeCallout || cropMode) return;
-        if (!(tool === null || OBJECT_TOOLS.includes(tool))) return; // 未選択でも再編集可
+        if (!(tool === 'select' || OBJECT_TOOLS.includes(tool))) return; // 選択モードでも再編集可
         const p = xy(e);
         const hit = hitObject(p);
         if (hit && (hit.type === 'text' || hit.type === 'callout')) {
           e.preventDefault();
-          selectedId = hit.id;
+          setSelection([hit.id]);
           objDrag = null;
           if (hit.type === 'text') beginText(p, hit);
           else beginCallout(p, hit);
         }
       });
-      // 選択中オブジェクトの削除（Delete キーと右クリックメニューで共用）
-      function deleteSelectedObject() {
-        if (!selectedId) return;
+      // 選択中オブジェクトの削除（Delete キーと右クリックメニューで共用）。複数選択なら全部消す。
+      function deleteSelection() {
+        if (!selectedIds.length) return;
         pushUndo();
-        objects = objects.filter((o) => o.id !== selectedId);
-        selectedId = null;
+        objects = objects.filter((o) => !isSelected(o.id));
+        clearSelection();
         recomposite();
       }
       // 右クリックでオブジェクトを削除（Office 風のミニコンテキストメニュー）。
@@ -7865,24 +8314,26 @@
         e.preventDefault(); // 既定メニュー・選択系の既定動作を抑止（Electron では通常出ないが保険）
         if (cropMode) return;      // トリミング中は「適用／取消」のUIに任せる
         if (activeCallout) return; // 吹き出しの本文入力中は編集に任せる
-        // フリーフォーム描画中の右クリックは描きかけを破棄してハンドツールへ
-        if (activeFreeform) { cancelFreeform(); selectTool('hand'); return; }
-        // 左ボタンを押したままの右クリック：描きかけ・配置待ちを破棄してハンドツールへ。
+        // フリーフォーム描画中の右クリックは描きかけを破棄して既定モードへ
+        if (activeFreeform) { cancelFreeform(); selectTool(lastDefaultTool); return; }
+        // 左ボタンを押したままの右クリック：描きかけ・配置待ちを破棄して既定モードを入れ替える。
         // pointermove を待たずここで発火するので、マウスを動かさなくても効く。
-        if (drawing || pendingPlace) { discardDrawing(); selectTool('hand'); return; }
-        // 図形の上ならクリック選択と同じ対象（未選択含む）に限り削除メニューを出す。
-        if (tool === null || OBJECT_TOOLS.includes(tool)) {
+        if (drawing || pendingPlace) { discardDrawing(); toggleDefaultTool(); return; }
+        // 図形の上なら、クリック選択と同じ対象に限り削除メニューを出す。
+        if (tool === 'select' || OBJECT_TOOLS.includes(tool)) {
           const hit = hitObject(xy(e));
           if (hit) {
-            selectedId = hit.id;
+            // 選択済みを右クリックしたときは選択を保つ（まとめて削除できる）
+            if (!isSelected(hit.id)) setSelection([hit.id]);
             recomposite(); // 何が消えるか選択枠で可視化してからメニューを出す
             ieOpenContextMenu(e.clientX, e.clientY);
             return;
           }
         }
-        // それ以外（未選択・ペン・ハイライト・消しゴム・モザイク・空白の右クリック）は
-        // いつでもハンドツールへ逃がす（仕様6章）。
-        selectTool('hand');
+        // 既定モード（選択／ハンド）にいるなら、もう一方へ入れ替える（要望7）。
+        // 描画ツール中なら、直前に居た既定モードへ戻す＝どのツールからでも逃げられる（仕様6章）。
+        if (DEFAULT_TOOLS.includes(tool)) toggleDefaultTool();
+        else selectTool(lastDefaultTool);
       });
       // カーソル位置にミニメニューを開く。id を rb-palette にすると、パレット共通の
       // グローバル mousedown 閉じ処理と rbClosePalette() がそのまま効く。
@@ -7896,7 +8347,7 @@
         del.textContent = '🗑 削除';
         del.addEventListener('mousedown', (ev) => {
           ev.preventDefault(); // 先にグローバル閉じ処理が走ってもボタン自体は .rb-palette 内なので届く
-          deleteSelectedObject();
+          deleteSelection();
           rbClosePalette();
         });
         menu.appendChild(del);
@@ -7907,7 +8358,73 @@
         menu.style.top = Math.max(8, Math.min(y, window.innerHeight - h - 8)) + 'px';
       }
 
+      // ---- ヘルプ（使い方）----
+      // 以前はキャンバスの下に約480字の説明文（.ie-hint）を1段落で敷いていたが、読めず
+      // 縦も食っていたので、ツールバー右上の「ヘルプ」から箇条書きで開く読み物にした。
+      let helpOverlay = null;
+      const IE_HELP = [
+        ['選択と移動', [
+          '「選択」モードなら、図形をクリックして選べます（描画ツール中でも図形は掴めます）。',
+          '<kbd>Ctrl</kbd>＋クリックで複数の図形を選べます。選んである図形を <kbd>Ctrl</kbd>＋クリックすると選択から外れます。',
+          '「選択」モードで何も無い所からドラッグすると範囲選択になります。<strong>枠に丸ごと入った図形だけ</strong>が選ばれます（<kbd>Ctrl</kbd> か <kbd>Shift</kbd> を押しながらだと今の選択に足します）。',
+          '選んだ図形はドラッグで移動できます。複数選んでいればまとめて動きます。',
+          '白丸のハンドルで変形できるのは、1つだけ選んでいるときです（辺の中央は縦だけ・横だけ）。',
+          '図形の外をクリックすると選択が外れます。',
+          '<kbd>Ctrl</kbd>＋ドラッグでコピーします（ドラッグを始めた後に押しても効きます）。',
+          '<kbd>Shift</kbd>＋ドラッグで水平・垂直に固定します。',
+          '<kbd>Delete</kbd>、または右クリック→削除で消せます。複数選んでいればまとめて消えます。',
+        ]],
+        ['描画', [
+          'ドラッグで描きます。図形が決まるのはマウスを離した時です（テキスト・吹き出しも同じ）。',
+          '多角形はクリックで頂点を足し、始点をクリックで閉じて確定します（ダブルクリックで開いたまま確定、<kbd>Esc</kbd>で中止）。',
+          '直線は <kbd>Shift</kbd> を押しながらで45°刻みになります。',
+          'テキストと吹き出しは、ダブルクリックで文字を編集し直せます。',
+          '消しゴムで消えるのは描いた注釈だけです（スクリーンショット本体は残ります）。',
+        ]],
+        ['モードの切り替え', [
+          '「選択」と「ハンド」が既定のモードです。',
+          '何も無い所を右クリックすると、この2つが入れ替わります。',
+          '描画ツールを使っている最中に右クリックすると、直前の既定モードへ戻ります（描きかけは取りやめ）。',
+        ]],
+        ['色と書式', [
+          '色は「線色」「塗りつぶし」「文字色」の3つに分かれています。図形を選んでから変えると、その図形に反映されます（複数選んでいればまとめて）。',
+          '四角・丸・多角形（閉じたもの）・テキストボックス・吹き出しは塗りつぶせます。「塗りつぶしなし」で透明に戻せます。',
+          'テキストボックスは「線色」で枠線を付けられます。文字の色は「文字色」で別に決めます。',
+          '矢印・直線・×印は線だけの図形なので、塗りつぶしはありません。',
+          '文字サイズ・太字・斜体は、テキストか吹き出しを使っているときだけ出ます。',
+          '透過率はツールごとに覚えます（0%＝不透明）。',
+        ]],
+        ['取り消し', [
+          '元に戻す＝<kbd>Ctrl</kbd>+<kbd>Z</kbd>、やり直す＝<kbd>Ctrl</kbd>+<kbd>Y</kbd>（<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>も同じ）。',
+          '直前の20操作までさかのぼれます。',
+        ]],
+        ['トリミングと表示', [
+          'トリミングは範囲を決めてから「トリミング適用」を押します。',
+          'ハンドで画像を動かせます。ホイールで拡大縮小（ハンド以外のツールは <kbd>Ctrl</kbd>＋ホイール）。',
+          '表示倍率は編集中の見え方だけを変えるもので、保存される画像の仕上がりは変わりません。',
+        ]],
+      ];
+      function openImageEditorHelp() {
+        if (helpOverlay) return;
+        const body = IE_HELP
+          .map(([head, items]) => `<h4>${head}</h4><ul>${items.map((s) => `<li>${s}</li>`).join('')}</ul>`)
+          .join('');
+        helpOverlay = buildModal(`
+          <h3>画像編集の使い方</h3>
+          <div class="ie-help-body">${body}</div>
+          <div class="modal-actions"><button class="btn primary" data-close>閉じる</button></div>`);
+        helpOverlay.querySelector('.modal').classList.add('ie-help-doc');
+        // 取り残し防止: 背景クリック・閉じるボタンで消えたのを検知して参照を捨てる
+        const obs = new MutationObserver(() => {
+          if (helpOverlay && !helpOverlay.isConnected) { obs.disconnect(); helpOverlay = null; }
+        });
+        obs.observe(document.body, { childList: true });
+      }
+      function closeHelp() { if (helpOverlay) { closeModal(helpOverlay); helpOverlay = null; } }
+      overlay.querySelector('.ie-help-btn').addEventListener('click', openImageEditorHelp);
+
       function close() {
+        closeHelp(); // ヘルプを開いたままエディタを閉じた場合の取り残し防止
         cancelCallout(); // 編集中の吹き出しは破棄
         cancelFreeform(); // 描きかけのフリーフォームも破棄（閉じる＝保存しない）
         rbClosePalette(); // 右クリックメニューを開いたまま閉じた場合の取り残し防止
@@ -7918,20 +8435,26 @@
         overlay.remove();
       }
       function onKey(ev) {
+        // ヘルプを開いている間はエディタ側のキー操作を止め、Esc はヘルプだけを閉じる。
+        if (helpOverlay) {
+          if (ev.key === 'Escape') { ev.preventDefault(); closeHelp(); }
+          return;
+        }
         // テキスト・吹き出しの入力欄は自前の keydown で stopPropagation するため
         // ここへは届かない。他の入力要素上でも誤動作しないようガードする。
         const t = ev.target;
         const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
         // ドラッグ中は削除・履歴を受け付けない。どちらも objects を差し替えるので、
-        // 掴んでいる objDrag.obj が迷子の実体になってしまう。
-        if (objDrag && ev.key !== 'Escape') return;
+        // 掴んでいる objDrag.items の実体が迷子になってしまう。
+        if ((objDrag || marquee) && ev.key !== 'Escape') return;
         if (ev.key === 'Escape') {
           if (cancelFreeform()) return; // 描きかけのフリーフォームは破棄だけ
-          if (selectedId) { selectedId = null; recomposite(); return; } // まず選択解除、もう一度で閉じる
+          if (marquee) { marquee = null; recomposite(); return; } // 範囲選択の途中は取りやめ
+          if (selectedIds.length) { clearSelection(); recomposite(); return; } // まず選択解除、もう一度で閉じる
           close();
-        } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedId && !inField) {
+        } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedIds.length && !inField) {
           ev.preventDefault();
-          deleteSelectedObject();
+          deleteSelection();
         } else if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && !inField && ev.key.toLowerCase() === 'z') {
           // Ctrl+Z＝元に戻す / Ctrl+Shift+Z＝やり直す（テキスト入力中は素通し）
           ev.preventDefault();
@@ -7949,7 +8472,7 @@
         if (!objDrag || !objDrag.moved || !objDrag.p) return;
         if (ev.key !== 'Control' && ev.key !== 'Meta' && ev.key !== 'Shift') return;
         if (!syncDragMods(objDrag, ev)) return; // 変化なし（キーリピート等）は何もしない
-        applyObjDrag(objDrag, objDrag.p, objDrag.shift);
+        applyDrag(objDrag, objDrag.p, objDrag.shift);
         recomposite();
       }
       document.addEventListener('keydown', onDragMod);
@@ -7967,7 +8490,7 @@
         commitCallout(); // 未確定の吹き出しを確定してから書き出す
         finishFreeformIfAny(); // 描きかけのフリーフォームも確定してから書き出す
         exitCropMode();
-        selectedId = null;
+        clearSelection();
         // 合成結果（crop オーバーレイ無し）を別 canvas に作って書き出す。
         // baseSrc を原寸で読んでいるため、合成 out も原寸解像度になる（3-B）。
         const out = document.createElement('canvas');
@@ -8411,6 +8934,9 @@
     // 編集画面ヘッダーの固定位置（top）に使うトップバー高さを実測して CSS 変数へ反映。
     syncTopbarHeight();
     window.addEventListener('resize', syncTopbarHeight);
+    // サイドバーの幅ドラッグ。窓を縮めたときは保存幅を上限で丸め直す（保存値は変えない）。
+    initThumbsResize();
+    window.addEventListener('resize', applyThumbsChrome);
     // 編集画面の表示ズーム（Ctrl+ホイールで拡大縮小・Ctrl+0 で等倍）。
     // 画像編集キャンバスの Ctrl+ホイールズームと同じ操作感。内容(#app)だけを拡大する。
     initEditorZoom();
@@ -8466,10 +8992,14 @@
         naturalCompareFilenames, wizardStepsFromFiles, makeFilesSource, makeSessionSource,
         // 画像編集の図形ジオメトリ（8ハンドル・フリーフォーム・線分距離）
         freeformBounds, distSeg, objHandles, applyObjDrag,
+        // 画像編集の色モデル（線・塗り・文字）と多角形の内包判定
+        normalizeObjColors, pointInPoly, marqueeRect, rectContainsBounds,
         // PDF出力の倍率・用紙・向き
         clampPdfScale, pdfPaperDims, pdfPageStyleCss, pdfOutSettings, setPdfOutSettings,
+        paginateBreaks,
         // サムネイルサイドバー
         thumbStepModel, renderThumbSidebar, updateThumbSidebar, thumbsCollapsed, setThumbsCollapsed,
+        clampThumbsWidth, thumbsWidth, setThumbsWidth,
         // 実行モード（3-R5）とガイド小窓（3-R6）
         playerSteps, playerStartIndex, formatPlayerTime, playerSummary, openPlayer,
         guideStepPayload,
