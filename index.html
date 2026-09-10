@@ -7756,7 +7756,7 @@
         overlay.querySelector('.ie-crop-apply').addEventListener('click', applyCrop);
         overlay.querySelector('.ie-crop-cancel').addEventListener('click', () => selectTool('select'));
       }
-      selectTool('select'); // 初期は未選択（crop 系関数の定義後に呼ぶ）
+      selectTool('select'); // 初期は選択モード（crop 系関数の定義後に呼ぶ）
 
       // ---- ポインタ操作 ----
       let drawing = false;
@@ -7789,10 +7789,6 @@
         recomposite(); // プレビューを消す
       }
 
-      // Ctrl＋ドラッグのコピー状態を切り替える。押している間だけ複製を掴み、離せば
-      // 複製を捨てて元の図形に戻る（Office・エクスプローラと同じで、ドラッグを始めた
-      // 後に押しても効く）。applyObjDrag は orig 基準の絶対計算なので、掴み替えても
-      // 位置はずれない。状態が変わったときだけ true を返す。
       // 掴んでいる図形すべてを、掴んだ位置からの差分で動かす。applyObjDrag は
       // orig 基準の絶対計算なので、何度呼んでもずれない（掴み替えの土台）。
       function applyDrag(d, p, shift) {
@@ -7800,6 +7796,10 @@
           applyObjDrag({ mode: d.mode, obj: it.obj, sx: d.sx, sy: d.sy, orig: it.orig }, p, shift);
         });
       }
+      // Ctrl＋ドラッグのコピー状態を切り替える。押している間だけ複製を掴み、離せば
+      // 複製を捨てて元の図形に戻る（Office・エクスプローラと同じで、ドラッグを始めた
+      // 後に押しても効く）。位置は orig 基準の絶対計算なので掴み替えてもずれない。
+      // 状態が変わったときだけ true を返す。
       function setDragCopy(d, on) {
         if (d.mode !== 'move' || !d.moved || !!d.copy === on) return false;
         if (on) {
@@ -7857,7 +7857,7 @@
         // フリーフォーム描画中：クリックは頂点の追加（始点なら閉じて確定）だけ。
         if (activeFreeform) { freeformClick(p); return; }
         // 既存オブジェクトの選択・ドラッグ開始（ツール本来の動作より優先）。
-        // 未選択（null）でも選択・移動はできる（描画しないだけ）。
+        // 選択モード（'select'）でも描画ツール中でも、図形の選択・移動はできる。
         if (tool === 'select' || OBJECT_TOOLS.includes(tool)) {
           const sole = soleSel();
           const hk = sole && hitObjHandle(sole, p);
@@ -7901,7 +7901,7 @@
           // もう一度クリックで描画開始）
           if (selectedIds.length) { clearSelection(); recomposite(); return; }
         }
-        if (tool === 'select') return; // 未選択時は描画・パンへ進まない（選択・移動のみ）
+        if (tool === 'select') return; // 選択モードは描画・パンへ進まない（選択・移動のみ）
         if (tool === 'hand') { startPan(e); return; }
         if (tool === 'crop') {
           if (!cropRect) return;
@@ -7979,7 +7979,7 @@
         if (tool === 'crop') { if (cropDrag) updateCrop(xy(e)); return; }
         if (!drawing) {
           // ホバー中のカーソル表示（ハンドル＝grab、本体＝move）。hand はパン用カーソル優先。
-          // 未選択（null）でも選択・移動できるのでカーソルを出す。
+          // 選択モードでも描画ツール中でも図形は掴めるのでカーソルを出す。
           if ((tool === 'select' || OBJECT_TOOLS.includes(tool)) && tool !== 'hand') {
             const p2 = xy(e);
             const sel = soleSel();
@@ -8098,7 +8098,7 @@
         // フリーフォーム描画中のダブルクリックは「開いたまま確定」（Office と同じ）
         if (activeFreeform) { e.preventDefault(); commitFreeform(false); return; }
         if (activeCallout || cropMode) return;
-        if (!(tool === 'select' || OBJECT_TOOLS.includes(tool))) return; // 未選択でも再編集可
+        if (!(tool === 'select' || OBJECT_TOOLS.includes(tool))) return; // 選択モードでも再編集可
         const p = xy(e);
         const hit = hitObject(p);
         if (hit && (hit.type === 'text' || hit.type === 'callout')) {
@@ -8128,7 +8128,7 @@
         // 左ボタンを押したままの右クリック：描きかけ・配置待ちを破棄して既定モードを入れ替える。
         // pointermove を待たずここで発火するので、マウスを動かさなくても効く。
         if (drawing || pendingPlace) { discardDrawing(); toggleDefaultTool(); return; }
-        // 図形の上ならクリック選択と同じ対象（未選択含む）に限り削除メニューを出す。
+        // 図形の上なら、クリック選択と同じ対象に限り削除メニューを出す。
         if (tool === 'select' || OBJECT_TOOLS.includes(tool)) {
           const hit = hitObject(xy(e));
           if (hit) {
