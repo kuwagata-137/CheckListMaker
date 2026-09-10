@@ -6309,6 +6309,15 @@
       }
       return inside;
     }
+    // 範囲選択の矩形。始点と終点の前後によらず正規化する。
+    function marqueeRect(m) {
+      return { x: Math.min(m.sx, m.x), y: Math.min(m.sy, m.y), w: Math.abs(m.x - m.sx), h: Math.abs(m.y - m.sy) };
+    }
+    // 図形の外接矩形が範囲へ「完全に」収まっているか。かすっただけでは選ばない
+    //（PowerPoint / Word の範囲選択と同じ）。
+    function rectContainsBounds(m, b) {
+      return b.x >= m.x && b.y >= m.y && b.x + b.w <= m.x + m.w && b.y + b.h <= m.y + m.h;
+    }
     // 旧データ（色は color 1つだけ）を、線 color / 塗り fill / 文字 textColor の3つへ移す。
     //  - text は color が文字色だった。textColor へ移し、枠線は無し（color = null）にする。
     //  - callout は color が枠線かつ文字色。文字色を写し取り、塗りは従来の白ベタにする。
@@ -6507,8 +6516,19 @@
       const newObjId = () => 'o' + Date.now().toString(36) + '-' + (objSeq++);
       objects.forEach((o) => { delete o.hidden; if (!o.id) o.id = newObjId(); }); // 保存データの保険
       normalizeObjColors(objects); // 旧データ（color 1色だけ）を線・塗り・文字の3色へ移す
-      let selectedId = null; // 選択中オブジェクト（クリックで選択、Delete で削除）
-      const selectedObj = () => objects.find((o) => o.id === selectedId) || null;
+      // 選択は複数持てる（Ctrl＋クリックで足し引き、選択モードのドラッグで範囲選択）。
+      // 移動・削除・色や書式の変更は選択中すべてに効く。
+      let selectedIds = [];              // 選択順に並んだ id
+      let marquee = null;                // 範囲選択中 { sx, sy, x, y, add }
+      const selectedObjs = () => objects.filter((o) => selectedIds.includes(o.id));
+      const isSelected = (id) => selectedIds.includes(id);
+      // 単独選択のときだけの実体。変形ハンドルはこれがあるときだけ出す。
+      const soleSel = () => (selectedIds.length === 1 ? objects.find((o) => o.id === selectedIds[0]) || null : null);
+      // 色・書式コントロールに映す代表（最後に選んだもの）。
+      const selectedObj = () => objects.find((o) => o.id === selectedIds[selectedIds.length - 1]) || null;
+      const setSelection = (ids) => { selectedIds = ids.filter((id) => objects.some((o) => o.id === id)); };
+      const clearSelection = () => { selectedIds = []; };
+      const deselect = (id) => { const i = selectedIds.indexOf(id); if (i >= 0) selectedIds.splice(i, 1); };
 
       // ---- ツール別の透過率（%）。スライダーはツール切替でそのツールの値に同期 ----
       const toolOpacity = { pen: 0, marker: 60, arrow: 0, line: 0, rect: 0, ellipse: 0, cross: 0, freeform: 0, text: 0, callout: 0 };
@@ -6523,13 +6543,13 @@
       }
       // 選択オブジェクトへの透過率変更を1操作として undo できるよう、つまみを
       // 掴んだ時点でスナップショットを取る。
-      opacityInput.addEventListener('pointerdown', () => { if (selectedObj()) pushUndo(); });
+      opacityInput.addEventListener('pointerdown', () => { if (selectedIds.length) pushUndo(); });
       opacityInput.addEventListener('input', () => {
         const v = Math.max(0, Math.min(90, Math.round(Number(opacityInput.value) || 0)));
         opacityVal.textContent = v + '%';
         if (Object.prototype.hasOwnProperty.call(toolOpacity, tool)) toolOpacity[tool] = v;
-        const sel = selectedObj();
-        if (sel) { sel.opacity = 1 - v / 100; recomposite(); } // 選択中オブジェクトへ即時反映
+        const sels = selectedObjs();
+        if (sels.length) { sels.forEach((o) => { o.opacity = 1 - v / 100; }); recomposite(); } // 選択中すべてへ即時反映
       });
       // ---- 色は「線・塗り・文字」の3つ ----
       // 図形の色は color（線）1つきりで、テキストは color が文字色を兼ねていたため
@@ -6571,11 +6591,13 @@
         if (key === 'color') { lineNone = !value; if (value) colorInput.value = value; }
         else if (key === 'fill') fillValue = value;
         else textColorValue = value || textColorValue; // 文字色に「なし」は無い
-        const sel = selectedObj();
-        if (!sel) colorGestureFor = null;
-        if (sel && colorTargets(sel).includes(key)) {
-          if (colorGestureFor !== sel.id + key) { pushUndo(); colorGestureFor = sel.id + key; }
-          sel[key] = value;
+        // 選択中のうち、その色を持てる図形だけに効かせる（直線に塗りは無い等）。
+        const targets = selectedObjs().filter((o) => colorTargets(o).includes(key));
+        if (!selectedIds.length) colorGestureFor = null;
+        if (targets.length) {
+          const gesture = selectedIds.join(',') + key;
+          if (colorGestureFor !== gesture) { pushUndo(); colorGestureFor = gesture; }
+          targets.forEach((o) => { o[key] = value; });
         }
         recomposite();
         syncColorUI();
@@ -6635,10 +6657,11 @@
       function applyTextFmt(changes) {
         Object.assign(textFmt, changes); // 次回の新規作成にも引き継ぐ
         if (fmtTarget) { fmtTarget.set(changes); syncTextFmtUI(); return; }
-        const sel = selectedObj();
-        if (isTextObj(sel)) {
-          if (fmtGestureFor !== sel.id) { pushUndo(); fmtGestureFor = sel.id; }
-          Object.assign(sel, changes);
+        const targets = selectedObjs().filter(isTextObj);
+        if (targets.length) {
+          const gesture = targets.map((o) => o.id).join(',');
+          if (fmtGestureFor !== gesture) { pushUndo(); fmtGestureFor = gesture; }
+          targets.forEach((o) => Object.assign(o, changes));
           recomposite();
         }
         syncTextFmtUI();
@@ -6822,7 +6845,8 @@
         if (t !== 'crop') exitCropMode(); // crop 以外へ移ると選択枠を破棄
         tool = t;
         if (DEFAULT_TOOLS.includes(t)) lastDefaultTool = t;
-        selectedId = null; // ツール切替で選択解除
+        clearSelection(); // ツール切替で選択解除
+        marquee = null;    // 範囲選択の途中なら捨てる
         toolBtns.forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
         canvas.classList.toggle('tool-select', t === 'select');
         canvas.classList.toggle('tool-hand', t === 'hand');
@@ -6873,7 +6897,7 @@
       }
       function restore(snap) {
         objects = JSON.parse(JSON.stringify(snap.objects || []));
-        selectedId = null;
+        clearSelection();
         let pending = 2;
         const done = () => { if (--pending === 0) { applyZoom(); recomposite(); } };
         setLayerSize(snap.w, snap.h);
@@ -7086,40 +7110,52 @@
       }
       // 選択中オブジェクトの破線枠＋ハンドル（Excel 風）。
       function drawSelection() {
-        const o = selectedObj();
-        if (!o) return;
+        const sels = selectedObjs();
+        if (!sels.length && !marquee) return;
         const s = dispScale();
         const g = ctx;
         g.save();
         g.setTransform(1, 0, 0, 1, 0, 0);
         g.globalAlpha = 1;
-        // 線系（直線・矢印）は長方形の選択枠を出さず、線に沿った点線＋端点ハンドル
-        // だけにする（線を線として扱う。Office の直線選択と同じ見え方）。
-        if (o.type === 'arrow' || o.type === 'line') {
+        sels.forEach((o) => {
           g.strokeStyle = '#1a73e8';
           g.lineWidth = 1.5 * s;
           g.setLineDash([5 * s, 4 * s]);
-          g.beginPath(); g.moveTo(o.x1, o.y1); g.lineTo(o.x2, o.y2); g.stroke();
+          // 線系（直線・矢印）は長方形の選択枠を出さず、線に沿った点線だけにする
+          //（線を線として扱う。Office の直線選択と同じ見え方）。
+          if (o.type === 'arrow' || o.type === 'line') {
+            g.beginPath(); g.moveTo(o.x1, o.y1); g.lineTo(o.x2, o.y2); g.stroke();
+          } else {
+            const b = objBounds(o);
+            g.strokeRect(b.x - 4 * s, b.y - 4 * s, b.w + 8 * s, b.h + 8 * s);
+          }
           g.setLineDash([]);
-        } else {
-          const b = objBounds(o);
+        });
+        // 変形ハンドルは単独選択のときだけ（複数選択中は破線枠だけで、移動と削除ができる）。
+        const sole = soleSel();
+        if (sole) {
+          // ハンドルは白塗り＋青枠の丸（トリミングの白地スタイルに合わせる）
+          const hr = 5.5 * s;
+          g.fillStyle = '#ffffff';
+          g.strokeStyle = '#1a73e8';
+          g.lineWidth = 2 * s;
+          objHandles(sole).forEach((h) => {
+            g.beginPath();
+            g.arc(h.x, h.y, hr, 0, Math.PI * 2);
+            g.fill();
+            g.stroke();
+          });
+        }
+        if (marquee) { // 範囲選択の枠
+          const m = marqueeRect(marquee);
+          g.fillStyle = 'rgba(26,115,232,.08)';
+          g.fillRect(m.x, m.y, m.w, m.h);
           g.strokeStyle = '#1a73e8';
           g.lineWidth = 1.5 * s;
           g.setLineDash([5 * s, 4 * s]);
-          g.strokeRect(b.x - 4 * s, b.y - 4 * s, b.w + 8 * s, b.h + 8 * s);
+          g.strokeRect(m.x, m.y, m.w, m.h);
           g.setLineDash([]);
         }
-        // ハンドルは白塗り＋青枠の丸（トリミングの白地スタイルに合わせる）
-        const hr = 5.5 * s;
-        g.fillStyle = '#ffffff';
-        g.strokeStyle = '#1a73e8';
-        g.lineWidth = 2 * s;
-        objHandles(o).forEach((h) => {
-          g.beginPath();
-          g.arc(h.x, h.y, hr, 0, Math.PI * 2);
-          g.fill();
-          g.stroke();
-        });
         g.restore();
       }
       // ---- オブジェクトのヒットテスト（クリック選択・消しゴム削除用） ----
@@ -7186,7 +7222,7 @@
         const radius = Math.max(4, Number(sizeInput.value) * 2) / 2;
         const before = objects.length;
         objects = objects.filter((o) => {
-          if (!o.hidden && objHit(o, p, radius)) { if (selectedId === o.id) selectedId = null; return false; }
+          if (!o.hidden && objHit(o, p, radius)) { deselect(o.id); return false; }
           return true;
         });
         return objects.length !== before;
@@ -7229,7 +7265,7 @@
           size: Number(sizeInput.value), opacity: toolAlpha('freeform'),
         };
         objects.push(o);
-        selectedId = o.id; // 描いた直後は選択状態（すぐ動かせる）
+        setSelection([o.id]); // 描いた直後は選択状態（すぐ動かせる）
         recomposite();
       }
       function finishFreeformIfAny() { if (activeFreeform) commitFreeform(false); }
@@ -7418,7 +7454,7 @@
               existing.fs !== fmt.fs ||
               (existing.bold !== false) !== fmt.bold ||
               !!existing.italic !== fmt.italic;
-            if (text.trim() === '') { pushUndo(); objects = objects.filter((o) => o.id !== existing.id); if (selectedId === existing.id) selectedId = null; }
+            if (text.trim() === '') { pushUndo(); objects = objects.filter((o) => o.id !== existing.id); deselect(existing.id); }
             else if (text !== existing.text || fmtChanged) {
               pushUndo();
               existing.text = text;
@@ -7436,7 +7472,7 @@
             size: Number(sizeInput.value), opacity: toolAlpha('text'),
           };
           objects.push(obj);
-          selectedId = obj.id; // 確定直後も選択状態にして、書式変更を続けられるように
+          setSelection([obj.id]); // 確定直後も選択状態にして、書式変更を続けられるように
           recomposite();
         };
         const cancel = () => {
@@ -7561,7 +7597,7 @@
           if (text.trim() === '') {
             pushUndo();
             objects = objects.filter((o) => o.id !== ex.id);
-            if (selectedId === ex.id) selectedId = null;
+            deselect(ex.id);
           } else if (text !== ex.text || ac.tip.x !== ex.tip.x || ac.tip.y !== ex.tip.y || fmtChanged) {
             pushUndo();
             ex.text = text;
@@ -7581,7 +7617,7 @@
           size: Number(sizeInput.value), opacity: toolAlpha('callout'),
         };
         objects.push(obj);
-        selectedId = obj.id; // 確定直後も選択状態にして、書式変更を続けられるように
+        setSelection([obj.id]); // 確定直後も選択状態にして、書式変更を続けられるように
         recomposite();
       }
       function cancelCallout() {
@@ -7759,20 +7795,30 @@
       // 複製を捨てて元の図形に戻る（Office・エクスプローラと同じで、ドラッグを始めた
       // 後に押しても効く）。applyObjDrag は orig 基準の絶対計算なので、掴み替えても
       // 位置はずれない。状態が変わったときだけ true を返す。
+      // 掴んでいる図形すべてを、掴んだ位置からの差分で動かす。applyObjDrag は
+      // orig 基準の絶対計算なので、何度呼んでもずれない（掴み替えの土台）。
+      function applyDrag(d, p, shift) {
+        d.items.forEach((it) => {
+          applyObjDrag({ mode: d.mode, obj: it.obj, sx: d.sx, sy: d.sy, orig: it.orig }, p, shift);
+        });
+      }
       function setDragCopy(d, on) {
         if (d.mode !== 'move' || !d.moved || !!d.copy === on) return false;
         if (on) {
-          applyObjDrag(d, { x: d.sx, y: d.sy }); // 差分0＝元を掴んだ位置へ戻す
-          const clone = JSON.parse(JSON.stringify(d.orig));
-          delete clone.hidden;
-          clone.id = newObjId();
-          objects.push(clone); // 複製は最前面
-          d.obj = clone;
-          selectedId = clone.id;
+          applyDrag(d, { x: d.sx, y: d.sy }); // 差分0＝元を掴んだ位置へ戻す
+          d.items.forEach((it) => {
+            const clone = JSON.parse(JSON.stringify(it.orig));
+            delete clone.hidden;
+            clone.id = newObjId();
+            objects.push(clone); // 複製は最前面
+            it.obj = clone;
+          });
+          setSelection(d.items.map((it) => it.obj.id));
         } else {
-          objects = objects.filter((o) => o !== d.obj); // 作った複製を取り消す
-          d.obj = d.src;
-          selectedId = d.src.id; // 選択枠も元の図形へ戻す
+          const clones = d.items.map((it) => it.obj);
+          objects = objects.filter((o) => !clones.includes(o)); // 作った複製を取り消す
+          d.items.forEach((it) => { it.obj = it.src; });
+          setSelection(d.items.map((it) => it.src.id)); // 選択枠も元の図形へ戻す
         }
         d.copy = on;
         canvas.style.cursor = on ? 'copy' : 'move';
@@ -7815,32 +7861,47 @@
         // 既存オブジェクトの選択・ドラッグ開始（ツール本来の動作より優先）。
         // 未選択（null）でも選択・移動はできる（描画しないだけ）。
         if (tool === 'select' || OBJECT_TOOLS.includes(tool)) {
-          const sel = selectedObj();
-          const hk = sel && hitObjHandle(sel, p);
-          if (hk) { // 選択中オブジェクトのハンドル（端点・四隅・尻尾）
+          const sole = soleSel();
+          const hk = sole && hitObjHandle(sole, p);
+          if (hk) { // 単独選択中のハンドル（端点・四隅・尻尾）
             objDrag = {
-              mode: hk, obj: sel, src: sel, sx: p.x, sy: p.y,
-              orig: JSON.parse(JSON.stringify(sel)), moved: false, copy: false, shift: false,
+              mode: hk, items: [{ obj: sole, src: sole, orig: JSON.parse(JSON.stringify(sole)) }],
+              sx: p.x, sy: p.y, moved: false, copy: false, shift: false,
             };
             canvas.setPointerCapture(e.pointerId);
             return;
           }
           const hit = hitObject(p);
           if (hit) {
-            selectedId = hit.id;
+            // Ctrl＋クリックは選択の足し引き。ただし Ctrl＋ドラッグはコピーなので、
+            // 選択済みを外すのは「動かさずに離した」ときだけ（pointerup で判定）。
+            const additive = !!(e.ctrlKey || e.metaKey);
+            const wasSelected = isSelected(hit.id);
+            if (additive) { if (!wasSelected) selectedIds.push(hit.id); }
+            else if (!wasSelected) setSelection([hit.id]);
             // Ctrl（コピー）と Shift（水平・垂直）は押した瞬間に決め打ちせず、
             // ドラッグ中の押し直し・離しに追従させる（syncDragMods）。
             objDrag = {
-              mode: 'move', obj: hit, src: hit, sx: p.x, sy: p.y,
-              orig: JSON.parse(JSON.stringify(hit)), moved: false,
-              copy: false, shift: false,
+              mode: 'move',
+              items: selectedObjs().map((o) => ({ obj: o, src: o, orig: JSON.parse(JSON.stringify(o)) })),
+              sx: p.x, sy: p.y, moved: false, copy: false, shift: false,
+              clickId: hit.id, additive, wasSelected,
             };
             canvas.setPointerCapture(e.pointerId);
             recomposite();
             return;
           }
-          // 空白クリックは選択解除のみ（新しい図形は配置しない。もう一度クリックで描画開始）
-          if (selectedId) { selectedId = null; recomposite(); return; }
+          // 選択モードは空白ドラッグで範囲選択。Ctrl／Shift 併用なら今の選択に足す。
+          if (tool === 'select') {
+            marquee = { sx: p.x, sy: p.y, x: p.x, y: p.y, add: !!(e.ctrlKey || e.metaKey || e.shiftKey) };
+            if (!marquee.add) clearSelection();
+            canvas.setPointerCapture(e.pointerId);
+            recomposite();
+            return;
+          }
+          // 描画ツール中の空白クリックは選択解除のみ（新しい図形は配置しない。
+          // もう一度クリックで描画開始）
+          if (selectedIds.length) { clearSelection(); recomposite(); return; }
         }
         if (tool === 'select') return; // 未選択時は描画・パンへ進まない（選択・移動のみ）
         if (tool === 'hand') { startPan(e); return; }
@@ -7899,6 +7960,7 @@
         }
         // フリーフォーム描画中：カーソルまでの次の辺をプレビュー。
         if (activeFreeform) { activeFreeform.cursor = xy(e); renderFreeformPreview(); return; }
+        if (marquee) { const mp = xy(e); marquee.x = mp.x; marquee.y = mp.y; recomposite(); return; }
         // 選択オブジェクトのドラッグ（移動・変形）。undo は実際に動いた時だけ積む。
         if (objDrag) {
           const p = xy(e);
@@ -7911,7 +7973,7 @@
           }
           objDrag.p = p; // キー操作だけで再適用できるよう最後の座標を覚える
           syncDragMods(objDrag, e);
-          applyObjDrag(objDrag, p, objDrag.shift);
+          applyDrag(objDrag, p, objDrag.shift);
           recomposite();
           return;
         }
@@ -7922,7 +7984,7 @@
           // 未選択（null）でも選択・移動できるのでカーソルを出す。
           if ((tool === 'select' || OBJECT_TOOLS.includes(tool)) && tool !== 'hand') {
             const p2 = xy(e);
-            const sel = selectedObj();
+            const sel = soleSel();
             const hk = sel && hitObjHandle(sel, p2);
             // 辺の中点ハンドルは縦のみ／横のみのリサイズなので専用カーソルを出す
             canvas.style.cursor = hk
@@ -7973,7 +8035,24 @@
           }
           return;
         }
-        if (objDrag) { objDrag = null; canvas.style.cursor = ''; recomposite(); return; }
+        if (marquee) { // 範囲に完全に収まった図形を選ぶ
+          const m = marqueeRect(marquee);
+          const ids = objects.filter((o) => !o.hidden && rectContainsBounds(m, objBounds(o))).map((o) => o.id);
+          if (marquee.add) ids.forEach((id) => { if (!isSelected(id)) selectedIds.push(id); });
+          else setSelection(ids);
+          marquee = null;
+          recomposite();
+          return;
+        }
+        if (objDrag) {
+          // 動かさずに離したクリックの後始末。Ctrl＋クリックは選択済みを外し、
+          // 素のクリックは掴んだ1つだけの選択に畳む（Office と同じ）。
+          if (!objDrag.moved && objDrag.mode === 'move' && objDrag.clickId) {
+            if (objDrag.additive) { if (objDrag.wasSelected) deselect(objDrag.clickId); }
+            else setSelection([objDrag.clickId]);
+          }
+          objDrag = null; canvas.style.cursor = ''; recomposite(); return;
+        }
         if (tool === 'hand') { endPan(); return; }
         if (tool === 'crop') { cropDrag = null; return; }
         if (!drawing) return;
@@ -7998,7 +8077,7 @@
             pushUndo();
             o.id = newObjId();
             objects.push(o);
-            selectedId = o.id; // 描いた直後は選択状態（すぐ動かせる）
+            setSelection([o.id]); // 描いた直後は選択状態（すぐ動かせる）
           }
         } else if (tool === 'mosaic') {
           pushUndo();
@@ -8012,7 +8091,7 @@
         if (activeCallout && activeCallout.dragTip) { activeCallout.dragTip = false; activeCallout.render(); return; }
         if (tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
         if (tool === 'pen' || tool === 'marker') bakeLiveStroke(); // 描きかけ分は確定させる
-        drawing = false; pendingPlace = null; cropDrag = null; objDrag = null; endPan();
+        drawing = false; pendingPlace = null; cropDrag = null; objDrag = null; marquee = null; endPan();
         canvas.style.cursor = '';
         recomposite();
       });
@@ -8026,18 +8105,18 @@
         const hit = hitObject(p);
         if (hit && (hit.type === 'text' || hit.type === 'callout')) {
           e.preventDefault();
-          selectedId = hit.id;
+          setSelection([hit.id]);
           objDrag = null;
           if (hit.type === 'text') beginText(p, hit);
           else beginCallout(p, hit);
         }
       });
-      // 選択中オブジェクトの削除（Delete キーと右クリックメニューで共用）
-      function deleteSelectedObject() {
-        if (!selectedId) return;
+      // 選択中オブジェクトの削除（Delete キーと右クリックメニューで共用）。複数選択なら全部消す。
+      function deleteSelection() {
+        if (!selectedIds.length) return;
         pushUndo();
-        objects = objects.filter((o) => o.id !== selectedId);
-        selectedId = null;
+        objects = objects.filter((o) => !isSelected(o.id));
+        clearSelection();
         recomposite();
       }
       // 右クリックでオブジェクトを削除（Office 風のミニコンテキストメニュー）。
@@ -8055,7 +8134,8 @@
         if (tool === 'select' || OBJECT_TOOLS.includes(tool)) {
           const hit = hitObject(xy(e));
           if (hit) {
-            selectedId = hit.id;
+            // 選択済みを右クリックしたときは選択を保つ（まとめて削除できる）
+            if (!isSelected(hit.id)) setSelection([hit.id]);
             recomposite(); // 何が消えるか選択枠で可視化してからメニューを出す
             ieOpenContextMenu(e.clientX, e.clientY);
             return;
@@ -8078,7 +8158,7 @@
         del.textContent = '🗑 削除';
         del.addEventListener('mousedown', (ev) => {
           ev.preventDefault(); // 先にグローバル閉じ処理が走ってもボタン自体は .rb-palette 内なので届く
-          deleteSelectedObject();
+          deleteSelection();
           rbClosePalette();
         });
         menu.appendChild(del);
@@ -8096,11 +8176,14 @@
       const IE_HELP = [
         ['選択と移動', [
           '「選択」モードなら、図形をクリックして選べます（描画ツール中でも図形は掴めます）。',
-          '選んだ図形はドラッグで移動、白丸のハンドルで変形できます（辺の中央は縦だけ・横だけ）。',
+          '<kbd>Ctrl</kbd>＋クリックで複数の図形を選べます。選んである図形を <kbd>Ctrl</kbd>＋クリックすると選択から外れます。',
+          '「選択」モードで何も無い所からドラッグすると範囲選択になります。<strong>枠に丸ごと入った図形だけ</strong>が選ばれます（<kbd>Ctrl</kbd> か <kbd>Shift</kbd> を押しながらだと今の選択に足します）。',
+          '選んだ図形はドラッグで移動できます。複数選んでいればまとめて動きます。',
+          '白丸のハンドルで変形できるのは、1つだけ選んでいるときです（辺の中央は縦だけ・横だけ）。',
           '図形の外をクリックすると選択が外れます。',
           '<kbd>Ctrl</kbd>＋ドラッグでコピーします（ドラッグを始めた後に押しても効きます）。',
           '<kbd>Shift</kbd>＋ドラッグで水平・垂直に固定します。',
-          '<kbd>Delete</kbd>、または右クリック→削除で消せます。',
+          '<kbd>Delete</kbd>、または右クリック→削除で消せます。複数選んでいればまとめて消えます。',
         ]],
         ['描画', [
           'ドラッグで描きます。図形が決まるのはマウスを離した時です（テキスト・吹き出しも同じ）。',
@@ -8115,7 +8198,7 @@
           '描画ツールを使っている最中に右クリックすると、直前の既定モードへ戻ります（描きかけは取りやめ）。',
         ]],
         ['色と書式', [
-          '色は「線色」「塗りつぶし」「文字色」の3つに分かれています。図形を選んでから変えると、その図形に反映されます。',
+          '色は「線色」「塗りつぶし」「文字色」の3つに分かれています。図形を選んでから変えると、その図形に反映されます（複数選んでいればまとめて）。',
           '四角・丸・多角形（閉じたもの）・テキストボックス・吹き出しは塗りつぶせます。「塗りつぶしなし」で透明に戻せます。',
           'テキストボックスは「線色」で枠線を付けられます。文字の色は「文字色」で別に決めます。',
           '矢印・直線・×印は線だけの図形なので、塗りつぶしはありません。',
@@ -8173,15 +8256,16 @@
         const t = ev.target;
         const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
         // ドラッグ中は削除・履歴を受け付けない。どちらも objects を差し替えるので、
-        // 掴んでいる objDrag.obj が迷子の実体になってしまう。
-        if (objDrag && ev.key !== 'Escape') return;
+        // 掴んでいる objDrag.items の実体が迷子になってしまう。
+        if ((objDrag || marquee) && ev.key !== 'Escape') return;
         if (ev.key === 'Escape') {
           if (cancelFreeform()) return; // 描きかけのフリーフォームは破棄だけ
-          if (selectedId) { selectedId = null; recomposite(); return; } // まず選択解除、もう一度で閉じる
+          if (marquee) { marquee = null; recomposite(); return; } // 範囲選択の途中は取りやめ
+          if (selectedIds.length) { clearSelection(); recomposite(); return; } // まず選択解除、もう一度で閉じる
           close();
-        } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedId && !inField) {
+        } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedIds.length && !inField) {
           ev.preventDefault();
-          deleteSelectedObject();
+          deleteSelection();
         } else if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && !inField && ev.key.toLowerCase() === 'z') {
           // Ctrl+Z＝元に戻す / Ctrl+Shift+Z＝やり直す（テキスト入力中は素通し）
           ev.preventDefault();
@@ -8199,7 +8283,7 @@
         if (!objDrag || !objDrag.moved || !objDrag.p) return;
         if (ev.key !== 'Control' && ev.key !== 'Meta' && ev.key !== 'Shift') return;
         if (!syncDragMods(objDrag, ev)) return; // 変化なし（キーリピート等）は何もしない
-        applyObjDrag(objDrag, objDrag.p, objDrag.shift);
+        applyDrag(objDrag, objDrag.p, objDrag.shift);
         recomposite();
       }
       document.addEventListener('keydown', onDragMod);
@@ -8217,7 +8301,7 @@
         commitCallout(); // 未確定の吹き出しを確定してから書き出す
         finishFreeformIfAny(); // 描きかけのフリーフォームも確定してから書き出す
         exitCropMode();
-        selectedId = null;
+        clearSelection();
         // 合成結果（crop オーバーレイ無し）を別 canvas に作って書き出す。
         // baseSrc を原寸で読んでいるため、合成 out も原寸解像度になる（3-B）。
         const out = document.createElement('canvas');
@@ -8717,7 +8801,7 @@
         // 画像編集の図形ジオメトリ（8ハンドル・フリーフォーム・線分距離）
         freeformBounds, distSeg, objHandles, applyObjDrag,
         // 画像編集の色モデル（線・塗り・文字）と多角形の内包判定
-        normalizeObjColors, pointInPoly,
+        normalizeObjColors, pointInPoly, marqueeRect, rectContainsBounds,
         // PDF出力の倍率・用紙・向き
         clampPdfScale, pdfPaperDims, pdfPageStyleCss, pdfOutSettings, setPdfOutSettings,
         // サムネイルサイドバー

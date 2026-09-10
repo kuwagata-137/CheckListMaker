@@ -173,4 +173,23 @@ test('imageeditor — 図形ジオメトリ（8ハンドル・フリーフォー
     const noBorder = { type: 'text', color: null, textColor: '#222222', fill: null };
     assert.deepEqual(plain(T.normalizeObjColors([{ ...noBorder }]))[0], noBorder);
   });
+  await t.test('marqueeRect — 始点と終点の前後によらず正規化する', () => {
+    assert.deepEqual(plain(T.marqueeRect({ sx: 10, sy: 20, x: 40, y: 60 })), { x: 10, y: 20, w: 30, h: 40 });
+    assert.deepEqual(plain(T.marqueeRect({ sx: 40, sy: 60, x: 10, y: 20 })), { x: 10, y: 20, w: 30, h: 40 },
+      '右下から左上へ引いても同じ矩形');
+    assert.deepEqual(plain(T.marqueeRect({ sx: 5, sy: 5, x: 5, y: 5 })), { x: 5, y: 5, w: 0, h: 0 },
+      '動かさなければ幅0（＝何も選ばれない）');
+  });
+
+  await t.test('rectContainsBounds — 完全に囲んだ図形だけを選ぶ', () => {
+    const m = { x: 0, y: 0, w: 100, h: 100 };
+    assert.equal(T.rectContainsBounds(m, { x: 10, y: 10, w: 20, h: 20 }), true, '内側に丸ごと入る');
+    assert.equal(T.rectContainsBounds(m, { x: 0, y: 0, w: 100, h: 100 }), true, 'ぴったり同じ大きさ');
+    assert.equal(T.rectContainsBounds(m, { x: 90, y: 10, w: 20, h: 20 }), false, '右へはみ出す＝選ばない');
+    assert.equal(T.rectContainsBounds(m, { x: -1, y: 10, w: 20, h: 20 }), false, '左へはみ出す＝選ばない');
+    assert.equal(T.rectContainsBounds(m, { x: 10, y: 95, w: 20, h: 20 }), false, '下へはみ出す＝選ばない');
+    assert.equal(T.rectContainsBounds(m, { x: 200, y: 200, w: 5, h: 5 }), false, '完全に外');
+    assert.equal(T.rectContainsBounds({ x: 0, y: 0, w: 0, h: 0 }, { x: 0, y: 0, w: 0, h: 0 }), true,
+      '幅0どうし（クリックだけ）は点の一致のみ');
+  });
 });
