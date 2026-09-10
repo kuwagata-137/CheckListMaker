@@ -43,8 +43,35 @@
   フォールバックする。
 - IPC: `image:pickFile`（main）/ `window.fileAPI.pickImage()`（preload）。
 
+## 実装上の制約: `pointerdown` の `preventDefault` と `draggable` は同居できない
+
+**サムネイル（`.thumb`）を `document` レベルの `pointerdown` 委譲で処理してはいけない。**
+
+`index.html` には「入力欄の編集中でも確実に押せるボタン群」を `pointerdown` で処理する
+委譲ハンドラがあり、allowlist に載った action に対して `e.preventDefault()` を呼ぶ。
+Chromium では信頼できる `pointerdown` の `preventDefault()` が**互換 `mousedown` ごと抑止**
+するため、その要素が `draggable="true"` でもネイティブ D&D が開始できない。
+
+`.thumb` は `draggable="true"`（ドラッグソース）と `data-action="edit-image"` を1要素で
+兼ねているため、allowlist に `edit-image` を入れた時点で本仕様の1章が**丸ごと死にコード**に
+なる（実際に v1.0.3 まで動作していなかった）。`edit-image` は `click` 委譲で処理すること。
+入力欄の確定はブラウザ標準の blur → change に任せられる（`commitInPlace` は再描画しない
+ので、確定してもサムネイル自身は消えない）。
+
+並べ替え D&D（`attachDragAndDrop`）が同じ壊れ方をしないのは、掴む場所（`.grip` /
+`.step-rail` / `.tsb-grip`）が `data-action` を持たず allowlist に当たらないため。
+
+> この allowlist は機能追加のたびに action が増えており（`edit-image` → `move-item-up/down`
+> → `merge-item-up`）、同じ壊れ方を再発させやすい。**追加する action がドラッグソースを
+> 兼ねていないか**を必ず確認する。
+
 ## テスト観点
 
 - `copyItemImage`: 参照共有でコピー先に追加され、元は残る。`imageEdits` は複製。
+- **配線（`test/imagednd.test.js`）**: 上の制約を守れているかを2段で見る。
+  - `.thumb` の `pointerdown` が `defaultPrevented` にならないこと
+    （ネイティブ D&D の開始条件を jsdom で代理検証する）。
+  - `dragstart` → `dragover` → `drop` でコピー先の `images` が1枚増え、コピー元が減らないこと。
+  - クリックでは従来どおり画像エディタが開くこと。
 - `itemDropAt` 相当のフェーズ移動は UI 依存のため、`moveItem` の純関数テスト（既存）で
   フェーズ間移動の不変条件を担保。ダイアログ/DnD の配線は実機検証で確認する。
