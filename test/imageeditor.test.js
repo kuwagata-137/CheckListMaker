@@ -120,4 +120,57 @@ test('imageeditor — 図形ジオメトリ（8ハンドル・フリーフォー
     assert.equal(T.distSeg({ x: -4, y: 3 }, 0, 0, 10, 0), 5, '端の外側は端点距離');
     assert.equal(T.distSeg({ x: 1, y: 1 }, 2, 2, 2, 2), Math.hypot(1, 1), '長さ0の線分は点距離');
   });
+
+  await t.test('pointInPoly — 閉じた多角形の内側判定（塗りのヒットテストの土台）', () => {
+    const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    assert.equal(T.pointInPoly({ x: 5, y: 5 }, square), true, '内側');
+    assert.equal(T.pointInPoly({ x: 15, y: 5 }, square), false, '右の外側');
+    assert.equal(T.pointInPoly({ x: -1, y: 5 }, square), false, '左の外側');
+    assert.equal(T.pointInPoly({ x: 5, y: 20 }, square), false, '下の外側');
+
+    // L字（凹多角形）: へこんだ側は外
+    const ell = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 4 }, { x: 4, y: 4 }, { x: 4, y: 10 }, { x: 0, y: 10 }];
+    assert.equal(T.pointInPoly({ x: 2, y: 2 }, ell), true, '肩の部分は内側');
+    assert.equal(T.pointInPoly({ x: 7, y: 2 }, ell), true, '腕の部分は内側');
+    assert.equal(T.pointInPoly({ x: 7, y: 7 }, ell), false, 'へこみは外側');
+
+    assert.equal(T.pointInPoly({ x: 0, y: 0 }, [{ x: 0, y: 0 }, { x: 1, y: 1 }]), false, '頂点2つでは面にならない');
+    assert.equal(T.pointInPoly({ x: 0, y: 0 }, null), false, '不正入力');
+  });
+
+  await t.test('normalizeObjColors — 旧データを線・塗り・文字の3色へ移す', () => {
+    const old = [
+      { type: 'text', color: '#ff0000' },
+      { type: 'callout', color: '#0000ff' },
+      { type: 'rect', color: '#00ff00' },
+    ];
+    const [text, callout, rect] = plain(T.normalizeObjColors(old));
+
+    assert.equal(text.textColor, '#ff0000', '旧テキストの color は文字色だった');
+    assert.equal(text.color, null, '旧テキストに枠線は無いので線なし');
+    assert.equal(text.fill, null, '塗りも無し');
+
+    assert.equal(callout.textColor, '#0000ff', '吹き出しの文字色も color から写す');
+    assert.equal(callout.color, '#0000ff', '枠線色は据え置き');
+    assert.equal(callout.fill, '#ffffff', '従来の白ベタを塗りとして持たせる');
+
+    assert.equal(rect.color, '#00ff00', '図形の線色は据え置き');
+    assert.equal(rect.fill, null, '塗りなし＝従来の見た目');
+    assert.equal(rect.textColor, undefined, '図形に文字色は付けない');
+  });
+
+  await t.test('normalizeObjColors — 2回通しても変わらない（保存し直しても壊れない）', () => {
+    const objs = [{ type: 'text', color: '#ff0000' }, { type: 'callout', color: '#0000ff' }];
+    const once = plain(T.normalizeObjColors(objs));
+    const twice = plain(T.normalizeObjColors(JSON.parse(JSON.stringify(once))));
+    assert.deepEqual(twice, once, '冪等');
+  });
+
+  await t.test('normalizeObjColors — 3色を持つ新データには触らない', () => {
+    const kept = { type: 'text', color: '#111111', textColor: '#222222', fill: '#333333' };
+    assert.deepEqual(plain(T.normalizeObjColors([{ ...kept }]))[0], kept);
+    // 枠線を消したテキスト（color:null）も、読み込み直しで枠線が復活しない
+    const noBorder = { type: 'text', color: null, textColor: '#222222', fill: null };
+    assert.deepEqual(plain(T.normalizeObjColors([{ ...noBorder }]))[0], noBorder);
+  });
 });

@@ -591,6 +591,7 @@
   .ie-controls { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; flex: 1 1 100%; }
   /* アイコンボタンと、その名前。名前はボタンの枠の外・下に別行で置く（枠の中はアイコンだけ）。 */
   .ie-toolitem { display: inline-flex; flex-direction: column; align-items: center; min-width: 58px; }
+  .ie-toolitem[hidden] { display: none; } /* display 指定が UA の [hidden] を上書きするため明示 */
   .ie-toolitem.ie-help { margin-left: auto; }
   .ie-toolname {
     margin-top: 4px;
@@ -3300,7 +3301,8 @@
       return steps.map((t) => opTint(hex, t));
     }
     // パレット DOM を組み立てる。onPick(色 or 'none') → onClose() の順で呼ぶ。
-    function buildOfficePalette({ withNone, onPick, onClose }) {
+    // noneLabel: 「なし」ボタンの文言（線の色では「線なし」など）。既定は塗り用の文言。
+    function buildOfficePalette({ withNone, noneLabel, onPick, onClose }) {
       const pal = document.createElement('div');
       const pick = (col) => { onPick(col); onClose(); };
       const swatchRow = (colors, parent) => {
@@ -3332,7 +3334,7 @@
       footer.className = 'op-footer';
       if (withNone) {
         const b = document.createElement('button');
-        b.type = 'button'; b.className = 'op-none'; b.textContent = '塗りつぶしなし';
+        b.type = 'button'; b.className = 'op-none'; b.textContent = noneLabel || '塗りつぶしなし';
         b.addEventListener('mousedown', (e) => { e.preventDefault(); pick('none'); });
         footer.appendChild(b);
       }
@@ -3716,8 +3718,8 @@
       pal.style.top = (r.bottom + 4 + h > window.innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4) + 'px';
     }
     // 色パレット（Excel/Office 風。buildOfficePalette を btn の下に開く）
-    function rbOpenPalette(btn, withNone, onPick) {
-      rbOpenPopup(btn, buildOfficePalette({ withNone, onPick, onClose: rbClosePalette }));
+    function rbOpenPalette(btn, withNone, onPick, noneLabel) {
+      rbOpenPopup(btn, buildOfficePalette({ withNone, noneLabel, onPick, onClose: rbClosePalette }));
     }
     // 表/TSV の貼り付けをセルに取り込む
     function rbTsvToTable(text) {
@@ -6293,6 +6295,36 @@
       const t = len2 ? Math.max(0, Math.min(1, ((p.x - x1) * dx + (p.y - y1) * dy) / len2)) : 0;
       return Math.hypot(p.x - (x1 + t * dx), p.y - (y1 + t * dy));
     }
+    // 点が多角形（頂点列）の内側にあるか。閉じたフリーフォームを塗ったときの
+    // ヒットテストに使う（レイキャスティング＝右向きの半直線との交差数の偶奇）。
+    function pointInPoly(p, pts) {
+      const a = Array.isArray(pts) ? pts : [];
+      if (a.length < 3) return false;
+      let inside = false;
+      for (let i = 0, j = a.length - 1; i < a.length; j = i++) {
+        const yi = a[i].y, yj = a[j].y;
+        if ((yi > p.y) === (yj > p.y)) continue; // 辺が走査線をまたがない
+        const xAt = a[i].x + ((p.y - yi) / (yj - yi)) * (a[j].x - a[i].x);
+        if (p.x < xAt) inside = !inside;
+      }
+      return inside;
+    }
+    // 旧データ（色は color 1つだけ）を、線 color / 塗り fill / 文字 textColor の3つへ移す。
+    //  - text は color が文字色だった。textColor へ移し、枠線は無し（color = null）にする。
+    //  - callout は color が枠線かつ文字色。文字色を写し取り、塗りは従来の白ベタにする。
+    //  - null は JSON に残るので、2回目以降は何もしない（冪等）＝保存し直しても壊れない。
+    function normalizeObjColors(objects) {
+      (Array.isArray(objects) ? objects : []).forEach((o) => {
+        if (o.type === 'text' || o.type === 'callout') {
+          if (o.textColor === undefined) {
+            o.textColor = o.color || '#ff3b30';
+            if (o.type === 'text') o.color = null;
+          }
+        }
+        if (o.fill === undefined) o.fill = o.type === 'callout' ? '#ffffff' : null;
+      });
+      return objects;
+    }
     // 選択オブジェクトの操作ハンドル一覧（kind はドラッグ時の役割）。
     function objHandles(o) {
       if (o.type === 'arrow' || o.type === 'line') {
@@ -6402,6 +6434,14 @@
               <input type="color" value="#ff3b30" hidden />
               <span class="ie-toolname">線色</span>
             </span>
+            <span class="ie-toolitem ie-fill">
+              <button type="button" class="ie-tool ie-color-btn" title="塗りつぶしの色（Excel風パレットから選択）"><svg class="ie-ic" viewBox="0 0 24 24"><rect x="2.5" y="4.5" width="13" height="15" rx="2"/><path d="M2.5 12h13v5.5a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2z" fill="currentColor" stroke="none"/><path d="M19.5 12.6c1 1.3 1.6 2.1 1.6 2.9a1.6 1.6 0 0 1-3.2 0c0-.8.6-1.6 1.6-2.9z" fill="currentColor" stroke="none"/></svg><span class="ie-color-chip none"></span></button>
+              <span class="ie-toolname">塗りつぶし</span>
+            </span>
+            <span class="ie-toolitem ie-textcolor" hidden>
+              <button type="button" class="ie-tool ie-color-btn" title="文字の色（Excel風パレットから選択）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M12 3.2a8.8 8.8 0 0 0 0 17.6c1 0 1.7-.8 1.7-1.7 0-.5-.2-.9-.5-1.2a1.7 1.7 0 0 1 1.2-2.9h2A4.4 4.4 0 0 0 20.8 10c0-3.7-3.9-6.8-8.8-6.8z"/><circle cx="7.7" cy="11.6" r="1.2" fill="currentColor" stroke="none"/><circle cx="10.6" cy="7.4" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.4" cy="7.9" r="1.2" fill="currentColor" stroke="none"/></svg><span class="ie-color-chip"></span></button>
+              <span class="ie-toolname">文字色</span>
+            </span>
             <label class="ie-size ie-field" title="線の太さ">
               <span class="ie-fieldname">線の太さ</span>
               <span class="ie-fieldbody"><input type="range" min="1" max="40" value="6" /></span>
@@ -6466,6 +6506,7 @@
       let objSeq = 1;
       const newObjId = () => 'o' + Date.now().toString(36) + '-' + (objSeq++);
       objects.forEach((o) => { delete o.hidden; if (!o.id) o.id = newObjId(); }); // 保存データの保険
+      normalizeObjColors(objects); // 旧データ（color 1色だけ）を線・塗り・文字の3色へ移す
       let selectedId = null; // 選択中オブジェクト（クリックで選択、Delete で削除）
       const selectedObj = () => objects.find((o) => o.id === selectedId) || null;
 
@@ -6490,32 +6531,79 @@
         const sel = selectedObj();
         if (sel) { sel.opacity = 1 - v / 100; recomposite(); } // 選択中オブジェクトへ即時反映
       });
-      // 色の変更も選択中オブジェクトへ反映（連続 input を1回の undo にまとめる）
-      colorInput.addEventListener('input', () => {
+      // ---- 色は「線・塗り・文字」の3つ ----
+      // 図形の色は color（線）1つきりで、テキストは color が文字色を兼ねていたため
+      // 枠線に色を付けられなかった。3つに分けて、塗りつぶしと枠線を別々に決められるようにする。
+      //  color … 線（枠線）の色。null = 線なし
+      //  fill  … 塗りつぶしの色。null = 塗りなし
+      //  textColor … 文字の色（テキスト・吹き出しだけ）
+      let fillValue = null;              // 次に描く図形の塗り（既定は塗りなし＝従来どおり）
+      let textColorValue = '#ff3b30';    // 次に描くテキスト・吹き出しの文字色
+      let lineNone = false;              // 線なしを選んでいるか（colorInput は最後に選んだ実色を保つ）
+      // 次に描く図形の線の色。ペン・ハイライトは「線なし」があり得ないので colorInput を直に使う。
+      const lineColor = () => (lineNone ? null : colorInput.value);
+      const fillBtn = overlay.querySelector('.ie-fill .ie-color-btn');
+      const fillChip = overlay.querySelector('.ie-fill .ie-color-chip');
+      const textColorWrap = overlay.querySelector('.ie-textcolor');
+      const textColorBtn = overlay.querySelector('.ie-textcolor .ie-color-btn');
+      const textColorChip = overlay.querySelector('.ie-textcolor .ie-color-chip');
+      const colorBtn = overlay.querySelector('.ie-color .ie-color-btn');
+      const colorChip = overlay.querySelector('.ie-color .ie-color-chip');
+      // 「なし」は色ではないので、チップは赤い斜線ハッチ（.none）で示す。
+      function paintChip(chip, col) {
+        chip.classList.toggle('none', !col || col === 'none');
+        chip.style.background = !col || col === 'none' ? '' : col;
+      }
+      // 選択中があればその図形の色を、無ければ「次に描く色」をチップに映す。
+      // 文字色は書式コントロールと同じ条件（テキスト・吹き出しのとき）だけ出す。
+      function syncColorUI() {
         const sel = selectedObj();
-        if (!sel) { colorGestureFor = null; return; }
-        if (colorGestureFor !== sel.id) { pushUndo(); colorGestureFor = sel.id; }
-        sel.color = colorInput.value;
+        paintChip(colorChip, sel ? sel.color : lineColor());
+        paintChip(fillChip, sel ? sel.fill : fillValue);
+        const showText = isTextObj(sel) || (!sel && (tool === 'text' || tool === 'callout'));
+        textColorWrap.hidden = !showText;
+        paintChip(textColorChip, isTextObj(sel) ? sel.textColor : textColorValue);
+      }
+      // 選択中オブジェクトへ色を反映する（連続操作を1回の undo にまとめる）。
+      // 対象外の図形（例: 直線に塗り）には効かせない。
+      function applyColor(key, col) {
+        const value = col === 'none' ? null : col;
+        if (key === 'color') { lineNone = !value; if (value) colorInput.value = value; }
+        else if (key === 'fill') fillValue = value;
+        else textColorValue = value || textColorValue; // 文字色に「なし」は無い
+        const sel = selectedObj();
+        if (!sel) colorGestureFor = null;
+        if (sel && colorTargets(sel).includes(key)) {
+          if (colorGestureFor !== sel.id + key) { pushUndo(); colorGestureFor = sel.id + key; }
+          sel[key] = value;
+        }
         recomposite();
-      });
-      // 色ボタン: Excel風パレットを開く。選んだ色は隠し input(colorInput) に入れて
-      // 既存の反映ロジック（選択オブジェクト・新規描画の色）をそのまま使う。
-      const colorBtn = overlay.querySelector('.ie-color-btn');
-      const colorChip = overlay.querySelector('.ie-color-chip');
-      const syncColorChip = () => { colorChip.style.background = colorInput.value; };
-      colorInput.addEventListener('input', syncColorChip);
-      syncColorChip();
-      // 開いた状態でもう一度押したら閉じる（document の mousedown が先に閉じるため、
-      // mousedown 時点で開いていたかを覚えておく）。
+        syncColorUI();
+      }
+      // その図形が持てる色の種類。矢印・直線は面が無いので塗れない。
+      // ×印も2本の線分なので塗る面が無い。
+      function colorTargets(o) {
+        if (!o) return [];
+        if (o.type === 'text') return ['color', 'fill', 'textColor'];
+        if (o.type === 'callout') return ['color', 'fill', 'textColor'];
+        if (o.type === 'rect' || o.type === 'ellipse' || o.type === 'freeform') return ['color', 'fill'];
+        return ['color']; // arrow / line / cross
+      }
+      // 塗れる面を持つ描画ツールか（矢印・直線・×印は線だけなので塗らない）
+      const canFillShape = (t) => t === 'rect' || t === 'ellipse';
+      // 色ボタン: Excel風パレットを開く。開いた状態でもう一度押したら閉じる
+      //（document の mousedown が先に閉じるため、mousedown 時点で開いていたかを覚えておく）。
       let palWasOpen = false;
-      colorBtn.addEventListener('mousedown', () => { palWasOpen = !!document.getElementById('rb-palette'); });
-      colorBtn.addEventListener('click', () => {
-        if (palWasOpen) { palWasOpen = false; return; }
-        rbOpenPalette(colorBtn, false, (col) => {
-          colorInput.value = col;
-          colorInput.dispatchEvent(new Event('input'));
+      function wireColorButton(btn, key, withNone, noneLabel) {
+        btn.addEventListener('mousedown', () => { palWasOpen = !!document.getElementById('rb-palette'); });
+        btn.addEventListener('click', () => {
+          if (palWasOpen) { palWasOpen = false; return; }
+          rbOpenPalette(btn, withNone, (col) => applyColor(key, col), noneLabel);
         });
-      });
+      }
+      wireColorButton(colorBtn, 'color', true, '線なし');
+      wireColorButton(fillBtn, 'fill', true, '塗りつぶしなし');
+      wireColorButton(textColorBtn, 'textColor', false);
 
       // ---- テキスト/吹き出しの書式（サイズ・太字・斜体）----
       // 対象: (a) これから作るオブジェクトの既定値 (b) その場編集中の入力欄
@@ -6723,6 +6811,7 @@
         drawSelection();
         if (cropMode && cropRect) drawCropOverlay();
         syncTextFmtUI(); // ツール・選択・編集状態に書式コントロールを追随させる
+        syncColorUI();   // 線・塗り・文字色のチップも同じタイミングで追随させる
       }
       // 表示 px / canvas px の比率（ハンドルや点線を画面上一定サイズに保つのに使う）。
       function dispScale() { return canvas.offsetWidth ? canvas.width / canvas.offsetWidth : 1; }
@@ -6840,13 +6929,22 @@
         g.globalAlpha = alpha;
       }
       // オブジェクト共通のスタイル設定（色・太さ・透過率はオブジェクト自身が持つ）。
+      // color（線）と fill（塗り）は null を取り得る＝線なし・塗りなし。
+      const hasStroke = (o) => !!o.color && o.color !== 'none';
+      const hasFill = (o) => !!o.fill && o.fill !== 'none';
+      const textBoxPad = (o) => Math.round((Number(o.fs) || 16) * 0.3);
       function setupObjStroke(g, o) {
-        g.strokeStyle = o.color;
-        g.fillStyle = o.color;
+        g.strokeStyle = o.color || 'transparent';
+        g.fillStyle = o.color || 'transparent';
         g.lineWidth = o.size;
         g.lineCap = 'round';
         g.lineJoin = 'round';
         g.globalAlpha = o.opacity;
+      }
+      // 組み立て済みのパスを「塗り → 線」の順で塗り分ける（枠線が塗りの上に乗る）。
+      function paintPath(g, o) {
+        if (hasFill(o)) { g.fillStyle = o.fill; g.fill(); }
+        if (hasStroke(o)) { g.strokeStyle = o.color; g.stroke(); }
       }
       // 矢印：三角を大きめにし、線は矢先まで引かず三角の底辺で止める（太線の丸端が
       // 矢先からはみ出さない）。三角の頂点は (x2,y2)。
@@ -6860,6 +6958,7 @@
         const backset = head * Math.cos(Math.PI / 7);
         const bx = x2 - backset * Math.cos(ang); // 三角の底辺中央（＝線の終点）
         const by = y2 - backset * Math.sin(ang);
+        if (!hasStroke(o)) return; // 線なしの矢印は描かない
         g.save();
         setupObjStroke(g, o);
         g.lineCap = 'butt';
@@ -6872,23 +6971,26 @@
         g.restore();
       }
       function drawLineObj(g, o) {
+        if (!hasStroke(o)) return;
         g.save(); setupObjStroke(g, o);
         g.beginPath(); g.moveTo(o.x1, o.y1); g.lineTo(o.x2, o.y2); g.stroke();
         g.restore();
       }
       function drawRectObj(g, o) {
         g.save(); setupObjStroke(g, o);
-        g.strokeRect(o.x, o.y, o.w, o.h);
+        g.beginPath(); g.rect(o.x, o.y, o.w, o.h);
+        paintPath(g, o);
         g.restore();
       }
       function drawEllipseObj(g, o) {
         g.save(); setupObjStroke(g, o);
         g.beginPath();
-        g.ellipse(o.x + o.w / 2, o.y + o.h / 2, o.w / 2, o.h / 2, 0, 0, Math.PI * 2);
-        g.stroke(); g.restore();
+        g.ellipse(o.x + o.w / 2, o.y + o.h / 2, Math.abs(o.w) / 2, Math.abs(o.h) / 2, 0, 0, Math.PI * 2);
+        paintPath(g, o); g.restore();
       }
       // ×マーク：矩形（x,y,w,h）の対角2本の線分として描く（rect と同じ矩形ベース）。
       function drawCrossObj(g, o) {
+        if (!hasStroke(o)) return; // 対角2本の線分なので塗る面が無い
         g.save(); setupObjStroke(g, o);
         g.beginPath();
         g.moveTo(o.x, o.y); g.lineTo(o.x + o.w, o.y + o.h);
@@ -6903,17 +7005,31 @@
         g.beginPath();
         g.moveTo(pts[0].x, pts[0].y);
         for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
-        if (o.closed) g.closePath();
-        g.stroke(); g.restore();
+        if (o.closed) { g.closePath(); if (hasFill(o)) { g.fillStyle = o.fill; g.fill(); } }
+        if (hasStroke(o)) { g.strokeStyle = o.color; g.stroke(); }
+        g.restore();
       }
+      // テキストボックス: 文字の外接矩形を少し膨らませた箱に塗りと枠線を描いてから
+      // 文字を載せる。枠線の色（color）と文字の色（textColor）は別々に持つ。
       function drawTextObj(g, o) {
         g.save();
         g.globalAlpha = o.opacity;
-        g.fillStyle = o.color;
         g.font = objFont(o);
         g.textBaseline = 'top';
+        const lines = o.text.split('\n');
         const lh = o.fs * 1.2;
-        o.text.split('\n').forEach((line, i) => g.fillText(line, o.x, o.y + i * lh));
+        if (hasFill(o) || hasStroke(o)) {
+          let tw = 0;
+          for (const l of lines) tw = Math.max(tw, g.measureText(l.length ? l : ' ').width);
+          const P = textBoxPad(o);
+          g.lineWidth = o.size;
+          g.lineJoin = 'round';
+          g.beginPath();
+          g.rect(o.x - P, o.y - P, Math.ceil(tw) + P * 2, lines.length * lh + P * 2);
+          paintPath(g, o);
+        }
+        g.fillStyle = o.textColor || o.color || '#ff3b30';
+        lines.forEach((line, i) => g.fillText(line, o.x, o.y + i * lh));
         g.restore();
       }
       function drawObject(g, o) {
@@ -6930,7 +7046,7 @@
       function drawObjects(g) { objects.forEach((o) => drawObject(g, o)); }
       // ドラッグ中の始点・終点から図形オブジェクトを組み立てる（プレビューと確定で共用）。
       function shapeFromDrag(t, a, b, shift) {
-        const common = { color: colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha(t) };
+        const common = { color: lineColor(), fill: canFillShape(t) ? fillValue : null, size: Number(sizeInput.value), opacity: toolAlpha(t) };
         let bb = b;
         if (t === 'line' && shift) { // Shift で 45° 刻みにスナップ
           const d = Math.hypot(b.x - a.x, b.y - a.y);
@@ -6959,7 +7075,8 @@
           let tw = 0;
           for (const l of lines) tw = Math.max(tw, ctx.measureText(l.length ? l : ' ').width);
           ctx.restore();
-          return { x: o.x, y: o.y, w: Math.ceil(tw), h: lines.length * o.fs * 1.2 };
+          const pad = (hasFill(o) || hasStroke(o)) ? textBoxPad(o) : 0;
+          return { x: o.x - pad, y: o.y - pad, w: Math.ceil(tw) + pad * 2, h: lines.length * o.fs * 1.2 + pad * 2 };
         }
         if (o.type === 'callout') {
           const box = calloutBox(o.text, o.fs, o);
@@ -7017,6 +7134,8 @@
         }
         if (o.type === 'freeform') {
           const pts = Array.isArray(o.pts) ? o.pts : [];
+          // 塗ってあるなら内側も掴める
+          if (o.closed && hasFill(o) && pointInPoly(p, pts)) return true;
           for (let i = 1; i < pts.length; i++) {
             if (distSeg(p, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y) <= tol) return true;
           }
@@ -7027,8 +7146,10 @@
           return false;
         }
         if (o.type === 'rect') {
-          // 枠線の近傍だけ当たり（塗り無しなので内側は素通しにして下の物を掴める）
+          // 塗り無しなら枠線の近傍だけ当たり（内側は素通しにして下の物を掴める）。
+          // 塗ってあるなら内側も当たり。
           const inOuter = p.x >= o.x - tol && p.x <= o.x + o.w + tol && p.y >= o.y - tol && p.y <= o.y + o.h + tol;
+          if (hasFill(o)) return inOuter;
           const inInner = p.x >= o.x + tol && p.x <= o.x + o.w - tol && p.y >= o.y + tol && p.y <= o.y + o.h - tol;
           return inOuter && !inInner;
         }
@@ -7036,6 +7157,7 @@
           const rx = o.w / 2, ry = o.h / 2;
           if (rx < 1 || ry < 1) return false;
           const nd = Math.hypot((p.x - (o.x + rx)) / rx, (p.y - (o.y + ry)) / ry); // 正規化距離
+          if (hasFill(o)) return nd <= 1 + tol / Math.min(rx, ry);
           return Math.abs(nd - 1) * Math.min(rx, ry) <= tol;
         }
         // text / callout はバウンディングボックス（callout は尻尾先端も）
@@ -7103,7 +7225,8 @@
         pushUndo();
         const o = {
           id: newObjId(), type: 'freeform', pts, closed: !!closed,
-          color: colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha('freeform'),
+          color: lineColor(), fill: closed ? fillValue : null,
+          size: Number(sizeInput.value), opacity: toolAlpha('freeform'),
         };
         objects.push(o);
         selectedId = o.id; // 描いた直後は選択状態（すぐ動かせる）
@@ -7126,8 +7249,8 @@
         // 確定済みの辺
         if (ff.pts.length >= 2) {
           drawFreeformObj(g, {
-            pts: ff.pts, closed: false,
-            color: colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha('freeform'),
+            pts: ff.pts, closed: false, fill: null,
+            color: lineColor() || colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha('freeform'),
           });
         }
         // カーソルまでの次の辺（点線プレビュー）
@@ -7208,16 +7331,15 @@
         g.save();
         g.globalAlpha = o.opacity;
         calloutPath(g, o.x, o.y, box.w, box.h, r, o.tip, tW);
-        g.strokeStyle = o.color;
-        // 白地は不透明にする。透け具合は透過率スライダー（globalAlpha=o.opacity）だけで
+        // 塗りは不透明に置く。透け具合は透過率スライダー（globalAlpha=o.opacity）だけで
         // 決まり、透過0%のときは一切透けない（以前は固定で 0.92 を掛けており
-        // 0% でも8%透けていた。ユーザー要望 2026-09-08）。
-        g.fillStyle = '#ffffff';
+        // 0% でも8%透けていた。ユーザー要望 2026-09-08）。既定の塗りは従来どおり白。
         g.lineWidth = Math.max(2, o.size);
         g.lineJoin = 'round';
-        g.fill(); g.stroke();
+        if (hasFill(o)) { g.fillStyle = o.fill; g.fill(); }
+        if (hasStroke(o)) { g.strokeStyle = o.color; g.stroke(); }
         if (withText) {
-          g.fillStyle = o.color;
+          g.fillStyle = o.textColor || o.color || '#ff3b30';
           g.font = objFont(o);
           g.textBaseline = 'top';
           box.lines.forEach((l, i) => g.fillText(l, o.x + box.P, o.y + box.P + i * box.lh));
@@ -7257,13 +7379,14 @@
           ? { fs: existing.fs, bold: existing.bold !== false, italic: !!existing.italic }
           : { fs: textFmt.fs, bold: textFmt.bold, italic: textFmt.italic };
         const pos = existing ? { x: existing.x, y: existing.y } : p;
-        const color = existing ? existing.color : colorInput.value;
+        // 入力欄に映すのは文字色（枠線色 color とは別。旧データは textColor へ移行済み）
+        const textCol = existing ? existing.textColor : textColorValue;
         const ta = document.createElement('textarea');
         ta.className = 'ie-text-input';
         ta.rows = 1;
         ta.style.left = (canvas.offsetLeft + pos.x * scale) + 'px';
         ta.style.top = (canvas.offsetTop + pos.y * scale) + 'px';
-        ta.style.color = color;
+        ta.style.color = textCol;
         const applyTaStyle = () => { ta.style.font = objFont(fmt, scale); };
         applyTaStyle();
         canvasWrap.appendChild(ta);
@@ -7309,7 +7432,8 @@
           const obj = {
             id: newObjId(), type: 'text', x: pos.x, y: pos.y, text,
             fs: fmt.fs, bold: fmt.bold, italic: fmt.italic,
-            color, size: Number(sizeInput.value), opacity: toolAlpha('text'),
+            textColor: textCol, color: null, fill: fillValue, // 新規テキストの枠線は無し（後から線色で付けられる）
+            size: Number(sizeInput.value), opacity: toolAlpha('text'),
           };
           objects.push(obj);
           selectedId = obj.id; // 確定直後も選択状態にして、書式変更を続けられるように
@@ -7371,15 +7495,17 @@
         ac.render = () => {
           if (activeCallout !== ac) return;
           // 編集中の見た目は本体だけ描き、文字は textarea 側に出す。
-          const color = existing ? existing.color : colorInput.value;
+          const color = existing ? existing.color : lineColor();
+          const fill = existing ? existing.fill : (fillValue || '#ffffff');
+          const textCol = existing ? existing.textColor : textColorValue;
           const size = existing ? existing.size : Number(sizeInput.value);
           const opacity = existing ? existing.opacity : toolAlpha('callout');
-          const preview = { x: ac.x, y: ac.y, text: ta.value, fs: ac.fs, bold: ac.bold, italic: ac.italic, tip: ac.tip, color, size, opacity };
+          const preview = { x: ac.x, y: ac.y, text: ta.value, fs: ac.fs, bold: ac.bold, italic: ac.italic, tip: ac.tip, color, fill, textColor: textCol, size, opacity };
           recomposite();
           drawCalloutObj(ctx, preview, false);
           if (ac.dragTip || ac.hoverTip) {
             ctx.save();
-            ctx.fillStyle = color; ctx.strokeStyle = '#fff';
+            ctx.fillStyle = color || textCol; ctx.strokeStyle = '#fff';
             ctx.lineWidth = 2 * dispScale();
             ctx.beginPath(); ctx.arc(ac.tip.x, ac.tip.y, 7 * dispScale(), 0, Math.PI * 2);
             ctx.fill(); ctx.stroke();
@@ -7395,7 +7521,7 @@
           ta.style.height = ((box.h - box.P * 2) * s) + 'px';
           ta.style.font = objFont(ac, s);
           ta.style.lineHeight = (box.lh * s) + 'px';
-          ta.style.color = color;
+          ta.style.color = textCol;
         };
         // 編集中はツールバーの書式変更を吹き出しへ即時反映させる
         fmtTarget = {
@@ -7451,7 +7577,8 @@
           id: newObjId(), type: 'callout', x: ac.x, y: ac.y, text,
           fs: ac.fs, bold: ac.bold, italic: ac.italic,
           tip: { x: ac.tip.x, y: ac.tip.y },
-          color: colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha('callout'),
+          color: lineColor(), fill: fillValue || '#ffffff', textColor: textColorValue,
+          size: Number(sizeInput.value), opacity: toolAlpha('callout'),
         };
         objects.push(obj);
         selectedId = obj.id; // 確定直後も選択状態にして、書式変更を続けられるように
@@ -8586,6 +8713,8 @@
         naturalCompareFilenames, wizardStepsFromFiles, makeFilesSource, makeSessionSource,
         // 画像編集の図形ジオメトリ（8ハンドル・フリーフォーム・線分距離）
         freeformBounds, distSeg, objHandles, applyObjDrag,
+        // 画像編集の色モデル（線・塗り・文字）と多角形の内包判定
+        normalizeObjColors, pointInPoly,
         // PDF出力の倍率・用紙・向き
         clampPdfScale, pdfPaperDims, pdfPageStyleCss, pdfOutSettings, setPdfOutSettings,
         // サムネイルサイドバー
