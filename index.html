@@ -5889,35 +5889,55 @@
       // ページごとには入らない＝本文は「1ページ分の本文高さ」で積み上がる。そのうえで
       // break-inside:avoid の塊（手順カード・図・表）が境界にかかったときの送りを再現する。
       // 表紙・目次は break-after:page で1ページを丸ごと使うため、その下端を起点に取り直す。
+      // 線は送られた手順の上辺に密着させず、少し上に浮かせる（見た目の要望 2026-09-10）
+      const BREAK_LINE_GAP = 6;
+      // 計測はすべて「本文の内部座標」（zoom が掛かる前の px）で行う。倍率は .pp-zoom の
+      // zoom で掛かっているので、内部座標の1ページ分は「物理の1ページ高 ÷ 倍率」になる
+      // （printToPDF の scale と同じ意味論）。zoom の中の getBoundingClientRect の座標系は
+      // Chromium の版で違うため（M128 で標準化。Electron 31 は旧挙動）、既知の高さ 100px の
+      // 物差しを本文の先頭に差し、unit（内部1pxが gBCR で何pxか。fitPage の
+      // transform:scale の縮小も込み）を実測して割る。線を置くときだけページ座標へ戻す。
       const drawPageBreaks = () => {
         page.querySelectorAll('.pp-break').forEach((el) => el.remove());
-        const { paper, orient } = pdfOutSettings();
+        const zoomWrap = page.querySelector('.pp-zoom');
+        const { paper, orient, scale } = pdfOutSettings();
+        const s = scale / 100;
         const MM = 96 / 25.4; // CSS の 1mm は常に 96/25.4 px
-        const contentH = (pdfPaperDims(paper, orient).h - 30) * MM; // 上下 15mm を引いた本文高
-        if (!(contentH > 1)) return;
-        const pr = page.getBoundingClientRect();
-        const k = (page.offsetWidth ? pr.width / page.offsetWidth : 1) || 1; // 縮小表示ぶんを戻す
-        const total = pr.height / k - 15 * MM; // 紙面の下 padding には本文が無い
+        const pageContentH = (pdfPaperDims(paper, orient).h - 30) * MM; // ページ座標での1ページ分
+        if (!zoomWrap || !(pageContentH > 1) || !(s > 0)) return;
+        // 物差しと終端の印。負マージンで高さを打ち消し、レイアウトを動かさずに差し込む。
+        const ruler = document.createElement('div');
+        ruler.style.cssText = 'height:100px;margin:0 0 -100px;padding:0;border:0;visibility:hidden;';
+        const endMark = document.createElement('div');
+        endMark.style.cssText = 'height:0;margin:0;padding:0;border:0;';
+        zoomWrap.insertBefore(ruler, zoomWrap.firstChild);
+        zoomWrap.appendChild(endMark);
+        const rr = ruler.getBoundingClientRect();
+        const unit = rr.height / 100 || 1;
+        const origin = rr.top; // 本文の先頭（紙の上余白 15mm の直下）
         const boxOf = (el) => {
           const r = el.getBoundingClientRect();
-          return { top: (r.top - pr.top) / k, bottom: (r.bottom - pr.top) / k };
+          return { top: (r.top - origin) / unit, bottom: (r.bottom - origin) / unit };
         };
+        const contentH = pageContentH / s; // 内部座標の1ページ分（倍率を下げると多く入る）
+        const total = boxOf(endMark).top;  // 本文の終わり（紙の下余白は含まれない）
         let no = 1;
         const emit = (at) => {
           no += 1;
+          const top = 15 * MM + at * s - BREAK_LINE_GAP; // 内部座標 → ページ座標
           page.insertAdjacentHTML('beforeend',
-            `<div class="pp-break" style="top:${at.toFixed(1)}px"><span>${no}ページ目</span></div>`);
+            `<div class="pp-break" style="top:${top.toFixed(1)}px"><span>${no}ページ目</span></div>`);
         };
         // 途中では切らない塊。入れ子になっているものは外側だけを数える。
-        const atoms = Array.from(page.querySelectorAll(PRINT_ATOM_SEL));
+        const atoms = Array.from(zoomWrap.querySelectorAll(PRINT_ATOM_SEL));
         const blocks = atoms
           .filter((el) => !atoms.some((o) => o !== el && o.contains(el)))
           .map(boxOf)
           .sort((a, b) => a.top - b.top);
-        let y = 15 * MM; // 1ページ目の本文の始まり
-        const cover = page.querySelector('.print-cover');
+        let y = 0; // 内部座標での本文の先頭
+        const cover = zoomWrap.querySelector('.print-cover');
         if (cover) { y = boxOf(cover).bottom; emit(y); } // 表紙は余白0の専用ページを丸ごと使う
-        const toc = page.querySelector('.print-toc');
+        const toc = zoomWrap.querySelector('.print-toc');
         if (toc) {
           const end = boxOf(toc).bottom;
           paginateBreaks(blocks, contentH, end, y).forEach(emit); // 目次が2ページ以上のとき
@@ -5925,6 +5945,8 @@
           emit(y);
         }
         paginateBreaks(blocks, contentH, total, y).forEach(emit);
+        ruler.remove();
+        endMark.remove();
       };
       const relayoutPreview = () => { fitPage(); drawPageBreaks(); };
       // モーダル幅が変わると縮小率も変わるので引き直す。モーダルを閉じたら自分で外れる。
