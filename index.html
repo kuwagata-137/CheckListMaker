@@ -1057,21 +1057,43 @@
 
   /* ---- サムネイルサイドバー（仕様は docs/spec-thumbnail-sidebar-and-import-insert.md） ----
      テンプレート型の編集画面でだけ出す固定サイドバー。#app には編集ズーム（zoom）が
-     掛かっているため、その外側（兄弟要素）に置いて等倍のまま保つ。 */
+     掛かっているため、その外側（兄弟要素）に置いて等倍のまま保つ。
+     幅は --thumbs-w だけが持つ（非表示=0 / 折りたたみ=30px / 展開=ユーザーの保存幅）。
+     サイドバー自身と本文の押し出しが同じ値を見るので、両者がずれようがない。 */
   :root { --thumbs-w: 0px; }
   body { padding-left: var(--thumbs-w); }
   #thumbs {
     position: fixed;
     top: 0; left: 0; bottom: 0;
-    width: 220px;
+    /* フォールバックを書いておく。--thumbs-w が未定義になると width は auto に落ち、
+       中身（画像）の幅まで広がってしまうため。 */
+    width: var(--thumbs-w, 220px);
     z-index: 20;
     display: none;
     flex-direction: column;
     background: var(--surface);
     border-right: 1px solid var(--border);
+    /* 幅に連れて育てる内部寸法。係数は「既定の 220px でいまと同じ値になる」ように
+       決めてある（220px のユーザーは見た目が1pxも変わらない）。 */
+    --tsb-no-w:   clamp(16px,    calc(var(--thumbs-w, 220px) * 0.091),  28px);    /* 20px    @220 */
+    --tsb-no-fs:  clamp(0.62rem, calc(var(--thumbs-w, 220px) * 0.0495), 0.82rem); /* 0.68rem @220 */
+    --tsb-cap-fs: clamp(0.68rem, calc(var(--thumbs-w, 220px) * 0.0524), 0.86rem); /* 0.72rem @220 */
+    --tsb-pad:    clamp(6px,     calc(var(--thumbs-w, 220px) * 0.036),  14px);    /* 8px     @220 */
   }
   body.has-thumbs #thumbs { display: flex; }
-  #thumbs.is-collapsed { width: 30px; }
+  /* 幅を変える掴み手。右へ少しはみ出させて掴みやすくする（枠線の上に重ねる）。 */
+  .tsb-resizer {
+    position: absolute; top: 0; bottom: 0; right: -3px; width: 7px;
+    padding: 0; border: 0; background: transparent;
+    cursor: col-resize; touch-action: none;
+  }
+  .tsb-resizer:hover, .tsb-resizer:focus-visible, body.tsb-resizing .tsb-resizer {
+    background: color-mix(in srgb, var(--primary) 35%, transparent);
+    outline: none;
+  }
+  #thumbs.is-collapsed .tsb-resizer { display: none; }
+  /* ドラッグ中は本文の文字選択とカーソルのちらつきを止める */
+  body.tsb-resizing { cursor: col-resize; user-select: none; }
   .tsb-head {
     display: flex; align-items: center; gap: 6px;
     padding: 9px 6px 9px 12px;
@@ -1082,7 +1104,10 @@
   .tsb-head .tsb-ttl { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; }
   #thumbs.is-collapsed .tsb-head { padding: 9px 2px; justify-content: center; }
   #thumbs.is-collapsed .tsb-scroll { display: none; }
-  .tsb-scroll { flex: 1; overflow-y: auto; padding: 8px 8px 14px; display: flex; flex-direction: column; }
+  .tsb-scroll {
+    flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+    padding: var(--tsb-pad) var(--tsb-pad) calc(var(--tsb-pad) * 1.75);
+  }
 
   /* フェーズの区切りは色を増やさず「見出しバー＋左の縦罫＋余白」で出す */
   .tsb-phase { display: flex; flex-direction: column; }
@@ -1107,9 +1132,12 @@
     min-height: 10px;
   }
 
+  /* サムネイルは幅に追随する。画像（.tsb-shot）は width:100% なので放っておいても
+     伸び縮みするが、番号欄と文字だけ固定値だと広げたとき絵に対して貧相になるので、
+     #thumbs の --tsb-* に連動させて一緒に育てる（clamp で行き過ぎは止める）。 */
   .tsb-card {
     position: relative;
-    display: grid; grid-template-columns: 20px 1fr; gap: 7px;
+    display: grid; grid-template-columns: var(--tsb-no-w) 1fr; gap: 7px;
     padding: 5px; border: 1px solid transparent; border-radius: 8px;
     background: transparent; color: inherit; font: inherit; text-align: left;
     cursor: pointer;
@@ -1119,7 +1147,7 @@
   .tsb-card.is-current { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
   .tsb-card.is-current .tsb-no { color: var(--primary); }
   .tsb-no {
-    font-size: 0.68rem; font-weight: 700; color: var(--muted);
+    font-size: var(--tsb-no-fs); font-weight: 700; color: var(--muted);
     text-align: center; padding-top: 2px; font-variant-numeric: tabular-nums;
   }
   .tsb-fig { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
@@ -1134,7 +1162,7 @@
     display: flex; align-items: center; justify-content: center;
   }
   .tsb-cap {
-    font-size: 0.72rem; color: var(--muted); line-height: 1.35;
+    font-size: var(--tsb-cap-fs); color: var(--muted); line-height: 1.35;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .tsb-ops {
@@ -3049,6 +3077,43 @@
         }),
       }));
     }
+    // サイドバーの幅。既定は従来と同じ 220px で、150〜520px の範囲でドラッグして変えられる。
+    // 折りたたみ時の 30px は「幅」ではなく別状態なので、この範囲には含めない。
+    const THUMBS_W_DEFAULT = 220;
+    const THUMBS_W_MIN = 150;  // これ以下だとサムネイルが 85px 程度になり絵で判別できない
+    const THUMBS_W_MAX = 520;  // #app は max-width:880px の中央寄せ。本文を潰さない上限
+    const THUMBS_W_COLLAPSED = 30;
+    const THUMBS_W_STEP = 16;  // キーボード（←/→）での1回ぶん
+    const THUMBS_EDITOR_MIN_W = 520; // 本文側に必ず残す幅。#topbar は flex-wrap しないので
+                                     // ここを削ると横スクロールが出てしまう
+    // -- 純関数（テスト対象。window.__test__ に公開） --
+    // 保存幅を使える値に丸める。窓が狭いときは本文ぶんを残せる幅までしか許さない。
+    function clampThumbsWidth(px, viewportW) {
+      if (px == null || px === '') return THUMBS_W_DEFAULT; // Number(null)=0 に落とさない
+      const n = Math.round(Number(px));
+      if (!Number.isFinite(n)) return THUMBS_W_DEFAULT;
+      const vw = Number(viewportW);
+      // 下限は窓の広さに関わらず必ず守る（狭い窓でも 150px は確保する）
+      const max = Number.isFinite(vw) && vw > 0
+        ? Math.max(THUMBS_W_MIN, Math.min(THUMBS_W_MAX, vw - THUMBS_EDITOR_MIN_W))
+        : THUMBS_W_MAX;
+      return Math.max(THUMBS_W_MIN, Math.min(max, n));
+    }
+    // 読み出しでもクランプするが、保存値そのものは書き換えない（狭い窓で開いただけで
+    // ユーザーの設定した幅を失わないため）。
+    function thumbsWidth() {
+      const s = store.state.settings;
+      const saved = s && s.thumbsWidth != null ? s.thumbsWidth : THUMBS_W_DEFAULT;
+      return clampThumbsWidth(saved, window.innerWidth);
+    }
+    function setThumbsWidth(px) {
+      // 見た目の設定なので Undo 履歴には積まない（thumbsCollapsed と同じ扱い）
+      commitInPlace((s) => {
+        s.settings = s.settings || {};
+        s.settings.thumbsWidth = clampThumbsWidth(px, window.innerWidth);
+      }, { history: false });
+      applyThumbsChrome(); // commitInPlace は再描画しないので幅は自分で反映する
+    }
     function thumbsCollapsed() {
       const s = store.state.settings;
       return !!(s && s.thumbsCollapsed);
@@ -3102,6 +3167,10 @@
         .join('');
       const collapsed = thumbsCollapsed();
       return `
+        <div class="tsb-resizer" role="separator" aria-orientation="vertical"
+             aria-label="サムネイルの幅" tabindex="0"
+             aria-valuemin="${THUMBS_W_MIN}" aria-valuemax="${THUMBS_W_MAX}" aria-valuenow="${thumbsWidth()}"
+             title="ドラッグで幅を変える（ダブルクリックで既定に戻す・←/→ でも動く）"></div>
         <div class="tsb-head">
           ${collapsed ? '' : '<span class="tsb-ttl">サムネイル</span>'}
           <button class="icon" type="button" data-action="toggle-thumbs"
@@ -3123,12 +3192,19 @@
       }
       return thumbsEl;
     }
-    // 表示状態と、本文を右へ寄せるための幅（--thumbs-w）を反映する。
+    // 表示状態と幅（--thumbs-w）を反映する。この変数だけがサイドバーの幅と、
+    // 本文を右へ寄せる padding の両方を決める。
     function applyThumbsChrome() {
+      // ドラッグ中は暫定の幅を守る。この最中に render()（＝store の購読）や resize が
+      // 走ると、保存値へ引き戻されて掴んだ手とサイドバーがずれてしまう。
+      if (thumbsDrag) return;
       const on = document.body.classList.contains('has-thumbs');
       const collapsed = thumbsCollapsed();
       if (thumbsEl) thumbsEl.classList.toggle('is-collapsed', collapsed);
-      document.documentElement.style.setProperty('--thumbs-w', on ? (collapsed ? '30px' : '220px') : '0px');
+      const w = !on ? 0 : collapsed ? THUMBS_W_COLLAPSED : thumbsWidth();
+      document.documentElement.style.setProperty('--thumbs-w', w + 'px');
+      const grip = thumbsEl && thumbsEl.querySelector('.tsb-resizer');
+      if (grip) grip.setAttribute('aria-valuenow', String(w));
     }
     // render() から呼ぶ。編集画面のときだけ中身を作って出す（テンプレート型・ToDo 型の両方）。
     function updateThumbSidebar(checklist) {
@@ -3189,6 +3265,60 @@
       // Ctrl+0（または ⌘+0）で等倍に戻す。
       window.addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === '0') { editorZoom = 1; apply(); }
+      });
+    }
+    // サイドバーの右端を掴んで幅を変える。ドラッグ中は --thumbs-w を書くだけにして、
+    // 離したときに1度だけ保存する（store.commit は毎回 state 全体を書き出すため、
+    // pointermove ごとに呼ぶとカクつき、Electron では .bak が何百世代も回ってしまう）。
+    let thumbsDrag = null; // ドラッグ中 { id, x, w, applied, moved }
+    function endThumbsDrag() {
+      if (!thumbsDrag) return;
+      const { moved, applied, w } = thumbsDrag;
+      thumbsDrag = null; // 先に畳んでおく（applyThumbsChrome の早期 return を解く）
+      document.body.classList.remove('tsb-resizing');
+      if (moved && applied !== w) setThumbsWidth(applied);
+      else applyThumbsChrome(); // 動かさずに離しただけ。保存はせず表示だけ整える
+    }
+    function initThumbsResize() {
+      const gripOf = (e) => (e.target && e.target.closest ? e.target.closest('.tsb-resizer') : null);
+      document.addEventListener('pointerdown', (e) => {
+        const grip = gripOf(e);
+        if (!grip || e.button !== 0 || thumbsCollapsed()) return;
+        // preventDefault: 掴んでいる間の文字選択と、入力欄からのフォーカス移動を止める。
+        // blur させないので change → commitInPlace → 再描画の連鎖もドラッグ中は起きない。
+        e.preventDefault();
+        const w = thumbsWidth();
+        thumbsDrag = { id: e.pointerId, x: e.clientX, w, applied: w, moved: false };
+        try { grip.setPointerCapture?.(e.pointerId); } catch (_) { /* jsdom には無い */ }
+        document.body.classList.add('tsb-resizing');
+      });
+      document.addEventListener('pointermove', (e) => {
+        if (!thumbsDrag || e.pointerId !== thumbsDrag.id) return;
+        // 窓の外でボタンを離されると pointerup が来ないことがある。押されていなければ畳む。
+        if (e.buttons === 0) { endThumbsDrag(); return; }
+        const px = clampThumbsWidth(thumbsDrag.w + (e.clientX - thumbsDrag.x), window.innerWidth);
+        if (px === thumbsDrag.applied) return; // 同じ値を毎フレーム書かない
+        thumbsDrag.applied = px;
+        thumbsDrag.moved = true;
+        document.documentElement.style.setProperty('--thumbs-w', px + 'px');
+      });
+      const endDrag = (e) => {
+        if (!thumbsDrag || (e && e.pointerId !== thumbsDrag.id)) return;
+        endThumbsDrag();
+      };
+      document.addEventListener('pointerup', endDrag);
+      document.addEventListener('pointercancel', endDrag);
+      // ダブルクリックで既定幅へ戻す
+      document.addEventListener('dblclick', (e) => {
+        if (gripOf(e)) setThumbsWidth(THUMBS_W_DEFAULT);
+      });
+      // 掴み手はフォーカスできるので、←/→ でも動かせるようにする
+      document.addEventListener('keydown', (e) => {
+        if (!gripOf(e)) return;
+        const step = e.key === 'ArrowLeft' ? -THUMBS_W_STEP : e.key === 'ArrowRight' ? THUMBS_W_STEP : 0;
+        if (!step) return;
+        e.preventDefault();
+        setThumbsWidth(thumbsWidth() + step);
       });
     }
     // トップバーの実測高さを CSS 変数 --topbar-h に反映（編集画面ヘッダーの sticky top 用）。
@@ -8743,6 +8873,9 @@
     // 編集画面ヘッダーの固定位置（top）に使うトップバー高さを実測して CSS 変数へ反映。
     syncTopbarHeight();
     window.addEventListener('resize', syncTopbarHeight);
+    // サイドバーの幅ドラッグ。窓を縮めたときは保存幅を上限で丸め直す（保存値は変えない）。
+    initThumbsResize();
+    window.addEventListener('resize', applyThumbsChrome);
     // 編集画面の表示ズーム（Ctrl+ホイールで拡大縮小・Ctrl+0 で等倍）。
     // 画像編集キャンバスの Ctrl+ホイールズームと同じ操作感。内容(#app)だけを拡大する。
     initEditorZoom();
@@ -8804,6 +8937,7 @@
         clampPdfScale, pdfPaperDims, pdfPageStyleCss, pdfOutSettings, setPdfOutSettings,
         // サムネイルサイドバー
         thumbStepModel, renderThumbSidebar, updateThumbSidebar, thumbsCollapsed, setThumbsCollapsed,
+        clampThumbsWidth, thumbsWidth, setThumbsWidth,
         // 実行モード（3-R5）とガイド小窓（3-R6）
         playerSteps, playerStartIndex, formatPlayerTime, playerSummary, openPlayer,
         guideStepPayload,
