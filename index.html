@@ -578,16 +578,34 @@
     flex-direction: column;
     padding: 16px;
   }
+  /* ツールバーは2段。1段目＝描画モード（右端にヘルプ）、2段目＝色・太さ・書式・表示。
+     .ie-controls の flex-basis:100% が段を折るので、ヘルプは必ず1段目の右端＝画面の一番右上に来る。 */
   .ie-toolbar {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: flex-start;
     gap: 10px;
     margin-bottom: 12px;
   }
-  .ie-tools { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+  .ie-tools { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; flex: 1 1 auto; }
+  .ie-controls { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; flex: 1 1 100%; }
+  /* アイコンボタンと、その名前。名前はボタンの枠の外・下に別行で置く（枠の中はアイコンだけ）。 */
+  .ie-toolitem { display: inline-flex; flex-direction: column; align-items: center; min-width: 58px; }
+  .ie-toolitem.ie-help { margin-left: auto; }
+  .ie-toolname {
+    margin-top: 4px;
+    font-size: 11px;
+    line-height: 1.1;
+    white-space: nowrap; /* 「トリミング」「塗りつぶし」でも折り返さない */
+    color: var(--muted);
+  }
+  .ie-tool.active + .ie-toolname { color: var(--primary); }
+  /* スライダー類も「名前が上・中身が下」に揃え、アイコンボタンと高さを合わせる。 */
+  .ie-field { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+  .ie-field[hidden] { display: none; } /* display 指定が UA の [hidden] を上書きしてしまうため明示 */
+  .ie-fieldname { font-size: 11px; line-height: 1.1; white-space: nowrap; color: var(--muted); }
+  .ie-fieldbody { display: inline-flex; align-items: center; gap: 6px; height: 44px; font-size: 0.8rem; color: var(--muted); }
   /* 編集中だけ対象画像を拡大縮小する表示用ズーム（仕上がり＝保存内容には影響しない）。 */
-  .ie-zoom { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted); }
   .ie-zoom input[type="range"] { width: 130px; vertical-align: middle; }
   .ie-zoom .ie-zoom-num {
     width: 58px;
@@ -611,8 +629,8 @@
   }
   .ie-zoom .ie-zoom-fit:hover { background: var(--surface-2); }
   .ie-tool {
-    width: 34px;
-    height: 34px;
+    width: 44px;
+    height: 44px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -620,34 +638,36 @@
     border-radius: 8px;
     background: var(--surface);
     color: var(--text);
-    font-size: 1rem;
     cursor: pointer;
+    padding: 0;
   }
-  .ie-tool:hover { background: var(--surface-2); }
+  .ie-tool:hover:not(:disabled) { background: var(--surface-2); }
   .ie-tool.active { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
-  /* SVGライン アイコン（ハンド/吹き出し/ペン/ハイライト/消しゴム）。currentColor で
+  .ie-tool:disabled { opacity: 0.45; cursor: default; }
+  .ie-tool:disabled + .ie-toolname { opacity: 0.55; }
+  /* アイコンは全て線画のインライン SVG（文字グリフは使わない）。currentColor で
      選択時の白反転（.ie-tool.active）に追従する。 */
   .ie-ic {
-    width: 19px;
-    height: 19px;
+    width: 26px;
+    height: 26px;
     display: block;
     fill: none;
     stroke: currentColor;
-    stroke-width: 1.9;
+    stroke-width: 1.7;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
-  .ie-color-btn {
-    display: inline-flex; align-items: center; gap: 4px;
-    width: auto; height: 34px; padding: 0 8px;
-    border: 1px solid var(--border); border-radius: 8px;
-    background: var(--surface); color: var(--text); cursor: pointer;
+  /* 色ボタン（線色・塗りつぶし・文字色）。枠の下端に今の色を敷く。 */
+  .ie-color-btn { position: relative; padding-bottom: 7px; }
+  .ie-color-chip {
+    position: absolute; left: 6px; right: 6px; bottom: 5px; height: 5px;
+    border-radius: 2px; border: 1px solid rgba(0,0,0,.25);
   }
-  .ie-color-chip { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(0,0,0,.25); }
+  /* 「線なし」「塗りつぶしなし」は赤い斜線ハッチで示す */
+  .ie-color-chip.none { background: repeating-linear-gradient(45deg, #fff 0 3px, #e24b4a 3px 4px); }
   .ie-size input { vertical-align: middle; }
   /* テキスト/吹き出しの書式（サイズ・太字・斜体）。対象ツール/オブジェクトのときだけ表示。
      文字サイズは本文編集と共通の Word 風コンボ（.rb-sizebox）を使う。 */
-  .ie-textfmt { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; color: var(--muted); }
   .ie-fmt {
     width: 34px;
     height: 34px;
@@ -660,7 +680,6 @@
   }
   .ie-fmt:hover { background: var(--surface-2); }
   .ie-fmt.active { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
-  .ie-opacity { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; color: var(--muted); }
   .ie-opacity input[type="range"] { width: 90px; vertical-align: middle; }
   .ie-opacity .ie-opacity-val { min-width: 3em; }
   .ie-canvas-wrap {
@@ -686,6 +705,7 @@
     touch-action: none;
     cursor: crosshair;
   }
+  .ie-canvas.tool-select { cursor: default; } /* 通常のカーソルと同じ見た目 */
   .ie-canvas.tool-hand { cursor: grab; }
   .ie-canvas.tool-hand.panning { cursor: grabbing; }
   .ie-canvas.tool-crop { cursor: default; }
@@ -720,13 +740,23 @@
     box-sizing: content-box;
     text-align: left;
   }
-  .ie-crop-actions { display: inline-flex; gap: 6px; }
+  .ie-crop-actions { display: inline-flex; align-items: center; gap: 6px; height: 44px; }
   /* display 指定が UA の [hidden]{display:none} を上書きしてしまうため明示する。
      これが無いとトリミング適用/取消ボタンが常時表示になる。 */
   .ie-crop-actions[hidden] { display: none; }
   .ie-crop-actions .btn { padding: 6px 10px; }
   .ie-actions { display: flex; gap: 8px; margin-top: 12px; }
-  .ie-hint { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
+  /* 使い方はツールバー右上の「ヘルプ」から開く読み物にする（画面下の長文は廃止）。 */
+  .modal.ie-help-doc { max-width: 760px; max-height: 84vh; display: flex; flex-direction: column; }
+  .ie-help-body { overflow: auto; margin: 0 -4px; padding: 0 4px; }
+  .ie-help-body h4 { margin: 16px 0 6px; font-size: 0.95rem; }
+  .ie-help-body h4:first-child { margin-top: 4px; }
+  .ie-help-body ul { margin: 0; padding-left: 1.25em; }
+  .ie-help-body li { margin: 3px 0; color: var(--text); line-height: 1.6; }
+  .ie-help-body kbd {
+    font: inherit; font-size: 0.85em; padding: 1px 5px; border: 1px solid var(--border-strong);
+    border-bottom-width: 2px; border-radius: 5px; background: var(--surface-2); white-space: nowrap;
+  }
 
   /* ドラッグ中 */
   .dragging { opacity: 0.5; }
@@ -6345,54 +6375,68 @@
         <div class="modal img-editor" role="dialog" aria-modal="true">
           <div class="ie-toolbar">
             <div class="ie-tools">
-              <button class="ie-tool" data-tool="hand" title="ハンド（画像を移動）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></button>
-              <button class="ie-tool" data-tool="arrow" title="矢印">↗</button>
-              <button class="ie-tool" data-tool="line" title="直線（Shiftで45°刻み）">╱</button>
-              <button class="ie-tool" data-tool="rect" title="四角">▢</button>
-              <button class="ie-tool" data-tool="ellipse" title="丸">◯</button>
-              <button class="ie-tool" data-tool="cross" title="×マーク">✕</button>
-              <button class="ie-tool" data-tool="freeform" title="フリーフォーム（クリックで頂点を追加・始点をクリックで閉じて確定・ダブルクリックで開いたまま確定・Escで中止）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4 14 8 5l8 2 4 7-6 6-8-2z"/><circle cx="4" cy="14" r="1.7" fill="currentColor" stroke="none"/><circle cx="8" cy="5" r="1.7" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1.7" fill="currentColor" stroke="none"/><circle cx="20" cy="14" r="1.7" fill="currentColor" stroke="none"/><circle cx="14" cy="20" r="1.7" fill="currentColor" stroke="none"/></svg></button>
-              <button class="ie-tool" data-tool="callout" title="吹き出し（コメント）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></button>
-              <button class="ie-tool" data-tool="pen" title="フリーハンドペン"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-              <button class="ie-tool" data-tool="marker" title="ハイライト"><svg class="ie-ic" viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button>
-              <button class="ie-tool" data-tool="eraser" title="消しゴム（描いた注釈だけ消す）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg></button>
-              <button class="ie-tool" data-tool="text" title="テキスト">T</button>
-              <button class="ie-tool" data-tool="mosaic" title="モザイク/ぼかし">▦</button>
-              <button class="ie-tool" data-tool="crop" title="トリミング">⛶</button>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="select" title="選択（クリックで選ぶ・Ctrl＋クリックで複数選択・ドラッグで範囲選択）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M5 2.6v16.1l4.3-4 2.7 5.7 2.4-1.1-2.7-5.7 5.8-.2z"/></svg></button><span class="ie-toolname">選択</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="hand" title="ハンド（画像を移動）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></button><span class="ie-toolname">ハンド</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="arrow" title="矢印"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M5 19 19 5"/><path d="M11.5 5H19v7.5"/></svg></button><span class="ie-toolname">矢印</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="line" title="直線（Shiftで45°刻み）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4.5 19.5 19.5 4.5"/></svg></button><span class="ie-toolname">直線</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="rect" title="四角"><svg class="ie-ic" viewBox="0 0 24 24"><rect x="3.5" y="6" width="17" height="12" rx="1.5"/></svg></button><span class="ie-toolname">四角</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="ellipse" title="丸"><svg class="ie-ic" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.8" ry="6.6"/></svg></button><span class="ie-toolname">丸</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="cross" title="×マーク"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M5.5 5.5 18.5 18.5"/><path d="M18.5 5.5 5.5 18.5"/></svg></button><span class="ie-toolname">×印</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="freeform" title="フリーフォーム（クリックで頂点を追加・始点をクリックで閉じて確定・ダブルクリックで開いたまま確定・Escで中止）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4 14 8 5l8 2 4 7-6 6-8-2z"/><circle cx="4" cy="14" r="1.7" fill="currentColor" stroke="none"/><circle cx="8" cy="5" r="1.7" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1.7" fill="currentColor" stroke="none"/><circle cx="20" cy="14" r="1.7" fill="currentColor" stroke="none"/><circle cx="14" cy="20" r="1.7" fill="currentColor" stroke="none"/></svg></button><span class="ie-toolname">多角形</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="callout" title="吹き出し（コメント）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></button><span class="ie-toolname">吹き出し</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="pen" title="フリーハンドペン"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button><span class="ie-toolname">ペン</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="marker" title="ハイライト"><svg class="ie-ic" viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button><span class="ie-toolname">マーカー</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="eraser" title="消しゴム（描いた注釈だけ消す）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg></button><span class="ie-toolname">消しゴム</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="text" title="テキスト"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4.5 6.5h15"/><path d="M4.5 12h15"/><path d="M4.5 17.5h9"/></svg></button><span class="ie-toolname">テキスト</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="mosaic" title="モザイク/ぼかし"><svg class="ie-ic" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/></svg></button><span class="ie-toolname">モザイク</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="crop" title="トリミング"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M6.5 2v15.5H22"/><path d="M2 6.5h15.5V22"/></svg></button><span class="ie-toolname">トリミング</span></span>
             </div>
+            <span class="ie-toolitem ie-help"><button type="button" class="ie-tool ie-help-btn" title="画像編集の使い方"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M12 6.5C10 4.6 7 4.2 3.5 4.8v12.6c3.5-.6 6.5-.2 8.5 1.7 2-1.9 5-2.3 8.5-1.7V4.8C17 4.2 14 4.6 12 6.5Z"/><path d="M12 6.5v12.6"/></svg></button><span class="ie-toolname">ヘルプ</span></span>
+            <div class="ie-controls">
             <span class="ie-crop-actions" hidden>
               <button type="button" class="btn primary ie-crop-apply">トリミング適用</button>
               <button type="button" class="btn ie-crop-cancel">取消</button>
             </span>
-            <span class="ie-color" title="色">
-              <button type="button" class="ie-color-btn" title="色（Excel風パレットから選択）"><span class="ie-color-chip"></span>▾</button>
+            <span class="ie-toolitem ie-color">
+              <button type="button" class="ie-tool ie-color-btn" title="線の色（Excel風パレットから選択）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M3.5 17.5 20.5 6.5" stroke-width="3"/></svg><span class="ie-color-chip"></span></button>
               <input type="color" value="#ff3b30" hidden />
+              <span class="ie-toolname">線色</span>
             </span>
-            <label class="ie-size" title="線の太さ"><input type="range" min="1" max="40" value="6" /></label>
-            <span class="ie-textfmt" hidden>
-              文字
-              <span class="rb-sizebox" title="文字サイズ（px）">
-                <input type="number" class="rb-size-in ie-font-size" min="8" max="200" step="1" value="24"
-                       aria-label="文字サイズ（px）" />
-                <button type="button" class="rb-size-dd ie-font-size-dd" tabindex="-1" title="サイズ一覧">▾</button>
+            <label class="ie-size ie-field" title="線の太さ">
+              <span class="ie-fieldname">線の太さ</span>
+              <span class="ie-fieldbody"><input type="range" min="1" max="40" value="6" /></span>
+            </label>
+            <span class="ie-textfmt ie-field" hidden>
+              <span class="ie-fieldname">文字の書式</span>
+              <span class="ie-fieldbody">
+                <span class="rb-sizebox" title="文字サイズ（px）">
+                  <input type="number" class="rb-size-in ie-font-size" min="8" max="200" step="1" value="24"
+                         aria-label="文字サイズ（px）" />
+                  <button type="button" class="rb-size-dd ie-font-size-dd" tabindex="-1" title="サイズ一覧">▾</button>
+                </span>
+                <button type="button" class="ie-fmt ie-fmt-grow" title="文字を大きく">A˄</button>
+                <button type="button" class="ie-fmt ie-fmt-shrink" title="文字を小さく">A˅</button>
+                <button type="button" class="ie-fmt ie-fmt-bold" title="太字"><b>B</b></button>
+                <button type="button" class="ie-fmt ie-fmt-italic" title="斜体"><i>I</i></button>
               </span>
-              <button type="button" class="ie-fmt ie-fmt-grow" title="文字を大きく">A˄</button>
-              <button type="button" class="ie-fmt ie-fmt-shrink" title="文字を小さく">A˅</button>
-              <button type="button" class="ie-fmt ie-fmt-bold" title="太字"><b>B</b></button>
-              <button type="button" class="ie-fmt ie-fmt-italic" title="斜体"><i>I</i></button>
             </span>
-            <label class="ie-opacity" title="透過率（0%=不透明）">透過<input type="range" min="0" max="90" step="10" value="0" /><span class="ie-opacity-val">0%</span></label>
-            <span class="ie-zoom" title="編集中の表示倍率（拡大縮小しても保存される画像の仕上がりは変わりません）">
-              🔍
-              <input type="range" class="ie-zoom-range" min="10" max="400" step="5" value="100" aria-label="表示倍率" />
-              <input type="number" class="ie-zoom-num" min="10" max="400" step="5" value="100" aria-label="表示倍率（％）" />%
-              <button type="button" class="ie-zoom-fit" title="画面に収まる倍率に合わせる">フィット</button>
+            <label class="ie-opacity ie-field" title="透過率（0%=不透明）">
+              <span class="ie-fieldname">透過率</span>
+              <span class="ie-fieldbody"><input type="range" min="0" max="90" step="10" value="0" /><span class="ie-opacity-val">0%</span></span>
+            </label>
+            <span class="ie-zoom ie-field" title="編集中の表示倍率（拡大縮小しても保存される画像の仕上がりは変わりません）">
+              <span class="ie-fieldname">表示倍率</span>
+              <span class="ie-fieldbody">
+                <input type="range" class="ie-zoom-range" min="10" max="400" step="5" value="100" aria-label="表示倍率" />
+                <input type="number" class="ie-zoom-num" min="10" max="400" step="5" value="100" aria-label="表示倍率（％）" />%
+                <button type="button" class="ie-zoom-fit" title="画面に収まる倍率に合わせる">フィット</button>
+              </span>
             </span>
-            <button class="btn ie-undo" title="元に戻す (Ctrl+Z)">↶ 元に戻す</button>
-            <button class="btn ie-redo" title="やり直す (Ctrl+Y)">↷ やり直す</button>
+            <span class="ie-toolitem"><button class="ie-tool ie-undo" title="元に戻す (Ctrl+Z)"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4 9.5h11a5 5 0 0 1 0 10h-5"/><path d="M4 9.5 8 5.5"/><path d="m4 9.5 4 4"/></svg></button><span class="ie-toolname">元に戻す</span></span>
+            <span class="ie-toolitem"><button class="ie-tool ie-redo" title="やり直す (Ctrl+Y)"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M20 9.5H9a5 5 0 0 0 0 10h5"/><path d="m20 9.5-4-4"/><path d="m20 9.5-4 4"/></svg></button><span class="ie-toolname">やり直す</span></span>
+            </div>
           </div>
           <div class="ie-canvas-wrap"><canvas class="ie-canvas"></canvas></div>
-          <p class="ie-hint">ドラッグで描画（配置はマウスを離した時。テキスト・吹き出しも同じ）。何も無い所を右クリックすると、どのツールを使っていても（未選択でも）ハンドツールへ切り替わります（描きかけがあれば取りやめ）。矢印・直線・図形・×・テキスト・吹き出しはクリックで選択→ドラッグで移動、白丸ハンドルで変形（辺の中央は縦横のみ）、図形の外をクリックで選択解除、Ctrl＋ドラッグでコピー（ドラッグを始めた後に押しても効きます）、Shift＋ドラッグで水平・垂直に固定、Delete または右クリック→削除で消せます。フリーフォームはクリックで頂点を追加し、始点をクリックで閉じて確定（ダブルクリックで開いたまま確定・Escで中止）。テキスト・吹き出しはダブルクリックで文字を再編集。消しゴムは描いた注釈を消します（スクショ本体は残る）。元に戻す=Ctrl+Z・やり直す=Ctrl+Y。トリミングは範囲を決めて「トリミング適用」。ハンドで画像を移動、ホイール（他ツールはCtrl+ホイール）でズームできます。</p>
           <div class="ie-actions">
             <button class="btn primary ie-save">保存</button>
             <button class="btn ie-cancel">キャンセル</button>
@@ -6405,8 +6449,12 @@
       const ctx = canvas.getContext('2d');
       const colorInput = overlay.querySelector('.ie-color input');
       const sizeInput = overlay.querySelector('.ie-size input');
-      const toolBtns = overlay.querySelectorAll('.ie-tool');
-      let tool = null; // null = ツール未選択（初期状態。選択・移動のみ、描画しない）
+      const toolBtns = overlay.querySelectorAll('.ie-tool[data-tool]');
+      // 既定モードは2つ（選択・ハンド）。'select' は描かずに選択・移動・範囲選択だけを行う。
+      // 左ボタンを押したままの右クリックで、この2つを行き来する（lastDefaultTool）。
+      const DEFAULT_TOOLS = ['select', 'hand'];
+      let tool = 'select';
+      let lastDefaultTool = 'select'; // 描画ツール中に右クリックしたときの戻り先
       const undoStack = [];
       const redoStack = []; // やり直し（Redo）。新規操作で空になる
 
@@ -6684,16 +6732,22 @@
         finishFreeformIfAny(); // 描きかけのフリーフォームも確定（頂点不足なら破棄）
         if (t !== 'crop') exitCropMode(); // crop 以外へ移ると選択枠を破棄
         tool = t;
+        if (DEFAULT_TOOLS.includes(t)) lastDefaultTool = t;
         selectedId = null; // ツール切替で選択解除
         toolBtns.forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
+        canvas.classList.toggle('tool-select', t === 'select');
         canvas.classList.toggle('tool-hand', t === 'hand');
         canvas.classList.toggle('tool-crop', t === 'crop');
         syncOpacityUI();
         if (t === 'crop') enterCropMode();
         recomposite();
       }
-      // 同じツールを再クリックしたら未選択（null）へトグルする。
-      toolBtns.forEach((b) => b.addEventListener('click', () => selectTool(b.dataset.tool === tool ? null : b.dataset.tool)));
+      // 選択とハンドを行き来する（左クリック押下中の右クリック・要望7）
+      function toggleDefaultTool() {
+        selectTool(tool === 'hand' ? 'select' : 'hand');
+      }
+      // 同じツールを再クリックしたら既定モード（選択）へ戻す。
+      toolBtns.forEach((b) => b.addEventListener('click', () => selectTool(b.dataset.tool === tool ? 'select' : b.dataset.tool)));
 
       const baseImg = new Image();
       baseImg.onload = () => {
@@ -7533,15 +7587,15 @@
         });
         cropMode = false; cropRect = null; cropDrag = null;
         if (cropActions) cropActions.hidden = true;
-        selectTool(null);
+        selectTool('select');
         applyZoom();
         recomposite();
       }
       if (cropActions) {
         overlay.querySelector('.ie-crop-apply').addEventListener('click', applyCrop);
-        overlay.querySelector('.ie-crop-cancel').addEventListener('click', () => selectTool(null));
+        overlay.querySelector('.ie-crop-cancel').addEventListener('click', () => selectTool('select'));
       }
-      selectTool(null); // 初期は未選択（crop 系関数の定義後に呼ぶ）
+      selectTool('select'); // 初期は未選択（crop 系関数の定義後に呼ぶ）
 
       // ---- ポインタ操作 ----
       let drawing = false;
@@ -7633,7 +7687,7 @@
         if (activeFreeform) { freeformClick(p); return; }
         // 既存オブジェクトの選択・ドラッグ開始（ツール本来の動作より優先）。
         // 未選択（null）でも選択・移動はできる（描画しないだけ）。
-        if (tool === null || OBJECT_TOOLS.includes(tool)) {
+        if (tool === 'select' || OBJECT_TOOLS.includes(tool)) {
           const sel = selectedObj();
           const hk = sel && hitObjHandle(sel, p);
           if (hk) { // 選択中オブジェクトのハンドル（端点・四隅・尻尾）
@@ -7661,7 +7715,7 @@
           // 空白クリックは選択解除のみ（新しい図形は配置しない。もう一度クリックで描画開始）
           if (selectedId) { selectedId = null; recomposite(); return; }
         }
-        if (tool === null) return; // 未選択時は描画・パンへ進まない（選択・移動のみ）
+        if (tool === 'select') return; // 未選択時は描画・パンへ進まない（選択・移動のみ）
         if (tool === 'hand') { startPan(e); return; }
         if (tool === 'crop') {
           if (!cropRect) return;
@@ -7739,7 +7793,7 @@
         if (!drawing) {
           // ホバー中のカーソル表示（ハンドル＝grab、本体＝move）。hand はパン用カーソル優先。
           // 未選択（null）でも選択・移動できるのでカーソルを出す。
-          if ((tool === null || OBJECT_TOOLS.includes(tool)) && tool !== 'hand') {
+          if ((tool === 'select' || OBJECT_TOOLS.includes(tool)) && tool !== 'hand') {
             const p2 = xy(e);
             const sel = selectedObj();
             const hk = sel && hitObjHandle(sel, p2);
@@ -7840,7 +7894,7 @@
         // フリーフォーム描画中のダブルクリックは「開いたまま確定」（Office と同じ）
         if (activeFreeform) { e.preventDefault(); commitFreeform(false); return; }
         if (activeCallout || cropMode) return;
-        if (!(tool === null || OBJECT_TOOLS.includes(tool))) return; // 未選択でも再編集可
+        if (!(tool === 'select' || OBJECT_TOOLS.includes(tool))) return; // 未選択でも再編集可
         const p = xy(e);
         const hit = hitObject(p);
         if (hit && (hit.type === 'text' || hit.type === 'callout')) {
@@ -7865,13 +7919,13 @@
         e.preventDefault(); // 既定メニュー・選択系の既定動作を抑止（Electron では通常出ないが保険）
         if (cropMode) return;      // トリミング中は「適用／取消」のUIに任せる
         if (activeCallout) return; // 吹き出しの本文入力中は編集に任せる
-        // フリーフォーム描画中の右クリックは描きかけを破棄してハンドツールへ
-        if (activeFreeform) { cancelFreeform(); selectTool('hand'); return; }
-        // 左ボタンを押したままの右クリック：描きかけ・配置待ちを破棄してハンドツールへ。
+        // フリーフォーム描画中の右クリックは描きかけを破棄して既定モードへ
+        if (activeFreeform) { cancelFreeform(); selectTool(lastDefaultTool); return; }
+        // 左ボタンを押したままの右クリック：描きかけ・配置待ちを破棄して既定モードを入れ替える。
         // pointermove を待たずここで発火するので、マウスを動かさなくても効く。
-        if (drawing || pendingPlace) { discardDrawing(); selectTool('hand'); return; }
+        if (drawing || pendingPlace) { discardDrawing(); toggleDefaultTool(); return; }
         // 図形の上ならクリック選択と同じ対象（未選択含む）に限り削除メニューを出す。
-        if (tool === null || OBJECT_TOOLS.includes(tool)) {
+        if (tool === 'select' || OBJECT_TOOLS.includes(tool)) {
           const hit = hitObject(xy(e));
           if (hit) {
             selectedId = hit.id;
@@ -7880,9 +7934,10 @@
             return;
           }
         }
-        // それ以外（未選択・ペン・ハイライト・消しゴム・モザイク・空白の右クリック）は
-        // いつでもハンドツールへ逃がす（仕様6章）。
-        selectTool('hand');
+        // 既定モード（選択／ハンド）にいるなら、もう一方へ入れ替える（要望7）。
+        // 描画ツール中なら、直前に居た既定モードへ戻す＝どのツールからでも逃げられる（仕様6章）。
+        if (DEFAULT_TOOLS.includes(tool)) toggleDefaultTool();
+        else selectTool(lastDefaultTool);
       });
       // カーソル位置にミニメニューを開く。id を rb-palette にすると、パレット共通の
       // グローバル mousedown 閉じ処理と rbClosePalette() がそのまま効く。
@@ -7907,7 +7962,67 @@
         menu.style.top = Math.max(8, Math.min(y, window.innerHeight - h - 8)) + 'px';
       }
 
+      // ---- ヘルプ（使い方）----
+      // 以前はキャンバスの下に約480字の説明文（.ie-hint）を1段落で敷いていたが、読めず
+      // 縦も食っていたので、ツールバー右上の「ヘルプ」から箇条書きで開く読み物にした。
+      let helpOverlay = null;
+      const IE_HELP = [
+        ['選択と移動', [
+          '「選択」モードなら、図形をクリックして選べます（描画ツール中でも図形は掴めます）。',
+          '選んだ図形はドラッグで移動、白丸のハンドルで変形できます（辺の中央は縦だけ・横だけ）。',
+          '図形の外をクリックすると選択が外れます。',
+          '<kbd>Ctrl</kbd>＋ドラッグでコピーします（ドラッグを始めた後に押しても効きます）。',
+          '<kbd>Shift</kbd>＋ドラッグで水平・垂直に固定します。',
+          '<kbd>Delete</kbd>、または右クリック→削除で消せます。',
+        ]],
+        ['描画', [
+          'ドラッグで描きます。図形が決まるのはマウスを離した時です（テキスト・吹き出しも同じ）。',
+          '多角形はクリックで頂点を足し、始点をクリックで閉じて確定します（ダブルクリックで開いたまま確定、<kbd>Esc</kbd>で中止）。',
+          '直線は <kbd>Shift</kbd> を押しながらで45°刻みになります。',
+          'テキストと吹き出しは、ダブルクリックで文字を編集し直せます。',
+          '消しゴムで消えるのは描いた注釈だけです（スクリーンショット本体は残ります）。',
+        ]],
+        ['モードの切り替え', [
+          '「選択」と「ハンド」が既定のモードです。',
+          '何も無い所を右クリックすると、この2つが入れ替わります。',
+          '描画ツールを使っている最中に右クリックすると、直前の既定モードへ戻ります（描きかけは取りやめ）。',
+        ]],
+        ['色と書式', [
+          '線色はツールバーの「線色」から選びます。図形を選んでから変えると、その図形に反映されます。',
+          '文字サイズ・太字・斜体は、テキストか吹き出しを使っているときだけ出ます。',
+          '透過率はツールごとに覚えます（0%＝不透明）。',
+        ]],
+        ['取り消し', [
+          '元に戻す＝<kbd>Ctrl</kbd>+<kbd>Z</kbd>、やり直す＝<kbd>Ctrl</kbd>+<kbd>Y</kbd>（<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>も同じ）。',
+          '直前の20操作までさかのぼれます。',
+        ]],
+        ['トリミングと表示', [
+          'トリミングは範囲を決めてから「トリミング適用」を押します。',
+          'ハンドで画像を動かせます。ホイールで拡大縮小（ハンド以外のツールは <kbd>Ctrl</kbd>＋ホイール）。',
+          '表示倍率は編集中の見え方だけを変えるもので、保存される画像の仕上がりは変わりません。',
+        ]],
+      ];
+      function openImageEditorHelp() {
+        if (helpOverlay) return;
+        const body = IE_HELP
+          .map(([head, items]) => `<h4>${head}</h4><ul>${items.map((s) => `<li>${s}</li>`).join('')}</ul>`)
+          .join('');
+        helpOverlay = buildModal(`
+          <h3>画像編集の使い方</h3>
+          <div class="ie-help-body">${body}</div>
+          <div class="modal-actions"><button class="btn primary" data-close>閉じる</button></div>`);
+        helpOverlay.querySelector('.modal').classList.add('ie-help-doc');
+        // 取り残し防止: 背景クリック・閉じるボタンで消えたのを検知して参照を捨てる
+        const obs = new MutationObserver(() => {
+          if (helpOverlay && !helpOverlay.isConnected) { obs.disconnect(); helpOverlay = null; }
+        });
+        obs.observe(document.body, { childList: true });
+      }
+      function closeHelp() { if (helpOverlay) { closeModal(helpOverlay); helpOverlay = null; } }
+      overlay.querySelector('.ie-help-btn').addEventListener('click', openImageEditorHelp);
+
       function close() {
+        closeHelp(); // ヘルプを開いたままエディタを閉じた場合の取り残し防止
         cancelCallout(); // 編集中の吹き出しは破棄
         cancelFreeform(); // 描きかけのフリーフォームも破棄（閉じる＝保存しない）
         rbClosePalette(); // 右クリックメニューを開いたまま閉じた場合の取り残し防止
@@ -7918,6 +8033,11 @@
         overlay.remove();
       }
       function onKey(ev) {
+        // ヘルプを開いている間はエディタ側のキー操作を止め、Esc はヘルプだけを閉じる。
+        if (helpOverlay) {
+          if (ev.key === 'Escape') { ev.preventDefault(); closeHelp(); }
+          return;
+        }
         // テキスト・吹き出しの入力欄は自前の keydown で stopPropagation するため
         // ここへは届かない。他の入力要素上でも誤動作しないようガードする。
         const t = ev.target;
