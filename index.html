@@ -388,7 +388,8 @@
   .item > .insert-after { flex-basis: 100%; margin-left: 26px; }
   /* テンプレート手順（grid）は両カラムをまたいで本文の下に置く */
   .step > .insert-after { grid-column: 1 / -1; justify-self: start; margin-left: 40px; }
-  .item.done .item-text { text-decoration: line-through; color: var(--muted); }
+  /* 完了した項目は灰色にするだけ。取り消し線は「無効」に見えて誤解を招くので付けない（2026-09-11） */
+  .item.done .item-text { color: var(--muted); }
   .item-text {
     flex: 1;
     border: 1px solid transparent;
@@ -1252,7 +1253,7 @@
   .print-todo { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; padding: 4px 0; break-inside: avoid; }
   .print-todo .print-box { font-size: 1.05rem; line-height: 1; }
   .print-todo .print-text { flex: 1; min-width: 0; word-break: break-word; }
-  .print-todo.done .print-text { text-decoration: line-through; color: #666; }
+  .print-todo.done .print-text { color: #666; } /* 画面と同じく取り消し線は付けない */
   .print-todo .print-imgs { flex-basis: 100%; margin: 6px 0 4px 1.6em; }
 
   /* ---- 目次ページ（表紙の「目次を含める」ON のとき、表紙の直後に出す。行間つめ） ---- */
@@ -6848,14 +6849,35 @@
         const sels = selectedObjs();
         if (sels.length) { sels.forEach((o) => { o.opacity = 1 - v / 100; }); recomposite(); } // 選択中すべてへ即時反映
       });
+      // ---- 線の太さ ----
+      // 透過率と同じく、選択中の図形があればその太さを即時に変える（テキストの枠線・吹き出し・
+      // 矩形などすべて。要望 2026-09-11: テキストの枠線の太さが作成時の値で固定だった）。
+      // 選択が無いときに動かした値だけを「次に描く太さ」nextSize として覚える。
+      const DEFAULT_SIZE = 6;
+      let nextSize = DEFAULT_SIZE;
+      sizeInput.addEventListener('pointerdown', () => { if (selectedIds.length) pushUndo(); });
+      sizeInput.addEventListener('input', () => {
+        const v = Math.max(1, Math.round(Number(sizeInput.value) || 1));
+        const sels = selectedObjs();
+        if (!sels.length) { nextSize = v; return; }
+        sels.forEach((o) => { o.size = v; });
+        recomposite();
+      });
+      // 選択中があればその太さ（複数なら先頭）、無ければ「次に描く太さ」をつまみに映す。
+      function syncSizeUI() {
+        const sel = selectedObj();
+        if (sel && Number.isFinite(sel.size)) sizeInput.value = sel.size;
+        else if (!selectedIds.length) sizeInput.value = nextSize;
+      }
       // ---- 色は「線・塗り・文字」の3つ ----
       // 図形の色は color（線）1つきりで、テキストは color が文字色を兼ねていたため
       // 枠線に色を付けられなかった。3つに分けて、塗りつぶしと枠線を別々に決められるようにする。
       //  color … 線（枠線）の色。null = 線なし
       //  fill  … 塗りつぶしの色。null = 塗りなし
       //  textColor … 文字の色（テキスト・吹き出しだけ）
+      const DEFAULT_LINE_COLOR = '#ff3b30'; // 線色・文字色の既定（ツールバーの color input の初期値と同じ）
       let fillValue = null;              // 次に描く図形の塗り（既定は塗りなし＝従来どおり）
-      let textColorValue = '#ff3b30';    // 次に描くテキスト・吹き出しの文字色
+      let textColorValue = DEFAULT_LINE_COLOR; // 次に描くテキスト・吹き出しの文字色
       let lineNone = false;              // 線なしを選んでいるか（colorInput は最後に選んだ実色を保つ）
       // 次に描く図形の線の色。ペン・ハイライトは「線なし」があり得ないので colorInput を直に使う。
       const lineColor = () => (lineNone ? null : colorInput.value);
@@ -7130,6 +7152,7 @@
         if (cropMode && cropRect) drawCropOverlay();
         syncTextFmtUI(); // ツール・選択・編集状態に書式コントロールを追随させる
         syncColorUI();   // 線・塗り・文字色のチップも同じタイミングで追随させる
+        syncSizeUI();    // 線の太さのつまみも選択中の図形に追随させる
       }
       // 表示 px / canvas px の比率（ハンドルや点線を画面上一定サイズに保つのに使う）。
       function dispScale() { return canvas.offsetWidth ? canvas.width / canvas.offsetWidth : 1; }
@@ -7138,6 +7161,7 @@
         commitCallout(); // 別ツールへ移るときは編集中の吹き出しを確定
         finishFreeformIfAny(); // 描きかけのフリーフォームも確定（頂点不足なら破棄）
         if (t !== 'crop') exitCropMode(); // crop 以外へ移ると選択枠を破棄
+        resetDrawStyleIfToolChanged(t);
         tool = t;
         if (DEFAULT_TOOLS.includes(t)) lastDefaultTool = t;
         clearSelection(); // ツール切替で選択解除
@@ -7149,6 +7173,23 @@
         syncOpacityUI();
         if (t === 'crop') enterCropMode();
         recomposite();
+      }
+      // 別の描画コマンドへ移ったら「次に描く」線色・塗り・文字色・太さを既定に戻す
+      //（要望 2026-09-11: 丸を青・塗りありで描いた後に四角へ移ると、その設定が持ち越されて
+      // いた）。同じコマンドに戻る（四角 → 選択 → 四角）ときは保持する。透過率はツール別
+      //（toolOpacity）なので対象外。
+      const DRAW_TOOLS = ['pen', 'marker', 'arrow', 'line', 'rect', 'ellipse', 'cross', 'freeform', 'text', 'callout'];
+      let lastDrawTool = null;
+      function resetDrawStyleIfToolChanged(t) {
+        if (!DRAW_TOOLS.includes(t)) return;
+        if (t === lastDrawTool) return;
+        lastDrawTool = t;
+        lineNone = false;
+        colorInput.value = DEFAULT_LINE_COLOR;
+        fillValue = null;
+        textColorValue = DEFAULT_LINE_COLOR;
+        nextSize = DEFAULT_SIZE;
+        sizeInput.value = DEFAULT_SIZE;
       }
       // 選択とハンドを行き来する（左クリック押下中の右クリック。仕様12章）
       function toggleDefaultTool() {
@@ -8106,6 +8147,23 @@
       // テキスト・吹き出しの「配置待ち」。押した位置を覚えておき、離した時に配置する
       // （押している間に右クリックすればハンドツールへ逃げられる。仕様6章）。
       let pendingPlace = null; // { tool, p } または null
+      // 左ボタンを押したままの右クリック（コード）でハンド⇄選択を切り替える処理。
+      // ポインタイベントは「押している最中の別ボタンの押下・解放」を pointerdown/up ではなく
+      // pointermove（button に変化したボタン番号）で通知し、pointerup は全ボタンが離れたとき
+      // 最後に離したボタンで1回だけ来る。以前は右ボタンを離した時の contextmenu で判定して
+      // いたため、左を先に離すと pointerup（button=2）が先に来てテキスト・吹き出しが配置され、
+      // 直後の contextmenu は「吹き出し入力中は無視」に当たって切替が起きなかった
+      //（不具合報告 2026-09-11）。右ボタンを押した瞬間（pointermove の button===2）に切り替え、
+      // そのジェスチャの残り（pointermove / pointerup / 直後の contextmenu）は捨てる。
+      const chord = { active: false, at: 0 };
+      function chordToggle() {
+        discardDrawing();
+        toggleDefaultTool();
+        chord.active = true;
+        chord.at = performance.now();
+      }
+      // 切替直後の contextmenu（右ボタンを離した時に来る）は同じ操作の一部なので無視する。
+      const isChordContextmenu = () => performance.now() - chord.at < 1000;
       // 描きかけ（ドラッグ描画・ペン/ハイライト・消しゴム・モザイク・配置待ち）を捨てる。
       function discardDrawing() {
         if (drawing && tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
@@ -8163,7 +8221,10 @@
         e.preventDefault();
         // 右ボタンは contextmenu（右クリック削除メニュー）に任せる。
         // ここを素通しすると右ドラッグで描画・選択が始まってしまう。
+        // （左を押したままの右押下は通常 pointermove で届くが、別ポインタとして来た場合の保険）
+        if (e.button === 2 && (drawing || pendingPlace)) { chordToggle(); return; }
         if (e.button !== 0) return;
+        if (chord.active) return; // 右クリックで切り替えた直後のジェスチャの残りは無視
         // テキスト編集中に枠外を左クリック → 確定（空なら破棄）のみ。新規テキストは作らない。
         if (editingText) {
           const ta = canvasWrap.querySelector('.ie-text-input');
@@ -8277,6 +8338,9 @@
       });
 
       canvas.addEventListener('pointermove', (e) => {
+        // 左ボタンを押したまま右ボタンを押した（描きかけ・配置待ちがある間だけ）→ 即座に切替。
+        if (e.button === 2 && (drawing || pendingPlace)) { chordToggle(); return; }
+        if (chord.active) return; // 切替後、全ボタンが離れるまでは何もしない
         // 吹き出し編集中：尻尾ドラッグ、または先端付近ホバーでハンドルを表示。
         if (activeCallout) {
           const p = xy(e);
@@ -8347,6 +8411,10 @@
       });
 
       function finish(e) {
+        // 右クリックで切り替えたジェスチャの終わり（全ボタン解放）。配置・確定はしない。
+        if (chord.active) { chord.active = false; return; }
+        // 左以外のボタンで終わった pointerup では配置しない（二重防御）。
+        if (pendingPlace && e.button !== 0) { pendingPlace = null; return; }
         // テキスト・吹き出しは離した時に配置する（座標は押した位置＝見え方は従来どおり）。
         if (pendingPlace) {
           const { tool: pt, p: pp } = pendingPlace;
@@ -8420,6 +8488,7 @@
         if (tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
         if (tool === 'pen' || tool === 'marker') bakeLiveStroke(); // 描きかけ分は確定させる
         drawing = false; pendingPlace = null; cropDrag = null; objDrag = null; marquee = null; endPan();
+        chord.active = false;
         canvas.style.cursor = '';
         recomposite();
       });
@@ -8451,13 +8520,13 @@
       // 誤右クリックの即消滅を避けるため、選択枠で対象を見せてから「削除」を選ばせる。
       canvas.addEventListener('contextmenu', (e) => {
         e.preventDefault(); // 既定メニュー・選択系の既定動作を抑止（Electron では通常出ないが保険）
+        if (isChordContextmenu()) return; // 左押下中の右クリックは押した瞬間に処理済み（二重トグル防止）
         if (cropMode) return;      // トリミング中は「適用／取消」のUIに任せる
         if (activeCallout) return; // 吹き出しの本文入力中は編集に任せる
         // フリーフォーム描画中の右クリックは描きかけを破棄して既定モードへ
         if (activeFreeform) { cancelFreeform(); selectTool(lastDefaultTool); return; }
-        // 左ボタンを押したままの右クリック：描きかけ・配置待ちを破棄して既定モードを入れ替える。
-        // pointermove を待たずここで発火するので、マウスを動かさなくても効く。
-        if (drawing || pendingPlace) { discardDrawing(); toggleDefaultTool(); return; }
+        // 左ボタンを押したままの右クリック（押した瞬間に pointermove で処理できなかった場合の保険）。
+        if (drawing || pendingPlace) { chordToggle(); return; }
         // 図形の上なら、クリック選択と同じ対象に限り削除メニューを出す。
         if (tool === 'select' || OBJECT_TOOLS.includes(tool)) {
           const hit = hitObject(xy(e));
@@ -8525,9 +8594,12 @@
           '「選択」と「ハンド」が既定のモードです。',
           '何も無い所を右クリックすると、この2つが入れ替わります。',
           '描画ツールを使っている最中に右クリックすると、直前の既定モードへ戻ります（描きかけは取りやめ）。',
+          '左ボタンを押したまま右クリックすると、その場で「選択」と「ハンド」が入れ替わります（どちらのボタンを先に離しても同じです）。',
+          '別の描画ツールに切り替えると、線色・塗りつぶし・文字色・線の太さは既定に戻ります（同じツールに戻ったときはそのままです）。',
         ]],
         ['色と書式', [
           '色は「線色」「塗りつぶし」「文字色」の3つに分かれています。図形を選んでから変えると、その図形に反映されます（複数選んでいればまとめて）。',
+          '「線の太さ」も同じで、図形を選んでから動かすとその図形の線（テキストボックスの枠線・吹き出しの枠も）が太くなったり細くなったりします。',
           '四角・丸・多角形（閉じたもの）・テキストボックス・吹き出しは塗りつぶせます。「塗りつぶしなし」で透明に戻せます。',
           'テキストボックスは「線色」で枠線を付けられます。文字の色は「文字色」で別に決めます。',
           '矢印・直線・×印は線だけの図形なので、塗りつぶしはありません。',
