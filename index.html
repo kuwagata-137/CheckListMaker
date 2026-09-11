@@ -395,28 +395,34 @@
     z-index: 1;
   }
 
-  /* 行ホバー時に出る「ここに追加」ボタン。
-     手順・項目の途中に空項目を挿入するためのもの（末尾追加はセクションバーの＋）。
-     手順と手順の間にマウスカーソルがある時だけ出したいので :hover のみで表示する
-     （:focus-within だと編集中ずっと出っぱなしになるため使わない）。 */
-  .insert-after {
-    display: none;
-    font: inherit;
-    font-size: 0.8rem;
-    color: var(--primary);
-    background: transparent;
-    border: 1px dashed var(--border);
-    border-radius: 6px;
-    padding: 1px 10px;
-    margin-top: 2px;
-    cursor: pointer;
+  /* 項目・手順の間の「＋」（2026-09-11・モック D 案。セクションの間と同じ丸ボタン）。
+     普段は 14px の空きだけで、マウスを置くと青い線と丸い＋、横に「ここに項目を追加」の説明が出る。
+     以前の行ホバーで出る点線ボタン「＋ ここに項目を追加」はこれに置き換えた。
+     末尾（最後の項目の下）にも同じ＋を置く（セクション見出しの＋と同じ末尾追加）。 */
+  .item-gap { position: relative; height: 14px; display: flex; align-items: center; justify-content: center; list-style: none; }
+  .item-gap-line {
+    position: absolute; left: 8px; right: 8px; top: 50%; height: 1px;
+    background: var(--primary); opacity: 0; transition: opacity 0.12s ease;
   }
-  .insert-after:hover { background: var(--surface-2); border-color: var(--primary); }
-  .item:hover > .insert-after { display: inline-block; }
-  /* ToDo項目（flex）は独立行に折り返す */
-  .item > .insert-after { flex-basis: 100%; margin-left: 26px; }
-  /* テンプレート手順（grid）は両カラムをまたいで本文の下に置く */
-  .step > .insert-after { grid-column: 1 / -1; justify-self: start; margin-left: 40px; }
+  .item-add {
+    position: relative; z-index: 1;
+    width: 22px; height: 22px; padding: 0;
+    border-radius: 50%; border: 1px solid var(--primary);
+    background: var(--surface); color: var(--primary);
+    font: inherit; font-size: 15px; line-height: 1; cursor: pointer;
+    opacity: 0; transition: opacity 0.12s ease;
+  }
+  .item-gap-tip {
+    position: absolute; left: calc(50% + 18px); top: 50%; transform: translateY(-50%);
+    z-index: 2; display: none; white-space: nowrap;
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px;
+    box-shadow: var(--shadow); padding: 4px 9px; font-size: 0.78rem; color: var(--text);
+    pointer-events: none;
+  }
+  .item-gap:hover .item-gap-line, .item-gap:hover .item-add,
+  .item-add:focus-visible, .item-gap:focus-within .item-gap-line { opacity: 1; }
+  .item-gap:hover .item-gap-tip, .item-gap:focus-within .item-gap-tip { display: block; }
+  .item-add:hover { background: var(--primary); color: #fff; }
   /* 完了した項目は灰色にするだけ。取り消し線は「無効」に見えて誤解を招くので付けない（2026-09-11） */
   .item.done .item-text { color: var(--muted); }
   .item-text {
@@ -2987,9 +2993,20 @@
     // type/startNo を受け取り、テンプレート時は手順タイムライン、ToDo時は通常リストを描く
     function renderSection(section, prog, type, startNo) {
       const isTemplate = type === MODES.TEMPLATE;
-      const items = isTemplate
-        ? section.items.map((it, i) => renderStep(section.id, it, startNo + i + 1, i)).join('')
-        : section.items.map((it, i) => renderItem(section.id, it, i)).join('');
+      // 項目の間と末尾に「＋」（ホバーで線と丸ボタン＋説明）。data-index はその位置＝挿入先の添字。
+      const word = isTemplate ? '手順' : '項目';
+      const itemGap = (i) => `
+          <li class="item-gap">
+            <span class="item-gap-line"></span>
+            <button class="item-add" data-action="insert-item-at"
+                    data-section="${section.id}" data-index="${i}" aria-label="ここに${word}を追加">+</button>
+            <span class="item-gap-tip">ここに${word}を追加</span>
+          </li>`;
+      const items = section.items
+        .map((it, i) => (i > 0 ? itemGap(i) : '') + (isTemplate
+          ? renderStep(section.id, it, startNo + i + 1, i)
+          : renderItem(section.id, it, i)))
+        .join('') + itemGap(section.items.length);
       const mins = isTemplate ? sumMinutes(section.items) : 0;
       const meta = `${prog.done}/${prog.total}${mins ? ` ・⏱${mins}分` : ''}`;
       return `
@@ -3056,9 +3073,6 @@
           <button class="icon danger" title="削除"
                   data-action="delete-item" data-section="${sectionId}" data-item="${item.id}">✕</button>
           ${renderImages(sectionId, item, true)}
-          <button class="insert-after" data-action="insert-item-after"
-                  data-section="${sectionId}" data-item="${item.id}"
-                  title="この下に項目を追加">＋ ここに項目を追加</button>
         </li>`;
     }
     // テンプレート型の手順ステップ（番号バッジ＋連結線＋メモ＋所要時間）
@@ -3101,9 +3115,6 @@
                    placeholder="メモ（任意）" value="${escapeHtml(note)}" />
             ${renderImages(sectionId, item, true)}
           </div>
-          <button class="insert-after" data-action="insert-item-after"
-                  data-section="${sectionId}" data-item="${item.id}"
-                  title="この下に手順を追加">＋ ここに手順を追加</button>
         </li>`;
     }
     // =========================================================================
@@ -8803,7 +8814,7 @@
       // edit-image はここに入れないこと。サムネイル(.thumb)は draggable なドラッグソース
       // でもあり、pointerdown の preventDefault は互換 mousedown ごと抑止するため
       // dragstart が発火しなくなる（画像コピー D&D が丸ごと死ぬ）。click 側で処理する。
-      if (!['insert-item-after', 'add-image', 'delete-image', 'move-item-up', 'move-item-down', 'merge-item-up'].includes(action)) return;
+      if (!['insert-item-after', 'insert-item-at', 'add-image', 'delete-image', 'move-item-up', 'move-item-down', 'merge-item-up'].includes(action)) return;
       e.preventDefault();
       const c = currentChecklist();
       if (!c) return;
@@ -8816,7 +8827,18 @@
           && active.matches('input, textarea')) {
         active.blur();
       }
-      if (action === 'insert-item-after') {
+      if (action === 'insert-item-at') { // 項目の間の「＋」: data-index の位置に空項目を挿入してフォーカス
+        const blank = M.createItem('');
+        pendingFocusItem = blank.id;
+        store.commit((s) => {
+          const cc = M.findChecklist(s, c.id);
+          const sec = cc.sections.find((x) => x.id === sectionId);
+          if (!sec) return;
+          const at = Math.max(0, Math.min(sec.items.length, Number.isInteger(index) ? index : sec.items.length));
+          sec.items.splice(at, 0, blank);
+          cc.updatedAt = Date.now();
+        });
+      } else if (action === 'insert-item-after') {
         const blank = M.createItem(''); // 対象項目の直後に挿入し、追加後にフォーカス
         pendingFocusItem = blank.id;
         store.commit((s) => {
