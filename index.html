@@ -344,6 +344,35 @@
   .section-title:focus { border-color: var(--border); background: var(--bg); outline: none; }
   .section-progress { color: var(--muted); white-space: nowrap; }
 
+  /* セクションの間の「＋」。普段は 16px の空きだけで、マウスを置くと青い線と丸ボタンが現れる。
+     末尾は幅いっぱいの点線ゾーン（右上にあった「セクションを追加」ボタンの置き換え。2026-09-11）。 */
+  .sections { display: flex; flex-direction: column; }
+  .sections > .section { margin-bottom: 0; }
+  .sec-gap { position: relative; height: 16px; display: flex; align-items: center; justify-content: center; }
+  .sec-gap-line {
+    position: absolute; left: 0; right: 0; top: 50%; height: 1px;
+    background: var(--primary); opacity: 0; transition: opacity 0.12s ease;
+  }
+  .sec-add {
+    position: relative; z-index: 1;
+    width: 24px; height: 24px; padding: 0;
+    border-radius: 50%; border: 1px solid var(--primary);
+    background: var(--surface); color: var(--primary);
+    font: inherit; font-size: 16px; line-height: 1; cursor: pointer;
+    opacity: 0; transition: opacity 0.12s ease;
+  }
+  .sec-gap:hover .sec-gap-line, .sec-gap:hover .sec-add,
+  .sec-add:focus-visible, .sec-gap:focus-within .sec-gap-line { opacity: 1; }
+  .sec-add:hover { background: var(--primary); color: #fff; }
+  .sec-add-tail {
+    width: 100%; height: 40px; margin-top: 12px;
+    border-radius: var(--radius); border: 1px dashed var(--border-strong);
+    background: transparent; color: var(--muted);
+    font: inherit; font-size: 0.9rem; cursor: pointer;
+    transition: color 0.12s ease, border-color 0.12s ease;
+  }
+  .sec-add-tail:hover, .sec-add-tail:focus-visible { color: var(--primary); border-color: var(--primary); }
+
   .grip { color: var(--muted); cursor: grab; user-select: none; }
 
   .items { list-style: none; margin: 0; padding: 6px 8px; }
@@ -1821,8 +1850,13 @@
       checklist.title = title;
       return touch(checklist);
     }
-    function addSection(checklist, title = '') {
-      checklist.sections.push(createSection(title));
+    // index を渡すとその位置に挿入（範囲外は末尾へクランプ）。省略時は末尾に追加。
+    // セクションの間の「＋」（2026-09-11）から使う。
+    function addSection(checklist, title = '', index = null) {
+      const sec = createSection(title);
+      const n = checklist.sections.length;
+      const at = Number.isInteger(index) ? Math.max(0, Math.min(n, index)) : n;
+      checklist.sections.splice(at, 0, sec);
       return touch(checklist);
     }
     function renameSection(checklist, sectionId, title) {
@@ -2878,13 +2912,24 @@
       const isTemplate = checklist.type === MODES.TEMPLATE;
       // テンプレート型はセクションをまたいで手順を連番(1..N)で振る
       let stepNo = 0;
+      // セクションの間に「＋」（ホバーで線と丸ボタンが出る）、末尾に幅いっぱいの追加ゾーンを置く。
+      // 右上の「セクションを追加」ボタンはこれに置き換えた（ユーザー要望 2026-09-11・モック D 案）。
+      const secWord = isTemplate ? 'フェーズ' : 'セクション';
+      const gapAt = (i) => `
+        <div class="sec-gap">
+          <span class="sec-gap-line"></span>
+          <button class="sec-add" data-action="insert-section" data-index="${i}"
+                  aria-label="ここに${secWord}を追加">+</button>
+        </div>`;
       const sections = checklist.sections
         .map((s, idx) => {
           const html = renderSection(s, p.sections[idx], checklist.type, stepNo);
           stepNo += s.items.length;
-          return html;
+          return (idx > 0 ? gapAt(idx) : '') + html;
         })
-        .join('');
+        .join('') + `
+        <button class="sec-add-tail" data-action="insert-section" data-index="${checklist.sections.length}"
+                data-tip="${isTemplate ? '手順' : '項目'}をまとめる区切りを末尾に追加します">＋ ${secWord}を追加</button>`;
       const totalMin = isTemplate
         ? checklist.sections.reduce((a, s) => a + sumMinutes(s.items), 0)
         : 0;
@@ -2919,8 +2964,6 @@
                            data-tip="チェック済みの項目をまとめて削除します">完了を削除</button>`
             }
             <span class="tb-edit">
-              <button class="btn" data-action="add-section"
-                      data-tip="${isTemplate ? '手順' : '項目'}をまとめる区切りを末尾に追加します">${isTemplate ? 'フェーズ' : 'セクション'}を追加</button>
               ${
                 isTemplate
                   ? `<button class="btn" data-action="cover"
@@ -8989,8 +9032,16 @@
           row?.querySelector('.item-text')?.focus();
           return;
         }
-        case 'add-section':
-          return c && store.commit((s) => M.addSection(M.findChecklist(s, c.id)));
+        case 'insert-section': { // セクションの間の「＋」／末尾の追加ゾーン（data-index の位置に挿入）
+          if (!c) return;
+          const at = Number(btn.dataset.index);
+          return store.commit((s) => {
+            const cc = M.findChecklist(s, c.id);
+            M.addSection(cc, '', at);
+            const added = cc.sections[Math.max(0, Math.min(cc.sections.length - 1, at))];
+            pendingFocusSection = added ? added.id : null; // 追加した見出しへ再描画後にフォーカス
+          });
+        }
         case 'add-item-btn': {
           if (!c) return;
           const blank = M.createItem(''); // IDを先に確定して追加後にフォーカス
@@ -9070,7 +9121,13 @@
 
     // セクションバーの「＋」で追加した項目に、再描画後フォーカスする
     let pendingFocusItem = null;
+    let pendingFocusSection = null; // 「＋」で挿入したセクションの見出し（名前をすぐ打てるように）
     function restoreFocus() {
+      if (pendingFocusSection) {
+        const title = app.querySelector(`.section[data-section="${pendingFocusSection}"] .section-title`);
+        pendingFocusSection = null;
+        if (title) title.focus();
+      }
       if (!pendingFocusItem) return;
       const input = app.querySelector(`[data-item="${pendingFocusItem}"] .item-text`);
       pendingFocusItem = null;
