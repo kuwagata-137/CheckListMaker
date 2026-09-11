@@ -6637,6 +6637,50 @@
     function rectContainsBounds(m, b) {
       return b.x >= m.x && b.y >= m.y && b.x + b.w <= m.x + m.w && b.y + b.h <= m.y + m.h;
     }
+    // ---- 図形の回転（仕様 18章）----
+    // 回転できるのは矩形ベースの図形（四角・丸・×印・テキスト）。線・矢印は端点を、
+    // フリーフォームは頂点を動かせば向きを変えられるので rot は持たない。吹き出しは
+    // 尻尾の幾何が崩れるため対象外。o.rot は度（時計回り・0〜359 の整数）。
+    const ROTATABLE_TYPES = ['rect', 'ellipse', 'cross', 'text'];
+    const canRotate = (o) => !!o && ROTATABLE_TYPES.includes(o.type);
+    // 角度を 0〜359 の整数へ正規化する（-90 → 270、450 → 90）。
+    function normalizeAngle(v) {
+      let a = Math.round(Number(v) || 0) % 360;
+      if (a < 0) a += 360;
+      return a;
+    }
+    function rotatePointAround(p, c, deg) {
+      const a = deg * Math.PI / 180;
+      const dx = p.x - c.x, dy = p.y - c.y;
+      return { x: c.x + dx * Math.cos(a) - dy * Math.sin(a), y: c.y + dx * Math.sin(a) + dy * Math.cos(a) };
+    }
+    // 回転の中心＝矩形の中心（テキストは textLayout が o.w / o.h を最新に保っている）。
+    function objRotationCenter(o) { return { x: o.x + (o.w || 0) / 2, y: o.y + (o.h || 0) / 2 }; }
+    const objRotation = (o) => (canRotate(o) ? normalizeAngle(o.rot) : 0);
+    // ワールド座標 ⇄ 図形ローカル座標。ヒットテストはポインタをローカルへ写して
+    // 無回転の判定をそのまま使い、ハンドル表示はローカルの定位置をワールドへ写す。
+    function toLocalPoint(o, p) {
+      const r = objRotation(o);
+      return r ? rotatePointAround(p, objRotationCenter(o), -r) : p;
+    }
+    function toWorldPoint(o, p) {
+      const r = objRotation(o);
+      return r ? rotatePointAround(p, objRotationCenter(o), r) : p;
+    }
+    // 回転した図形のリサイズで、掴んだ側の反対（固定点）がワールド上で動かないよう
+    // 新しい箱（ローカル軸で計算した x1..y2）から位置を置き直す。Office と同じ挙動。
+    function reanchorRotatedBox(o, s, mode, rot, x1, y1, x2, y2) {
+      const c0 = { x: s.x + (s.w || 0) / 2, y: s.y + (s.h || 0) / 2 };
+      const fx = mode.includes('w') ? s.x + (s.w || 0) : mode.includes('e') ? s.x : c0.x;
+      const fy = mode.includes('n') ? s.y + (s.h || 0) : mode.includes('s') ? s.y : c0.y;
+      const Fw = rotatePointAround({ x: fx, y: fy }, c0, rot); // 固定点のワールド位置
+      const nfx = mode.includes('w') ? x2 : mode.includes('e') ? x1 : (x1 + x2) / 2;
+      const nfy = mode.includes('n') ? y2 : mode.includes('s') ? y1 : (y1 + y2) / 2;
+      const c1l = { x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
+      const v = rotatePointAround({ x: nfx - c1l.x, y: nfy - c1l.y }, { x: 0, y: 0 }, rot);
+      o.x = Fw.x - v.x - (x2 - x1) / 2;
+      o.y = Fw.y - v.y - (y2 - y1) / 2;
+    }
     // 線・矢印の始点スナップ（仕様 16章）: 既存図形の端点・頂点（線・矢印の両端、
     // 矩形・×印の四隅、フリーフォームの頂点）のうち p から tol 以内で最も近い点を返す。
     // 丸・テキスト・吹き出しには「頂点」が無いので対象外。無ければ null。
@@ -6648,8 +6692,10 @@
         if (o.type === 'arrow' || o.type === 'line') {
           pts = [{ x: o.x1, y: o.y1 }, { x: o.x2, y: o.y2 }];
         } else if (o.type === 'rect' || o.type === 'cross') {
+          // 回転している図形は、四隅のワールド上の位置（回転後の見た目の角）へスナップする
           pts = [{ x: o.x, y: o.y }, { x: o.x + o.w, y: o.y },
-                 { x: o.x, y: o.y + o.h }, { x: o.x + o.w, y: o.y + o.h }];
+                 { x: o.x, y: o.y + o.h }, { x: o.x + o.w, y: o.y + o.h }]
+            .map((q) => toWorldPoint(o, q));
         } else if (o.type === 'freeform') {
           pts = Array.isArray(o.pts) ? o.pts : [];
         }
@@ -6752,12 +6798,21 @@
     // d.orig（ドラッグ開始時の複製）基準で差分を足すので累積誤差が出ない。
     // shift: 水平・垂直に拘束する（省略時は拘束しない＝従来どおり）。
     function applyObjDrag(d, p, shift) {
+      const o = d.obj, s = d.orig;
+      if (d.mode === 'rotate') {
+        // 回転ハンドル: 中心からポインタへの向きが角度になる（ハンドル定位置＝真上を 0° と
+        // するため +90）。Shift で15°刻み（Office と同じ）。
+        const c = { x: s.x + (s.w || 0) / 2, y: s.y + (s.h || 0) / 2 };
+        let deg = Math.atan2(p.y - c.y, p.x - c.x) * 180 / Math.PI + 90;
+        if (shift) deg = Math.round(deg / 15) * 15;
+        o.rot = normalizeAngle(deg);
+        return;
+      }
       let dx = p.x - d.sx, dy = p.y - d.sy;
       if (shift && dragConstrains(d.mode)) {
         // 動きの大きい方の軸だけ残す。ちょうど等しいときは水平を採る。
         if (Math.abs(dx) >= Math.abs(dy)) dy = 0; else dx = 0;
       }
-      const o = d.obj, s = d.orig;
       if (d.mode === 'move') {
         if (o.type === 'arrow' || o.type === 'line') { o.x1 = s.x1 + dx; o.y1 = s.y1 + dy; o.x2 = s.x2 + dx; o.y2 = s.y2 + dy; }
         else if (o.type === 'freeform') { o.pts = s.pts.map((pt) => ({ x: pt.x + dx, y: pt.y + dy })); }
@@ -6771,6 +6826,11 @@
         if (o.pts && o.pts[i] && s.pts && s.pts[i]) { o.pts[i].x = s.pts[i].x + dx; o.pts[i].y = s.pts[i].y + dy; }
       }
       else { // nw/n/ne/w/e/sw/s/se（rect・ellipse・cross のリサイズ。単字は縦のみ／横のみ）
+        const rot = objRotation(s);
+        if (rot) { // 回転中はドラッグ差分を図形ローカル軸へ写してから辺の計算をする
+          const v = rotatePointAround({ x: dx, y: dy }, { x: 0, y: 0 }, -rot);
+          dx = v.x; dy = v.y;
+        }
         let x1 = s.x, y1 = s.y, x2 = s.x + s.w, y2 = s.y + s.h;
         if (d.mode.includes('w')) x1 = Math.min(x2 - 4, x1 + dx);
         if (d.mode.includes('e')) x2 = Math.max(x1 + 4, x2 + dx);
@@ -6783,9 +6843,11 @@
           if (d.mode.includes('w')) x1 = Math.min(x2 - minW, s.x + dx);
           if (d.mode.includes('e')) x2 = Math.max(x1 + minW, s.x + s.w + dx);
           o.x = x1; o.w = x2 - x1; o.wFixed = true;
+          if (rot) reanchorRotatedBox(o, s, d.mode, rot, x1, s.y, x2, s.y + (s.h || 0));
           return;
         }
         o.x = x1; o.y = y1; o.w = x2 - x1; o.h = y2 - y1;
+        if (rot) reanchorRotatedBox(o, s, d.mode, rot, x1, y1, x2, y2);
       }
     }
 
@@ -6867,6 +6929,15 @@
                 <span class="ie-fieldname">透過率</span>
                 <span class="ie-fieldbody"><input type="range" min="0" max="90" step="10" value="0" /><input type="number" class="ie-num ie-opacity-num" min="0" max="90" step="10" value="0" aria-label="透過率（％）" />%</span>
               </label>
+              <span class="ie-rotate ie-field" hidden title="回転（0〜359°）。図形の上の丸ハンドルをドラッグしても回せます">
+                <span class="ie-fieldname">回転</span>
+                <span class="ie-fieldbody">
+                  <span class="rb-sizebox">
+                    <input type="number" class="rb-size-in ie-rotate-in" min="-360" max="720" step="1" value="0" aria-label="回転（度）" />
+                    <button type="button" class="rb-size-dd ie-rotate-dd" tabindex="-1" title="角度一覧（90°刻み）">▾</button>
+                  </span>°
+                </span>
+              </span>
               <span class="ie-zoom ie-field" title="編集中の表示倍率（拡大縮小しても保存される画像の仕上がりは変わりません）">
                 <span class="ie-fieldname">表示倍率</span>
                 <span class="ie-fieldbody">
@@ -7004,6 +7075,47 @@
         sizeInput.value = v;
         if (document.activeElement !== sizeNum) sizeNum.value = v;
       }
+      // ---- 回転（透過率の右の角度欄。図形の上の回転ハンドルと同じ o.rot を書く）----
+      // 回転できる図形（四角・丸・×印・テキスト）を選んでいるときだけ出す。
+      // プルダウンは90°刻みの候補、数値欄は任意の角度を直接入力できる。
+      const rotateWrap = overlay.querySelector('.ie-rotate');
+      const rotateInput = overlay.querySelector('.ie-rotate-in');
+      const rotateDd = overlay.querySelector('.ie-rotate-dd');
+      const IE_ROTATE_PRESETS = [0, 90, 180, 270];
+      function syncRotateUI() {
+        const show = selectedObjs().some(canRotate);
+        rotateWrap.hidden = !show;
+        if (!show) return;
+        const sel = selectedObj();
+        const rep = canRotate(sel) ? sel : selectedObjs().find(canRotate); // 代表（最後に選んだもの優先）
+        if (document.activeElement !== rotateInput) rotateInput.value = objRotation(rep);
+      }
+      // 角度を 0〜359 へ正規化して、選択中の回転できる図形すべてへ適用する（1確定＝1 undo）。
+      function applyRotateValue(raw) {
+        const v = normalizeAngle(raw);
+        const targets = selectedObjs().filter(canRotate);
+        if (targets.length) {
+          pushUndo();
+          targets.forEach((o) => { o.rot = v; });
+          recomposite();
+        }
+        if (document.activeElement !== rotateInput) rotateInput.value = v;
+        return v;
+      }
+      rotateInput.addEventListener('change', () => { rotateInput.value = applyRotateValue(rotateInput.value); });
+      // ▾の角度一覧（文字サイズの▾と同じ Word 風メニュー。mousedown 時点の開閉でトグル）
+      let rotateMenuWasOpen = false;
+      rotateDd.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        rotateMenuWasOpen = !!document.getElementById('rb-palette');
+      });
+      rotateDd.addEventListener('click', () => {
+        if (rotateMenuWasOpen) { rotateMenuWasOpen = false; rbClosePalette(); return; }
+        rbOpenPopup(rotateDd, buildSizeMenu(IE_ROTATE_PRESETS, Number(rotateInput.value) || 0, (v) => {
+          rbClosePalette();
+          rotateInput.value = applyRotateValue(v);
+        }));
+      });
       // ---- 色は「線・塗り・文字」の3つ ----
       // 図形の色は color（線）1つきりで、テキストは color が文字色を兼ねていたため
       // 枠線に色を付けられなかった。3つに分けて、塗りつぶしと枠線を別々に決められるようにする。
@@ -7303,6 +7415,7 @@
         syncTextFmtUI(); // ツール・選択・編集状態に書式コントロールを追随させる
         syncColorUI();   // 線・塗り・文字色のチップも同じタイミングで追随させる
         syncSizeUI();    // 線の太さのつまみも選択中の図形に追随させる
+        syncRotateUI();  // 回転欄も選択中の図形に追随させる（回転できる図形のときだけ表示）
       }
       // 表示 px / canvas px の比率（ハンドルや点線を画面上一定サイズに保つのに使う）。
       function dispScale() { return canvas.offsetWidth ? canvas.width / canvas.offsetWidth : 1; }
@@ -7566,6 +7679,13 @@
       }
       function drawObject(g, o) {
         if (o.hidden) return; // 入力欄で再編集中は canvas 側を消しておく
+        // 回転は中心まわりの座標変換で掛ける（各描画関数は無回転のまま）。
+        const rot = objRotation(o);
+        if (rot) {
+          const c = objRotationCenter(o);
+          g.save();
+          g.translate(c.x, c.y); g.rotate(rot * Math.PI / 180); g.translate(-c.x, -c.y);
+        }
         if (o.type === 'arrow') drawArrowObj(g, o);
         else if (o.type === 'line') drawLineObj(g, o);
         else if (o.type === 'rect') drawRectObj(g, o);
@@ -7574,6 +7694,7 @@
         else if (o.type === 'freeform') drawFreeformObj(g, o);
         else if (o.type === 'text') drawTextObj(g, o);
         else if (o.type === 'callout') drawCalloutObj(g, o, true);
+        if (rot) g.restore();
       }
       function drawObjects(g) { objects.forEach((o) => drawObject(g, o)); }
       // ドラッグ中の始点・終点から図形オブジェクトを組み立てる（プレビューと確定で共用）。
@@ -7630,7 +7751,14 @@
             g.beginPath(); g.moveTo(o.x1, o.y1); g.lineTo(o.x2, o.y2); g.stroke();
           } else {
             const b = objBounds(o);
+            const rot = objRotation(o); // 回転している図形は破線枠も一緒に回す
+            if (rot) {
+              const c = objRotationCenter(o);
+              g.save();
+              g.translate(c.x, c.y); g.rotate(rot * Math.PI / 180); g.translate(-c.x, -c.y);
+            }
             g.strokeRect(b.x - 4 * s, b.y - 4 * s, b.w + 8 * s, b.h + 8 * s);
+            if (rot) g.restore();
           }
           g.setLineDash([]);
         });
@@ -7643,11 +7771,13 @@
           g.strokeStyle = '#1a73e8';
           g.lineWidth = 2 * s;
           objHandles(sole).forEach((h) => {
+            const wp = toWorldPoint(sole, h); // 回転している図形はハンドルも回転後の位置へ
             g.beginPath();
-            g.arc(h.x, h.y, hr, 0, Math.PI * 2);
+            g.arc(wp.x, wp.y, hr, 0, Math.PI * 2);
             g.fill();
             g.stroke();
           });
+          if (canRotate(sole)) drawRotateHandle(g, sole, s);
         }
         if (marquee) { // 範囲選択の枠
           const m = marqueeRect(marquee);
@@ -7661,9 +7791,36 @@
         }
         g.restore();
       }
+      // 回転ハンドル（Office 風: 枠の上の丸に回転矢印。ドラッグで回す）。
+      function drawRotateHandle(g, o, s) {
+        const rp = rotateHandleWorldPos(o);
+        const b = objBounds(o);
+        const top = toWorldPoint(o, { x: b.x + b.w / 2, y: b.y - 4 * s });
+        g.save();
+        g.strokeStyle = '#1a73e8';
+        g.lineWidth = 1.2 * s;
+        g.beginPath(); g.moveTo(top.x, top.y); g.lineTo(rp.x, rp.y); g.stroke(); // 枠との継ぎ線
+        g.fillStyle = '#ffffff';
+        g.lineWidth = 2 * s;
+        g.beginPath(); g.arc(rp.x, rp.y, 7.5 * s, 0, Math.PI * 2); g.fill(); g.stroke();
+        // 中に小さな回転矢印（3/4 円弧＋矢先）
+        g.lineWidth = 1.5 * s;
+        g.beginPath(); g.arc(rp.x, rp.y, 3.6 * s, -Math.PI * 0.4, Math.PI * 1.05); g.stroke();
+        const aa = -Math.PI * 0.4; // 円弧の終端（時計の1時あたり）に矢先を付ける
+        const ax = rp.x + 3.6 * s * Math.cos(aa), ay = rp.y + 3.6 * s * Math.sin(aa);
+        g.beginPath();
+        g.moveTo(ax + 2.6 * s, ay + 0.4 * s);
+        g.lineTo(ax - 0.8 * s, ay - 2.2 * s);
+        g.lineTo(ax - 1.4 * s, ay + 2.4 * s);
+        g.closePath();
+        g.fillStyle = '#1a73e8';
+        g.fill();
+        g.restore();
+      }
       // ---- オブジェクトのヒットテスト（クリック選択・消しゴム削除用） ----
       // pad: 判定を広げる追加量（消しゴムの半径など）
       function objHit(o, p, pad) {
+        p = toLocalPoint(o, p); // 回転している図形はローカル座標で無回転の判定を使う
         const tol = Math.max((o.size || 0) / 2 + 4, 8 * dispScale()) + (pad || 0);
         if (o.type === 'arrow' || o.type === 'line') return distSeg(p, o.x1, o.y1, o.x2, o.y2) <= tol;
         if (o.type === 'cross') {
@@ -7715,10 +7872,34 @@
       }
       function hitObjHandle(o, p) {
         const tol = 11 * dispScale();
+        if (canRotate(o)) { // 回転ハンドル（枠の上に浮かぶ丸）
+          const rp = rotateHandleWorldPos(o);
+          if (Math.abs(p.x - rp.x) <= tol && Math.abs(p.y - rp.y) <= tol) return 'rotate';
+        }
         for (const h of objHandles(o)) {
-          if (Math.abs(p.x - h.x) <= tol && Math.abs(p.y - h.y) <= tol) return h.kind;
+          const wp = toWorldPoint(o, h); // 回転している図形はハンドルもワールドへ写して判定
+          if (Math.abs(p.x - wp.x) <= tol && Math.abs(p.y - wp.y) <= tol) return h.kind;
         }
         return null;
+      }
+      // 回転ハンドルのワールド座標（選択枠の上辺中央の上 26px。画面上一定の距離）。
+      function rotateHandleWorldPos(o) {
+        const b = objBounds(o);
+        return toWorldPoint(o, { x: b.x + b.w / 2, y: b.y - 26 * dispScale() });
+      }
+      // 回転を含めた外接矩形（範囲選択の「丸ごと入った」判定用）。
+      function objAabb(o) {
+        const b = objBounds(o);
+        const rot = objRotation(o);
+        if (!rot) return b;
+        const c = objRotationCenter(o);
+        const corners = [
+          { x: b.x, y: b.y }, { x: b.x + b.w, y: b.y },
+          { x: b.x, y: b.y + b.h }, { x: b.x + b.w, y: b.y + b.h },
+        ].map((q) => rotatePointAround(q, c, rot));
+        const xs = corners.map((q) => q.x), ys = corners.map((q) => q.y);
+        const x1 = Math.min(...xs), y1 = Math.min(...ys);
+        return { x: x1, y: y1, w: Math.max(...xs) - x1, h: Math.max(...ys) - y1 };
       }
       // 消しゴムが触れたオブジェクトを丸ごと削除する（要件：元画像以外はすべて消せる）
       function eraseObjectsAt(p) {
@@ -8621,9 +8802,9 @@
           }
           return;
         }
-        if (marquee) { // 範囲に完全に収まった図形を選ぶ
+        if (marquee) { // 範囲に完全に収まった図形を選ぶ（回転している図形は回転後の外接矩形で見る）
           const m = marqueeRect(marquee);
-          const ids = objects.filter((o) => !o.hidden && rectContainsBounds(m, objBounds(o))).map((o) => o.id);
+          const ids = objects.filter((o) => !o.hidden && rectContainsBounds(m, objAabb(o))).map((o) => o.id);
           if (marquee.add) ids.forEach((id) => { if (!isSelected(id)) selectedIds.push(id); });
           else setSelection(ids);
           marquee = null;
@@ -8782,6 +8963,8 @@
           '「選択」モードで何も無い所からドラッグすると範囲選択になります。<strong>枠に丸ごと入った図形だけ</strong>が選ばれます（<kbd>Ctrl</kbd> か <kbd>Shift</kbd> を押しながらだと今の選択に足します）。',
           '選んだ図形はドラッグで移動できます。複数選んでいればまとめて動きます。',
           '白丸のハンドルで変形できるのは、1つだけ選んでいるときです（辺の中央は縦だけ・横だけ）。',
+          '四角・丸・×印・テキストは、選択したときに枠の上へ出る丸いハンドルをドラッグすると回転できます（<kbd>Shift</kbd> で15°刻み）。角度はツールバーの「回転」欄でも指定できます（▾に90°刻みの候補、直接入力も可）。',
+          '直線・矢印は端点を、多角形は頂点を動かして向きを変えてください（回転ハンドルは出ません）。',
           '図形の外をクリックすると選択が外れます。',
           '<kbd>Ctrl</kbd>＋ドラッグでコピーします（ドラッグを始めた後に押しても効きます）。',
           '<kbd>Shift</kbd>＋ドラッグで水平・垂直に固定します。',
@@ -9447,6 +9630,9 @@
         normalizeObjColors, pointInPoly, marqueeRect, rectContainsBounds,
         // 線・矢印の始点スナップと文字サイズの表示px換算（仕様 16章）
         snapStartPoint, fsDispScale, APP_IMG_DISPLAY_W, IMG_MAX_EDGE,
+        // 図形の回転（仕様 18章）
+        canRotate, normalizeAngle, rotatePointAround, objRotationCenter,
+        toLocalPoint, toWorldPoint, reanchorRotatedBox,
         // PDF出力の倍率・用紙・向き
         clampPdfScale, pdfPaperDims, pdfPageStyleCss, pdfOutSettings, setPdfOutSettings,
         paginateBreaks, parsePdfPageRange, pdfPageRangeString,

@@ -304,3 +304,76 @@ test('imageeditor — 始点スナップと文字サイズの表示px換算', as
     assert.equal(T.APP_IMG_DISPLAY_W, 848);
   });
 });
+
+// 図形の回転（仕様は docs/spec-image-editor-enhancements.md 18章）
+test('imageeditor — 図形の回転', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+
+  await t.test('canRotate — 対象は矩形ベースの図形だけ', () => {
+    for (const type of ['rect', 'ellipse', 'cross', 'text']) assert.ok(T.canRotate({ type }), type);
+    for (const type of ['line', 'arrow', 'freeform', 'callout']) assert.ok(!T.canRotate({ type }), type);
+    assert.ok(!T.canRotate(null));
+  });
+
+  await t.test('normalizeAngle — 0〜359 の整数へ正規化', () => {
+    assert.equal(T.normalizeAngle(0), 0);
+    assert.equal(T.normalizeAngle(-90), 270);
+    assert.equal(T.normalizeAngle(450), 90);
+    assert.equal(T.normalizeAngle(359.6), 0, '四捨五入で360→0');
+    assert.equal(T.normalizeAngle(undefined), 0);
+  });
+
+  await t.test('rotatePointAround — 画面座標（y下向き）で時計回り', () => {
+    const p = T.rotatePointAround({ x: 10, y: 0 }, { x: 0, y: 0 }, 90);
+    assert.ok(Math.abs(p.x - 0) < 1e-9 && Math.abs(p.y - 10) < 1e-9, `(10,0)を90°→(0,10) 実際(${p.x},${p.y})`);
+  });
+
+  await t.test('toWorldPoint / toLocalPoint — 往復で元に戻る', () => {
+    const o = { type: 'rect', x: 0, y: 0, w: 100, h: 50, rot: 90 };
+    const w = T.toWorldPoint(o, { x: 0, y: 0 });
+    assert.ok(Math.abs(w.x - 75) < 1e-9 && Math.abs(w.y - (-25)) < 1e-9, `左上→(75,-25) 実際(${w.x},${w.y})`);
+    const back = T.toLocalPoint(o, w);
+    assert.ok(Math.abs(back.x) < 1e-9 && Math.abs(back.y) < 1e-9, '逆変換で(0,0)へ戻る');
+    const same = T.toWorldPoint({ type: 'rect', x: 0, y: 0, w: 100, h: 50 }, { x: 3, y: 4 });
+    assert.deepEqual(plain(same), { x: 3, y: 4 }, 'rot 無しはそのまま');
+  });
+
+  await t.test('applyObjDrag rotate — 中心からの向きが角度になる（真上=0°）', () => {
+    const obj = { type: 'rect', x: 0, y: 0, w: 100, h: 50 };
+    const drag = (px, py, shift) => {
+      T.applyObjDrag({ mode: 'rotate', obj, sx: 0, sy: 0, orig: { ...obj } }, { x: px, y: py }, shift);
+      return obj.rot;
+    };
+    assert.equal(drag(150, 25), 90, '中心の右＝90°');
+    assert.equal(drag(50, 200), 180, '中心の下＝180°');
+    assert.equal(drag(-100, 25), 270, '中心の左＝270°');
+    assert.equal(drag(50, -100), 0, '中心の上＝0°');
+    // Shift で15°刻み: 中心から少し右上（約80°）→ 75°
+    const c = { x: 50, y: 25 };
+    const rad = (80 - 90) * Math.PI / 180;
+    assert.equal(drag(c.x + 100 * Math.cos(rad), c.y + 100 * Math.sin(rad), true), 75);
+  });
+
+  await t.test('applyObjDrag — 回転中のリサイズは固定点（反対側）が動かない', () => {
+    const obj = { type: 'rect', x: 0, y: 0, w: 100, h: 50, rot: 90 };
+    const orig = { ...obj };
+    // 90°回転しているので、ワールドの下方向ドラッグ(0,30)がローカルの +x（e 側）になる
+    T.applyObjDrag({ mode: 'e', obj, sx: 0, sy: 0, orig }, { x: 0, y: 30 });
+    assert.ok(Math.abs(obj.w - 130) < 1e-9, `幅が130になる（実際 ${obj.w}）`);
+    assert.ok(Math.abs(obj.h - 50) < 1e-9, '高さは変わらない');
+    // 固定点＝左辺中点のワールド位置は移動前 (50,-25) のまま
+    const fixed = T.toWorldPoint(obj, { x: obj.x, y: obj.y + obj.h / 2 });
+    assert.ok(Math.abs(fixed.x - 50) < 1e-6 && Math.abs(fixed.y - (-25)) < 1e-6,
+      `固定点が動かない（実際 ${fixed.x},${fixed.y}）`);
+  });
+
+  await t.test('snapStartPoint — 回転した四角は回転後の角にスナップ', () => {
+    const objs = [{ type: 'rect', x: 0, y: 0, w: 100, h: 50, rot: 90 }];
+    // 左上角(0,0)は 90°回転で (75,-25) へ移る
+    const sp = T.snapStartPoint(objs, { x: 74, y: -24 }, 11);
+    assert.ok(sp && Math.abs(sp.x - 75) < 1e-9 && Math.abs(sp.y - (-25)) < 1e-9, JSON.stringify(sp));
+    assert.equal(T.snapStartPoint(objs, { x: 2, y: 2 }, 11), null, '回転前の角にはもう無い');
+  });
+});
