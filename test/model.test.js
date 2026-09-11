@@ -54,6 +54,16 @@ test('model — チェックリスト操作の純関数', async (t) => {
     assert.equal(s2.items.map((i) => i.text).join('|'), 'a|x');
   });
 
+  await t.test('addSection — index 指定で途中に挿入、省略・範囲外は末尾', () => {
+    const c = M.createChecklist('todo'); // 既定で空セクションが1つ
+    M.addSection(c, 'B');                // 省略 → 末尾
+    M.addSection(c, 'X', 1);             // 1 番目に挿入
+    M.addSection(c, 'Z', 99);            // 範囲外 → 末尾へクランプ
+    M.addSection(c, 'A', -5);            // 負数 → 先頭
+    assert.equal(c.sections.map((s) => s.title).join('|'), 'A||X|B|Z');
+    assert.ok(c.sections.every((s) => Array.isArray(s.items) && s.id));
+  });
+
   await t.test('moveSection — 並べ替え', () => {
     const c = M.createChecklist('todo');
     M.addSection(c, 'B');

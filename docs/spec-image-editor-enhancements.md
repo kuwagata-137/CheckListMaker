@@ -292,3 +292,123 @@ pt\* のみ。四隅・辺のリサイズは Shift＝縦横比固定が一般的
 
 既存の `objHandles` / `applyObjDrag` / `freeformBounds` / `distSeg` のテストは**無変更で通る**
 （複数選択は呼び出し側のループで実現し、純関数の署名を変えていないため）。
+
+## 14. テキストの自動折り返し・幅ハンドル・Alt+Enter・全画面（2026-09-11）
+
+ユーザー要望（2026-09-11）。
+
+- 要望25: テキストボックスの**初期サイズが大きすぎる**（約1/4に）。文字の長さに応じて自動で広がる。
+- 要望26: 既定幅は**全角12文字を上限に自動改行**。幅を変えたら以降は幅に応じて文字数を
+  調整し、**幅は固定・高さだけ自動**にする。明示的に入れた改行は常に尊重する。
+- 要望27: 吹き出し・テキストの入力中に **Alt+Enter でも改行**（Shift+Enter と同じ）。
+- 要望28: 編集画面で「選択」モードのままホイールすると**背面の TODO リストがスクロール**する。
+- 要望29: 編集画面を**画面いっぱい**にする。
+
+### 行組み（要望25・26）
+
+- 純関数 `wrapTextLines(text, maxW, measure)`（`window.__test__`）。`
+` で段落に分け、各段落を
+  `measure(str)` が `maxW` を超えない位置で**1文字単位**で折る（日本語主体なので分かち書きは
+  考えない）。`maxW` が無ければ折らない。空段落は空行として残す。
+- 既定の上限幅は `TEXT_WRAP_CHARS = 12` → `fs × 12`（全角1字 ≒ 1em）。
+- text オブジェクトに `w`（本文幅・pad 除く）・`h`・`wFixed` を持たせる。
+  - `wFixed` でない: 描画のたび `w = min(最長行の幅, fs×12)`。文字が増えるほど広がり、12字で折れる。
+  - `wFixed`: `w` を維持して `wrapTextLines(text, w)` で折り、`h` だけ文字量に追従。
+    文字サイズを変えても幅は固定のまま（高さだけ変わる）。
+  - エディタ内の `textLayout(o)` が `{lines, lh, w, h}` を返し、`drawTextObj` / `objBounds` から使う。
+    `o.w / o.h` は保存されるが、旧データに無くても初回描画で埋まる（`normalizeObjColors` のような
+    移行処理は不要）。
+- **入力欄**（`.ie-text-input`）は `white-space: pre-wrap; word-break: break-all` にし、幅は
+  `textLayout` と同じ値（`w × 表示倍率 + 4px`）で置く。**生成直後に `fit()` を呼ぶ**ので、
+  新規は 1 文字ぶん（≒ 40px）から始まる（従来は textarea 既定の 20 桁幅＝24px 太字で約 260px）。
+  幅を広く取ると入力欄側だけ1文字多く入って確定後とずれるため、余白は 4px に留める。
+- **吹き出しも同じ 12 字で折る**（`calloutBox` を `wrapTextLines` に差し替え。幅ハンドルは
+  付けない。尻尾ハンドルのみ従来どおり）。新規吹き出しは尻尾を触るまで `tipAuto` で本体の
+  下に追従させる（折り返しで本体が高くなっても尻尾が本体に潜らない）。
+
+### 幅ハンドル（要望26）
+
+- `objHandles` の text に **`w` / `e`**（外接矩形の左右辺の中点。pad 込み）を足す。`o.w` が
+  未計算（描画前）なら出さない。純関数 `textBoxPadOf(o)` が pad（塗りか枠線があるときだけ
+  `round(fs×0.3)`）を返す。
+- `applyObjDrag` の矩形分岐で `o.type === 'text'` は幅だけ動かし（最小 = fs = 1文字）、
+  `o.wFixed = true` を立てる。`y` / `h` は触らない。カーソルは既存の `ew-resize` 判定がそのまま効く。
+- Undo は `objects` 丸ごとのスナップショットなので `wFixed` も一緒に戻る。
+
+### Alt+Enter（要望27）
+
+- text / callout の keydown で `Enter && altKey` を `insertNewline(ta)` に回す
+  （`setRangeText('
+')` → `input` を発火して `fit` / `render` を走らせる）。Alt 付きの Enter は
+  既定では改行が入らないため自前で差し込む。`Enter` 単独は従来どおり確定。
+
+### 背面スクロールの固定と全画面（要望28・29）
+
+- 本体の TODO リストは専用のスクロール容器を持たず **document がスクロール**している。
+  キャンバス枠（`.ie-canvas-wrap`・overflow:auto）が溢れていないときのホイールが viewport へ
+  連鎖していた。エディタを開いている間だけ `html.ie-open { overflow: hidden }` を付け、
+  `close()` で外す。`.ie-canvas-wrap` には `overscroll-behavior: contain` も足す。
+- `.modal-overlay.ie-overlay { padding: 0 }`・`.modal.img-editor { width: 100vw; height: 100vh;
+  border-radius: 0; padding: 10px 12px }`。
+
+### テスト（追加分）
+
+`test/imageeditor.test.js`: `wrapTextLines`（12字で折れる／半角は倍入る／明示改行と空行／
+上限なし／measure なし／1字ずつ）、`TEXT_WRAP_CHARS`、`textBoxPadOf`、`objHandles`（text は
+w/e の2つ・pad 込み・描画前は無し）、`applyObjDrag`（e で幅が増え `wFixed`・y/h 不変、w は x と
+幅が同時に動き最小幅は fs）。
+
+実機（Electron 31 オフスクリーン）での確認画像: `screenshots/v1.0.6-*.png`。
+
+## 15. 線の太さの反映・コマンド切替での設定リセット・右クリック切替の不具合（2026-09-11）
+
+ユーザー要望（2026-09-11・同日の追加分）。
+
+- 要望30: テキストボックスの枠線の太さに、そのとき設定されている**「線の太さ」が効く**ようにする。
+- 要望31: 別の図形コマンドへ移ったら、**線色・塗り・文字色・太さを既定に戻す**（前の図形の設定を
+  持ち越さない。「丸をある設定で描いていた → 四角へ」のタイミング）。
+- 不具合: 左クリック押下中の右クリック（ハンド⇄選択の切替）が**テキスト・吹き出しで頻繁に失敗**する。
+
+### 線の太さを選択中の図形へ反映（要望30）
+
+- 従来 `sizeInput` は新規に描くときだけ読まれ、テキストの枠線は `drawTextObj` の `g.lineWidth = o.size`
+  ＝**作成時点の値で固定**だった。新規テキストは枠線なしで作り、あとから「線色」で枠線を付ける運用
+  （10章）なので、枠線を付けた時点の太さを変える手段が無かった。
+- 透過率（12章）と同じ方式にする。`sizeInput` の `pointerdown` で `pushUndo()`（1ドラッグ＝1 undo）、
+  `input` で `selectedObjs()` すべての `o.size` を書き換えて `recomposite()`。対象はテキスト・吹き出し・
+  矩形・矢印などすべての図形（ペン・ハイライトはラスターなので対象外）。
+- `syncSizeUI()`（`recomposite` の末尾）が、選択中があればその太さ（複数なら先頭）、無ければ
+  「次に描く太さ」`nextSize` をつまみに映す。`nextSize` は選択が無い状態で動かしたときだけ更新する
+  （選択中の図形を細くしただけで、次に描く図形まで細くならない）。
+
+### コマンド切替での設定リセット（要望31）
+
+- 「次に描く」設定は `colorInput.value`（線色）・`lineNone`・`fillValue`・`textColorValue`・`nextSize` の
+  5つで、`applyColor` が選択中の図形に色を付けたときも同じ変数を更新するため、直前に触った図形の設定が
+  次のコマンドへ持ち越されていた。
+- `selectTool(t)` の先頭で `resetDrawStyleIfToolChanged(t)`: 描画ツール（`DRAW_TOOLS`）へ移り、かつ
+  直前の描画ツール `lastDrawTool` と違うときだけ、5つを既定（赤 `#ff3b30`・線あり・塗りなし・太さ 6）に
+  戻す。選択／ハンド／切り抜きへ移るときと、同じ描画ツールへ戻る（四角 → 選択 → 四角）ときは保持。
+  透過率は従来どおりツール別（`toolOpacity`）で対象外。
+
+### 右クリック切替の不具合（原因と対策）
+
+- 原因: 切替を `contextmenu`（右ボタンを**離した**時に発火）で判定していた。ポインタイベントは
+  押している最中の別ボタンの押下・解放を `pointerdown`/`pointerup` ではなく **`pointermove`
+  （`button` に変化したボタン番号）** で通知し、`pointerup` は**全ボタンが離れたときに最後のボタンで
+  1回だけ**来る。Electron 31 で実測した発火順:
+  - 左↓ 右↓ 右↑ 左↑ → `pointerdown(0)` `pointermove(2)` `pointermove(2)` `contextmenu` `pointerup(0)`
+    … `pendingPlace` が残っているので従来でも効く。
+  - 左↓ 右↓ 左↑ 右↑ → `pointerdown(0)` `pointermove(2)` `pointermove(0)` **`pointerup(2)`** `contextmenu`
+    … `finish()` が `e.button` を見ずに `pendingPlace` を配置してしまい、テキスト／吹き出しの入力が
+    始まる。直後の `contextmenu` は「吹き出し入力中は無視」に当たって切替されない（テキストは入力欄が
+    開いたまま既定モードへ戻り、トグルにならない）。
+  - 矢印・四角でも同じ順序で起きるが、サイズ 0 の図形は捨てられ、6番目の規則で既定モードへは戻るため
+    目立たなかった。
+- 対策: 右ボタンを**押した瞬間**（`pointermove` の `button === 2`、描きかけ・配置待ちがある間だけ）に
+  `chordToggle()`＝破棄してトグルし、`chord.active` を立てる。立っている間は `pointerdown`／
+  `pointermove`／`pointerup` を無視し、`pointerup`（全ボタン解放）と `pointercancel` で下ろす。
+  切替から 1 秒以内の `contextmenu` は同じ操作の一部として無視する（二重トグル防止）。
+  `finish()` は左以外のボタンで終わった `pointerup` では配置しない（二重防御）。
+  `pointerdown` の `button === 2` と `contextmenu` の「描きかけ・配置待ちあり」も `chordToggle()` に
+  揃えて保険として残す。6章・12章の表の「3」はこの節の方式に読み替える。

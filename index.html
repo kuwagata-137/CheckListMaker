@@ -344,6 +344,35 @@
   .section-title:focus { border-color: var(--border); background: var(--bg); outline: none; }
   .section-progress { color: var(--muted); white-space: nowrap; }
 
+  /* セクションの間の「＋」。普段は 16px の空きだけで、マウスを置くと青い線と丸ボタンが現れる。
+     末尾は幅いっぱいの点線ゾーン（右上にあった「セクションを追加」ボタンの置き換え。2026-09-11）。 */
+  .sections { display: flex; flex-direction: column; }
+  .sections > .section { margin-bottom: 0; }
+  .sec-gap { position: relative; height: 16px; display: flex; align-items: center; justify-content: center; }
+  .sec-gap-line {
+    position: absolute; left: 0; right: 0; top: 50%; height: 1px;
+    background: var(--primary); opacity: 0; transition: opacity 0.12s ease;
+  }
+  .sec-add {
+    position: relative; z-index: 1;
+    width: 24px; height: 24px; padding: 0;
+    border-radius: 50%; border: 1px solid var(--primary);
+    background: var(--surface); color: var(--primary);
+    font: inherit; font-size: 16px; line-height: 1; cursor: pointer;
+    opacity: 0; transition: opacity 0.12s ease;
+  }
+  .sec-gap:hover .sec-gap-line, .sec-gap:hover .sec-add,
+  .sec-add:focus-visible, .sec-gap:focus-within .sec-gap-line { opacity: 1; }
+  .sec-add:hover { background: var(--primary); color: #fff; }
+  .sec-add-tail {
+    width: 100%; height: 40px; margin-top: 12px;
+    border-radius: var(--radius); border: 1px dashed var(--border-strong);
+    background: transparent; color: var(--muted);
+    font: inherit; font-size: 0.9rem; cursor: pointer;
+    transition: color 0.12s ease, border-color 0.12s ease;
+  }
+  .sec-add-tail:hover, .sec-add-tail:focus-visible { color: var(--primary); border-color: var(--primary); }
+
   .grip { color: var(--muted); cursor: grab; user-select: none; }
 
   .items { list-style: none; margin: 0; padding: 6px 8px; }
@@ -366,29 +395,36 @@
     z-index: 1;
   }
 
-  /* 行ホバー時に出る「ここに追加」ボタン。
-     手順・項目の途中に空項目を挿入するためのもの（末尾追加はセクションバーの＋）。
-     手順と手順の間にマウスカーソルがある時だけ出したいので :hover のみで表示する
-     （:focus-within だと編集中ずっと出っぱなしになるため使わない）。 */
-  .insert-after {
-    display: none;
-    font: inherit;
-    font-size: 0.8rem;
-    color: var(--primary);
-    background: transparent;
-    border: 1px dashed var(--border);
-    border-radius: 6px;
-    padding: 1px 10px;
-    margin-top: 2px;
-    cursor: pointer;
+  /* 項目・手順の間の「＋」（2026-09-11・モック D 案。セクションの間と同じ丸ボタン）。
+     普段は 14px の空きだけで、マウスを置くと青い線と丸い＋、横に「ここに項目を追加」の説明が出る。
+     以前の行ホバーで出る点線ボタン「＋ ここに項目を追加」はこれに置き換えた。
+     末尾（最後の項目の下）にも同じ＋を置く（セクション見出しの＋と同じ末尾追加）。 */
+  .item-gap { position: relative; height: 14px; display: flex; align-items: center; justify-content: center; list-style: none; }
+  .item-gap-line {
+    position: absolute; left: 8px; right: 8px; top: 50%; height: 1px;
+    background: var(--primary); opacity: 0; transition: opacity 0.12s ease;
   }
-  .insert-after:hover { background: var(--surface-2); border-color: var(--primary); }
-  .item:hover > .insert-after { display: inline-block; }
-  /* ToDo項目（flex）は独立行に折り返す */
-  .item > .insert-after { flex-basis: 100%; margin-left: 26px; }
-  /* テンプレート手順（grid）は両カラムをまたいで本文の下に置く */
-  .step > .insert-after { grid-column: 1 / -1; justify-self: start; margin-left: 40px; }
-  .item.done .item-text { text-decoration: line-through; color: var(--muted); }
+  .item-add {
+    position: relative; z-index: 1;
+    width: 22px; height: 22px; padding: 0;
+    border-radius: 50%; border: 1px solid var(--primary);
+    background: var(--surface); color: var(--primary);
+    font: inherit; font-size: 15px; line-height: 1; cursor: pointer;
+    opacity: 0; transition: opacity 0.12s ease;
+  }
+  .item-gap-tip {
+    position: absolute; left: calc(50% + 18px); top: 50%; transform: translateY(-50%);
+    z-index: 2; display: none; white-space: nowrap;
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px;
+    box-shadow: var(--shadow); padding: 4px 9px; font-size: 0.78rem; color: var(--text);
+    pointer-events: none;
+  }
+  .item-gap:hover .item-gap-line, .item-gap:hover .item-add,
+  .item-add:focus-visible, .item-gap:focus-within .item-gap-line { opacity: 1; }
+  .item-gap:hover .item-gap-tip, .item-gap:focus-within .item-gap-tip { display: block; }
+  .item-add:hover { background: var(--primary); color: #fff; }
+  /* 完了した項目は灰色にするだけ。取り消し線は「無効」に見えて誤解を招くので付けない（2026-09-11） */
+  .item.done .item-text { color: var(--muted); }
   .item-text {
     flex: 1;
     border: 1px solid transparent;
@@ -570,14 +606,20 @@
   /* ウインドウは固定サイズ（高さ 92vh）。ズームで大きさは変わらない。幅はビューポートの
      余白（modal-overlay の padding 16px×2）を差し引いてはみ出さないようにする。
      全体を flex 縦積みにして、ツールバー/操作列は自然な高さ、キャンバス枠が残りを埋める。 */
+  /* 画面いっぱいに使う（ユーザー要望 2026-09-11）。オーバーレイの余白も角丸も無し。 */
+  .modal-overlay.ie-overlay { padding: 0; }
   .modal.img-editor {
-    max-width: min(1500px, calc(100vw - 32px));
-    width: 100%;
-    height: 92vh;
+    max-width: none;
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
     display: flex;
     flex-direction: column;
-    padding: 16px;
+    padding: 10px 12px;
   }
+  /* 編集中は背面（TODO リスト＝document）をスクロールさせない。キャンバス枠が溢れて
+     いないときのホイールが viewport へ連鎖して、背面だけが動いてしまっていた。 */
+  html.ie-open { overflow: hidden; }
   /* ツールバーは2段。1段目＝描画モード（右端にヘルプ）、2段目＝色・太さ・書式・表示。
      .ie-controls の flex-basis:100% が段を折るので、ヘルプは必ず1段目の右端＝画面の一番右上に来る。 */
   .ie-toolbar {
@@ -690,6 +732,7 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
+    overscroll-behavior: contain; /* 端まで来てもホイールを背面へ連鎖させない */
     background: repeating-conic-gradient(#0001 0% 25%, transparent 0% 50%) 50% / 20px 20px;
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -719,7 +762,9 @@
     border: 1px dashed var(--primary);
     background: rgba(255, 255, 255, 0.92);
     line-height: 1.2;
-    white-space: pre;
+    white-space: pre-wrap;   /* canvas 側と同じく1文字単位で折り返す（全角12字が既定） */
+    word-break: break-all;
+    overflow-wrap: anywhere;
     resize: none;
     overflow: hidden;
     min-width: 40px;
@@ -735,7 +780,9 @@
     outline: none;
     background: transparent;
     line-height: 1.3;
-    white-space: pre;
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-wrap: anywhere;
     resize: none;
     overflow: hidden;
     box-sizing: content-box;
@@ -1241,7 +1288,7 @@
   .print-todo { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; padding: 4px 0; break-inside: avoid; }
   .print-todo .print-box { font-size: 1.05rem; line-height: 1; }
   .print-todo .print-text { flex: 1; min-width: 0; word-break: break-word; }
-  .print-todo.done .print-text { text-decoration: line-through; color: #666; }
+  .print-todo.done .print-text { color: #666; } /* 画面と同じく取り消し線は付けない */
   .print-todo .print-imgs { flex-basis: 100%; margin: 6px 0 4px 1.6em; }
 
   /* ---- 目次ページ（表紙の「目次を含める」ON のとき、表紙の直後に出す。行間つめ） ---- */
@@ -1271,7 +1318,7 @@
   /* PDF出力の倍率・用紙・向き（仕様は docs/spec-pdf-output-scale.md） */
   .print-preview-bar.pp-out { margin-top: -4px; row-gap: 6px; }
   .pp-out .pp-row { display: inline-flex; align-items: center; gap: 6px; margin-right: 14px; }
-  .pp-out .pp-scale {
+  .pp-out .pp-scale, .pp-out .pp-from, .pp-out .pp-to {
     width: 64px; font: inherit; text-align: right; padding: 4px 6px;
     border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
   }
@@ -1809,8 +1856,13 @@
       checklist.title = title;
       return touch(checklist);
     }
-    function addSection(checklist, title = '') {
-      checklist.sections.push(createSection(title));
+    // index を渡すとその位置に挿入（範囲外は末尾へクランプ）。省略時は末尾に追加。
+    // セクションの間の「＋」（2026-09-11）から使う。
+    function addSection(checklist, title = '', index = null) {
+      const sec = createSection(title);
+      const n = checklist.sections.length;
+      const at = Number.isInteger(index) ? Math.max(0, Math.min(n, index)) : n;
+      checklist.sections.splice(at, 0, sec);
       return touch(checklist);
     }
     function renameSection(checklist, sectionId, title) {
@@ -2866,13 +2918,24 @@
       const isTemplate = checklist.type === MODES.TEMPLATE;
       // テンプレート型はセクションをまたいで手順を連番(1..N)で振る
       let stepNo = 0;
+      // セクションの間に「＋」（ホバーで線と丸ボタンが出る）、末尾に幅いっぱいの追加ゾーンを置く。
+      // 右上の「セクションを追加」ボタンはこれに置き換えた（ユーザー要望 2026-09-11・モック D 案）。
+      const secWord = isTemplate ? 'フェーズ' : 'セクション';
+      const gapAt = (i) => `
+        <div class="sec-gap">
+          <span class="sec-gap-line"></span>
+          <button class="sec-add" data-action="insert-section" data-index="${i}"
+                  aria-label="ここに${secWord}を追加">+</button>
+        </div>`;
       const sections = checklist.sections
         .map((s, idx) => {
           const html = renderSection(s, p.sections[idx], checklist.type, stepNo);
           stepNo += s.items.length;
-          return html;
+          return (idx > 0 ? gapAt(idx) : '') + html;
         })
-        .join('');
+        .join('') + `
+        <button class="sec-add-tail" data-action="insert-section" data-index="${checklist.sections.length}"
+                data-tip="${isTemplate ? '手順' : '項目'}をまとめる区切りを末尾に追加します">＋ ${secWord}を追加</button>`;
       const totalMin = isTemplate
         ? checklist.sections.reduce((a, s) => a + sumMinutes(s.items), 0)
         : 0;
@@ -2907,8 +2970,6 @@
                            data-tip="チェック済みの項目をまとめて削除します">完了を削除</button>`
             }
             <span class="tb-edit">
-              <button class="btn" data-action="add-section"
-                      data-tip="${isTemplate ? '手順' : '項目'}をまとめる区切りを末尾に追加します">${isTemplate ? 'フェーズ' : 'セクション'}を追加</button>
               ${
                 isTemplate
                   ? `<button class="btn" data-action="cover"
@@ -2932,9 +2993,20 @@
     // type/startNo を受け取り、テンプレート時は手順タイムライン、ToDo時は通常リストを描く
     function renderSection(section, prog, type, startNo) {
       const isTemplate = type === MODES.TEMPLATE;
-      const items = isTemplate
-        ? section.items.map((it, i) => renderStep(section.id, it, startNo + i + 1, i)).join('')
-        : section.items.map((it, i) => renderItem(section.id, it, i)).join('');
+      // 項目の間と末尾に「＋」（ホバーで線と丸ボタン＋説明）。data-index はその位置＝挿入先の添字。
+      const word = isTemplate ? '手順' : '項目';
+      const itemGap = (i) => `
+          <li class="item-gap">
+            <span class="item-gap-line"></span>
+            <button class="item-add" data-action="insert-item-at"
+                    data-section="${section.id}" data-index="${i}" aria-label="ここに${word}を追加">+</button>
+            <span class="item-gap-tip">ここに${word}を追加</span>
+          </li>`;
+      const items = section.items
+        .map((it, i) => (i > 0 ? itemGap(i) : '') + (isTemplate
+          ? renderStep(section.id, it, startNo + i + 1, i)
+          : renderItem(section.id, it, i)))
+        .join('') + itemGap(section.items.length);
       const mins = isTemplate ? sumMinutes(section.items) : 0;
       const meta = `${prog.done}/${prog.total}${mins ? ` ・⏱${mins}分` : ''}`;
       return `
@@ -3001,9 +3073,6 @@
           <button class="icon danger" title="削除"
                   data-action="delete-item" data-section="${sectionId}" data-item="${item.id}">✕</button>
           ${renderImages(sectionId, item, true)}
-          <button class="insert-after" data-action="insert-item-after"
-                  data-section="${sectionId}" data-item="${item.id}"
-                  title="この下に項目を追加">＋ ここに項目を追加</button>
         </li>`;
     }
     // テンプレート型の手順ステップ（番号バッジ＋連結線＋メモ＋所要時間）
@@ -3046,9 +3115,6 @@
                    placeholder="メモ（任意）" value="${escapeHtml(note)}" />
             ${renderImages(sectionId, item, true)}
           </div>
-          <button class="insert-after" data-action="insert-item-after"
-                  data-section="${sectionId}" data-item="${item.id}"
-                  title="この下に手順を追加">＋ ここに手順を追加</button>
         </li>`;
     }
     // =========================================================================
@@ -5686,6 +5752,32 @@
       const [w, h] = PDF_PAPER_MM[paper] || PDF_PAPER_MM.A4;
       return orient === 'landscape' ? { w: h, h: w } : { w, h };
     }
+    // PDF のページ範囲（「ページ N 〜 M」。空欄＝最初／最後）。戻り値は 1 始まりの { from, to }。
+    // from > to は入れ替え、total（プレビューの改ページ線が数えた総ページ数）が分かれば
+    // その範囲にクランプする。total が不明（null）で to が空欄なら to も null（＝最後まで）。
+    function parsePdfPageRange(fromStr, toStr, total) {
+      const num = (v) => {
+        if (v == null || String(v).trim() === '') return null;
+        const n = Math.floor(Number(v));
+        return Number.isFinite(n) && n >= 1 ? n : null;
+      };
+      const t = num(total);
+      let from = num(fromStr) || 1;
+      let to = num(toStr) || t;
+      if (to != null && from > to) [from, to] = [to, from];
+      if (t != null) { from = Math.min(from, t); to = Math.min(to == null ? t : to, t); }
+      return { from, to };
+    }
+    // printToPDF の pageRanges（1 始まりの文字列。例 '2-5'）。全ページなら null＝指定なし。
+    function pdfPageRangeString(range, total) {
+      if (!range) return null;
+      const { from, to } = range;
+      const t = Number(total) || null;
+      const wholeStart = !(from > 1);
+      const wholeEnd = to == null || (t != null && to >= t);
+      if (wholeStart && wholeEnd) return null;
+      return to == null ? `${from}-` : `${from}-${to}`;
+    }
     // 実出力で「途中では切らない」と決めてある塊。CSS の break-inside: avoid と対で持つ。
     // .print-step の中の .print-step-keep のように入れ子になるものは外側だけを数える。
     const PRINT_ATOM_SEL = '.print-step, .print-todo, .print-toc-sec, .print-body table, .print-img';
@@ -5783,7 +5875,9 @@
     // 印刷ビューを差し込んでワンクリックで PDF 保存する（3-D）。printToPDF は現ページを
     // @media print の見た目で描画するため、他出力（Word/Excel/CSV/HTML）と同じくツールバー
     // 直下からも、印刷プレビュー内からも同じこの関数で呼べる。
-    async function savePdfViaElectron(checklist) {
+    // pageRanges: '2-5' のような 1 始まりの範囲文字列（省略＝全ページ。印刷プレビューの
+    // 「ページ N 〜 M」から渡る。ツールバー直下の 📕 PDF は常に全ページ）。
+    async function savePdfViaElectron(checklist, pageRanges) {
       if (!window.printAPI || !window.printAPI.savePdf) {
         alert('PDF 出力はデスクトップ版（Electron）でのみ利用できます。');
         return;
@@ -5800,6 +5894,7 @@
         const res = await window.printAPI.savePdf({
           title: sanitizeFilename(checklist.title || 'checklist'),
           scale: pdfOutSettings().scale / 100,
+          pageRanges: pageRanges || undefined,
         });
         if (res && res.error) alert('PDF の保存に失敗しました: ' + res.error);
       } catch (e) {
@@ -5847,6 +5942,13 @@
             <span class="pp-label">倍率</span>
             <input class="pp-scale" type="number" min="30" max="200" step="5" aria-label="PDF出力の倍率（％）" />
             <span class="pp-unit">%</span>
+          </span>
+          <span class="pp-row pp-range">
+            <span class="pp-label">ページ</span>
+            <input class="pp-from" type="number" min="1" step="1" placeholder="最初" aria-label="PDF出力の開始ページ" />
+            <span class="pp-unit">〜</span>
+            <input class="pp-to" type="number" min="1" step="1" placeholder="最後" aria-label="PDF出力の終了ページ" />
+            <span class="pp-unit pp-total"></span>
           </span>` : ''}
           <span class="pp-row">
             <span class="pp-label">用紙</span>
@@ -5862,7 +5964,7 @@
               <option value="landscape">横</option>
             </select>
           </span>
-          ${window.printAPI ? '<span class="pp-hint">倍率は PDF 出力に効きます（印刷は OS のダイアログで指定）</span>' : ''}
+          ${window.printAPI ? '<span class="pp-hint">倍率とページ範囲は PDF 出力に効きます（印刷は OS のダイアログで指定）。ページは空欄で最初／最後まで</span>' : ''}
           <span class="pp-hint">赤い破線は改ページ位置です（手順・図・表は途中で切らずに次ページへ送ります）</span>
         </div>
         <div class="print-preview-body"><div class="print-preview-stage"><div class="print-preview-page"></div></div></div>
@@ -5947,6 +6049,22 @@
         paginateBreaks(blocks, contentH, total, y).forEach(emit);
         ruler.remove();
         endMark.remove();
+        setPreviewPageTotal(no);
+      };
+      // 改ページ線が数えた総ページ数を「全 N ページ」に出し、ページ範囲の上限にも使う。
+      const fromInput = overlay.querySelector('.pp-from');
+      const toInput = overlay.querySelector('.pp-to');
+      const totalEl = overlay.querySelector('.pp-total');
+      let previewPageTotal = null;
+      const setPreviewPageTotal = (n) => {
+        previewPageTotal = n;
+        if (totalEl) totalEl.textContent = `（全 ${n} ページ）`;
+        if (fromInput) fromInput.max = n;
+        if (toInput) toInput.max = n;
+      };
+      const currentPdfPageRanges = () => {
+        if (!fromInput || !toInput) return null;
+        return pdfPageRangeString(parsePdfPageRange(fromInput.value, toInput.value, previewPageTotal), previewPageTotal);
       };
       const relayoutPreview = () => { fitPage(); drawPageBreaks(); };
       // モーダル幅が変わると縮小率も変わるので引き直す。モーダルを閉じたら自分で外れる。
@@ -5993,7 +6111,7 @@
       if (pdfBtn) {
         pdfBtn.addEventListener('click', async () => {
           pdfBtn.disabled = true;
-          try { await savePdfViaElectron(checklist); }
+          try { await savePdfViaElectron(checklist, currentPdfPageRanges()); }
           finally { pdfBtn.disabled = false; }
         });
       }
@@ -6526,6 +6644,32 @@
       return objects;
     }
     // 選択オブジェクトの操作ハンドル一覧（kind はドラッグ時の役割）。
+    // ── テキストの自動折り返し（仕様は docs/spec-image-editor-enhancements.md 14章）──
+    // 既定の折り返し幅は全角12文字ぶん（fs × 12。全角1字 ≒ 1em）。
+    const TEXT_WRAP_CHARS = 12;
+    // text を maxW（px）に収まるよう1文字単位で折る純関数。measure(str) は文字列の幅を返す
+    //（canvas の measureText を注入する。jsdom には canvas が無いためテストでは擬似関数）。
+    // 明示的な改行（\n）は段落として常に残す。maxW が無ければ折らない。
+    function wrapTextLines(text, maxW, measure) {
+      const paras = String(text == null ? '' : text).split('\n');
+      if (!(maxW > 0) || typeof measure !== 'function') return paras;
+      const out = [];
+      for (const para of paras) {
+        if (para === '') { out.push(''); continue; }
+        let line = '';
+        for (const ch of para) {
+          if (line !== '' && measure(line + ch) > maxW) { out.push(line); line = ch; }
+          else line += ch;
+        }
+        out.push(line);
+      }
+      return out;
+    }
+    // テキストボックスの箱の余白（塗り・枠線があるときだけ文字の周りに付く）。
+    function textBoxPadOf(o) {
+      const boxed = (o.fill && o.fill !== 'none') || (o.color && o.color !== 'none');
+      return boxed ? Math.round((Number(o.fs) || 16) * 0.3) : 0;
+    }
     function objHandles(o) {
       if (o.type === 'arrow' || o.type === 'line') {
         return [{ kind: 'p1', x: o.x1, y: o.y1 }, { kind: 'p2', x: o.x2, y: o.y2 }];
@@ -6543,7 +6687,14 @@
         return (Array.isArray(o.pts) ? o.pts : []).map((p, i) => ({ kind: `pt${i}`, x: p.x, y: p.y }));
       }
       if (o.type === 'callout') return [{ kind: 'tip', x: o.tip.x, y: o.tip.y }];
-      return []; // text は移動のみ
+      if (o.type === 'text' && o.w > 0) {
+        // 左右の辺の中点だけ（幅を変える。高さは文字量から自動で決まる）。
+        // o.w / o.h は textLayout が描画のたびに最新へ更新している。
+        const pad = textBoxPadOf(o);
+        const cy = o.y + (o.h || 0) / 2;
+        return [{ kind: 'w', x: o.x - pad, y: cy }, { kind: 'e', x: o.x + o.w + pad, y: cy }];
+      }
+      return [];
     }
     // Shift による水平・垂直の拘束を効かせる操作。位置をそのまま動かす系だけが対象で、
     // 四隅／辺のリサイズ（nw/n/e/…）は Shift＝縦横比固定が一般的なので含めない。
@@ -6579,6 +6730,15 @@
         if (d.mode.includes('e')) x2 = Math.max(x1 + 4, x2 + dx);
         if (d.mode.includes('n')) y1 = Math.min(y2 - 4, y1 + dy);
         if (d.mode.includes('s')) y2 = Math.max(y1 + 4, y2 + dy);
+        if (o.type === 'text') {
+          // テキストは幅だけ（最小は1文字ぶん＝fs）。以後は幅固定＝文字量で幅は変わらず
+          // 高さだけ追従する（y・h は触らない）。
+          const minW = Number(o.fs) || 16;
+          if (d.mode.includes('w')) x1 = Math.min(x2 - minW, s.x + dx);
+          if (d.mode.includes('e')) x2 = Math.max(x1 + minW, s.x + s.w + dx);
+          o.x = x1; o.w = x2 - x1; o.wFixed = true;
+          return;
+        }
         o.x = x1; o.y = y1; o.w = x2 - x1; o.h = y2 - y1;
       }
     }
@@ -6602,7 +6762,8 @@
       const strokesSrc = (isV1 && savedEdit.strokes) ? await resolveImageAsync(savedEdit.strokes) : '';
 
       const overlay = document.createElement('div');
-      overlay.className = 'modal-overlay';
+      overlay.className = 'modal-overlay ie-overlay';
+      document.documentElement.classList.add('ie-open'); // 背面のスクロールを止める（close で戻す）
       overlay.innerHTML = `
         <div class="modal img-editor" role="dialog" aria-modal="true">
           <div class="ie-toolbar">
@@ -6742,14 +6903,35 @@
         const sels = selectedObjs();
         if (sels.length) { sels.forEach((o) => { o.opacity = 1 - v / 100; }); recomposite(); } // 選択中すべてへ即時反映
       });
+      // ---- 線の太さ ----
+      // 透過率と同じく、選択中の図形があればその太さを即時に変える（テキストの枠線・吹き出し・
+      // 矩形などすべて。要望 2026-09-11: テキストの枠線の太さが作成時の値で固定だった）。
+      // 選択が無いときに動かした値だけを「次に描く太さ」nextSize として覚える。
+      const DEFAULT_SIZE = 6;
+      let nextSize = DEFAULT_SIZE;
+      sizeInput.addEventListener('pointerdown', () => { if (selectedIds.length) pushUndo(); });
+      sizeInput.addEventListener('input', () => {
+        const v = Math.max(1, Math.round(Number(sizeInput.value) || 1));
+        const sels = selectedObjs();
+        if (!sels.length) { nextSize = v; return; }
+        sels.forEach((o) => { o.size = v; });
+        recomposite();
+      });
+      // 選択中があればその太さ（複数なら先頭）、無ければ「次に描く太さ」をつまみに映す。
+      function syncSizeUI() {
+        const sel = selectedObj();
+        if (sel && Number.isFinite(sel.size)) sizeInput.value = sel.size;
+        else if (!selectedIds.length) sizeInput.value = nextSize;
+      }
       // ---- 色は「線・塗り・文字」の3つ ----
       // 図形の色は color（線）1つきりで、テキストは color が文字色を兼ねていたため
       // 枠線に色を付けられなかった。3つに分けて、塗りつぶしと枠線を別々に決められるようにする。
       //  color … 線（枠線）の色。null = 線なし
       //  fill  … 塗りつぶしの色。null = 塗りなし
       //  textColor … 文字の色（テキスト・吹き出しだけ）
+      const DEFAULT_LINE_COLOR = '#ff3b30'; // 線色・文字色の既定（ツールバーの color input の初期値と同じ）
       let fillValue = null;              // 次に描く図形の塗り（既定は塗りなし＝従来どおり）
-      let textColorValue = '#ff3b30';    // 次に描くテキスト・吹き出しの文字色
+      let textColorValue = DEFAULT_LINE_COLOR; // 次に描くテキスト・吹き出しの文字色
       let lineNone = false;              // 線なしを選んでいるか（colorInput は最後に選んだ実色を保つ）
       // 次に描く図形の線の色。ペン・ハイライトは「線なし」があり得ないので colorInput を直に使う。
       const lineColor = () => (lineNone ? null : colorInput.value);
@@ -7024,6 +7206,7 @@
         if (cropMode && cropRect) drawCropOverlay();
         syncTextFmtUI(); // ツール・選択・編集状態に書式コントロールを追随させる
         syncColorUI();   // 線・塗り・文字色のチップも同じタイミングで追随させる
+        syncSizeUI();    // 線の太さのつまみも選択中の図形に追随させる
       }
       // 表示 px / canvas px の比率（ハンドルや点線を画面上一定サイズに保つのに使う）。
       function dispScale() { return canvas.offsetWidth ? canvas.width / canvas.offsetWidth : 1; }
@@ -7032,6 +7215,7 @@
         commitCallout(); // 別ツールへ移るときは編集中の吹き出しを確定
         finishFreeformIfAny(); // 描きかけのフリーフォームも確定（頂点不足なら破棄）
         if (t !== 'crop') exitCropMode(); // crop 以外へ移ると選択枠を破棄
+        resetDrawStyleIfToolChanged(t);
         tool = t;
         if (DEFAULT_TOOLS.includes(t)) lastDefaultTool = t;
         clearSelection(); // ツール切替で選択解除
@@ -7043,6 +7227,23 @@
         syncOpacityUI();
         if (t === 'crop') enterCropMode();
         recomposite();
+      }
+      // 別の描画コマンドへ移ったら「次に描く」線色・塗り・文字色・太さを既定に戻す
+      //（要望 2026-09-11: 丸を青・塗りありで描いた後に四角へ移ると、その設定が持ち越されて
+      // いた）。同じコマンドに戻る（四角 → 選択 → 四角）ときは保持する。透過率はツール別
+      //（toolOpacity）なので対象外。
+      const DRAW_TOOLS = ['pen', 'marker', 'arrow', 'line', 'rect', 'ellipse', 'cross', 'freeform', 'text', 'callout'];
+      let lastDrawTool = null;
+      function resetDrawStyleIfToolChanged(t) {
+        if (!DRAW_TOOLS.includes(t)) return;
+        if (t === lastDrawTool) return;
+        lastDrawTool = t;
+        lineNone = false;
+        colorInput.value = DEFAULT_LINE_COLOR;
+        fillValue = null;
+        textColorValue = DEFAULT_LINE_COLOR;
+        nextSize = DEFAULT_SIZE;
+        sizeInput.value = DEFAULT_SIZE;
       }
       // 選択とハンドを行き来する（左クリック押下中の右クリック。仕様12章）
       function toggleDefaultTool() {
@@ -7224,25 +7425,40 @@
       }
       // テキストボックス: 文字の外接矩形を少し膨らませた箱に塗りと枠線を描いてから
       // 文字を載せる。枠線の色（color）と文字の色（textColor）は別々に持つ。
+      // テキストの行組み。幅を触っていなければ全角12字（fs×12）で折り、箱の幅は最長行に
+      // 合わせる（文字が増えるほど広がる）。幅を触った後（wFixed）はその幅で折り、高さだけ
+      // 文字量に追従する。o.w / o.h は最新の値に更新して保存もする（ハンドル位置に使う）。
+      function textLayout(o) {
+        const fs = Number(o.fs) || 16;
+        ctx.save();
+        ctx.font = objFont(o);
+        const measure = (str) => ctx.measureText(str).width;
+        const fixed = !!o.wFixed && o.w > 0;
+        const lines = wrapTextLines(o.text, fixed ? o.w : fs * TEXT_WRAP_CHARS, measure);
+        let tw = 0;
+        for (const l of lines) tw = Math.max(tw, measure(l.length ? l : ' '));
+        ctx.restore();
+        const lh = fs * 1.2;
+        o.w = fixed ? o.w : Math.ceil(tw);
+        o.h = lines.length * lh;
+        return { lines, lh, w: o.w, h: o.h };
+      }
       function drawTextObj(g, o) {
+        const lay = textLayout(o);
         g.save();
         g.globalAlpha = o.opacity;
         g.font = objFont(o);
         g.textBaseline = 'top';
-        const lines = o.text.split('\n');
-        const lh = o.fs * 1.2;
         if (hasFill(o) || hasStroke(o)) {
-          let tw = 0;
-          for (const l of lines) tw = Math.max(tw, g.measureText(l.length ? l : ' ').width);
           const P = textBoxPad(o);
           g.lineWidth = o.size;
           g.lineJoin = 'round';
           g.beginPath();
-          g.rect(o.x - P, o.y - P, Math.ceil(tw) + P * 2, lines.length * lh + P * 2);
+          g.rect(o.x - P, o.y - P, lay.w + P * 2, lay.h + P * 2);
           paintPath(g, o);
         }
         g.fillStyle = o.textColor || o.color || '#ff3b30';
-        lines.forEach((line, i) => g.fillText(line, o.x, o.y + i * lh));
+        lay.lines.forEach((line, i) => g.fillText(line, o.x, o.y + i * lay.lh));
         g.restore();
       }
       function drawObject(g, o) {
@@ -7282,14 +7498,9 @@
         if (o.type === 'rect' || o.type === 'ellipse' || o.type === 'cross') return { x: o.x, y: o.y, w: o.w, h: o.h };
         if (o.type === 'freeform') return freeformBounds(o.pts);
         if (o.type === 'text') {
-          ctx.save();
-          ctx.font = objFont(o);
-          const lines = o.text.split('\n');
-          let tw = 0;
-          for (const l of lines) tw = Math.max(tw, ctx.measureText(l.length ? l : ' ').width);
-          ctx.restore();
+          const lay = textLayout(o);
           const pad = (hasFill(o) || hasStroke(o)) ? textBoxPad(o) : 0;
-          return { x: o.x - pad, y: o.y - pad, w: Math.ceil(tw) + pad * 2, h: lines.length * o.fs * 1.2 + pad * 2 };
+          return { x: o.x - pad, y: o.y - pad, w: lay.w + pad * 2, h: lay.h + pad * 2 };
         }
         if (o.type === 'callout') {
           const box = calloutBox(o.text, o.fs, o);
@@ -7511,10 +7722,12 @@
       function calloutBox(text, fs, style) {
         annoCtx.save();
         annoCtx.font = objFont({ fs, bold: style && style.bold, italic: style && style.italic });
-        const lines = (text.length ? text : ' ').split('\n');
+        // 全角12字（fs×12）で自動的に折り返す（テキストボックスと同じ。明示の改行は残す）
+        const measure = (str) => annoCtx.measureText(str).width;
+        const lines = wrapTextLines(text.length ? text : ' ', fs * TEXT_WRAP_CHARS, measure);
         const lh = Math.round(fs * 1.3);
         let tw = 0;
-        for (const l of lines) tw = Math.max(tw, annoCtx.measureText(l.length ? l : ' ').width);
+        for (const l of lines) tw = Math.max(tw, measure(l.length ? l : ' '));
         annoCtx.restore();
         const P = Math.round(fs * 0.55);
         return { lines, lh, P, w: Math.ceil(tw) + P * 2, h: lines.length * lh + P * 2 };
@@ -7597,6 +7810,12 @@
       // ---- テキスト（Electron の prompt 不可対策：その場編集の入力欄を出す）----
       // existing を渡すと既存テキストオブジェクトの再編集（ダブルクリックから）。
       let editingText = false; // 入力欄が開いている間 true（Delete キー等の誤爆防止）
+      // Alt+Enter で改行（Shift+Enter と同じ）。Alt 付きの Enter は既定では改行が入らないので
+      // 自前で差し込み、input を起こして高さ・幅の追従（fit / render）を走らせる。
+      function insertNewline(ta) {
+        ta.setRangeText('\n', ta.selectionStart, ta.selectionEnd, 'end');
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+      }
       function beginText(p, existing) {
         const scale = canvas.offsetWidth ? canvas.offsetWidth / canvas.width : 1;
         // 書式（サイズ・太字・斜体）: 既存の再編集はその値、新規はツールバーの既定値
@@ -7616,10 +7835,13 @@
         applyTaStyle();
         canvasWrap.appendChild(ta);
         editingText = true;
+        // 幅は canvas 側と同じ行組み（textLayout）で決める。触っていなければ内容幅
+        //（全角12字を上限に、打つほど広がる）、幅を触った後はその幅。高さは行数に追従。
+        const wrap = existing ? { wFixed: !!existing.wFixed, w: existing.w } : { wFixed: false, w: 0 };
         const fit = () => {
+          const lay = textLayout({ text: ta.value, fs: fmt.fs, bold: fmt.bold, italic: fmt.italic, wFixed: wrap.wFixed, w: wrap.w });
+          ta.style.width = Math.min(Math.ceil(lay.w * scale) + 4, canvas.offsetWidth) + 'px';
           ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px';
-          ta.style.width = 'auto';
-          ta.style.width = Math.min(ta.scrollWidth + 24, canvas.offsetWidth) + 'px';
         };
         // 編集中はツールバーの書式変更を入力欄へ即時反映させる
         fmtTarget = {
@@ -7627,7 +7849,8 @@
           set: (changes) => { Object.assign(fmt, changes); applyTaStyle(); fit(); },
         };
         syncTextFmtUI();
-        if (existing) { ta.value = existing.text; existing.hidden = true; recomposite(); fit(); }
+        if (existing) { ta.value = existing.text; existing.hidden = true; recomposite(); }
+        fit(); // 新規も最初から内容幅（空なら1文字ぶん）。textarea 既定の20桁幅で出さない
         ta.focus();
         if (existing) ta.select();
         let done = false;
@@ -7674,7 +7897,8 @@
         };
         ta.addEventListener('keydown', (ev) => {
           ev.stopPropagation(); // 編集中は全体の Esc 閉じや他ショートカットを止める
-          if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); commit(); }
+          if (ev.key === 'Enter' && ev.altKey) { ev.preventDefault(); insertNewline(ta); }
+          else if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); commit(); }
           else if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
         });
         ta.addEventListener('blur', commit);
@@ -7713,6 +7937,9 @@
           // 初期の尻尾先端＝本体の下・少し左（下向き）。以後ドラッグで自由に。
           tip: existing ? { x: existing.tip.x, y: existing.tip.y }
                         : { x: p.x + Math.min(box0.w * 0.25, 40), y: p.y + box0.h + Math.round(fmt0.fs * 1.6) },
+          // 新規は尻尾をまだ触っていない間、本体の下に追従させる（折り返しや改行で本体が
+          // 高くなっても尻尾が本体の中へ潜らない）。一度ドラッグしたら固定。
+          tipAuto: !existing,
         };
         activeCallout = ac;
         if (existing) { existing.hidden = true; }
@@ -7725,6 +7952,10 @@
           const textCol = existing ? existing.textColor : textColorValue;
           const size = existing ? existing.size : Number(sizeInput.value);
           const opacity = existing ? existing.opacity : toolAlpha('callout');
+          if (ac.tipAuto) {
+            const b0 = calloutBox(ta.value, ac.fs, ac);
+            ac.tip = { x: ac.x + Math.min(b0.w * 0.25, 40), y: ac.y + b0.h + Math.round(ac.fs * 1.6) };
+          }
           const preview = { x: ac.x, y: ac.y, text: ta.value, fs: ac.fs, bold: ac.bold, italic: ac.italic, tip: ac.tip, color, fill, textColor: textCol, size, opacity };
           recomposite();
           drawCalloutObj(ctx, preview, false);
@@ -7741,8 +7972,9 @@
           const s = canvas.offsetWidth ? canvas.offsetWidth / canvas.width : 1;
           ta.style.left = (canvas.offsetLeft + (ac.x + box.P) * s) + 'px';
           ta.style.top = (canvas.offsetTop + (ac.y + box.P) * s) + 'px';
-          // 右側の内側パディング分を余白として使い、キャレットが隠れないようにする。
-          ta.style.width = ((box.w - box.P) * s) + 'px';
+          // 幅は本文の行組みと同じ幅＋わずかなキャレット余白。広く取ると入力欄側だけ
+          // 1文字多く入ってしまい、確定後の折り返し位置とずれる。
+          ta.style.width = (Math.ceil((box.w - box.P * 2) * s) + 4) + 'px';
           ta.style.height = ((box.h - box.P * 2) * s) + 'px';
           ta.style.font = objFont(ac, s);
           ta.style.lineHeight = (box.lh * s) + 'px';
@@ -7757,7 +7989,8 @@
 
         ta.addEventListener('keydown', (ev) => {
           ev.stopPropagation();
-          if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); commitCallout(); }
+          if (ev.key === 'Enter' && ev.altKey) { ev.preventDefault(); insertNewline(ta); }
+          else if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); commitCallout(); }
           else if (ev.key === 'Escape') { ev.preventDefault(); cancelCallout(); }
         });
         ta.addEventListener('input', ac.render);
@@ -7968,6 +8201,23 @@
       // テキスト・吹き出しの「配置待ち」。押した位置を覚えておき、離した時に配置する
       // （押している間に右クリックすればハンドツールへ逃げられる。仕様6章）。
       let pendingPlace = null; // { tool, p } または null
+      // 左ボタンを押したままの右クリック（コード）でハンド⇄選択を切り替える処理。
+      // ポインタイベントは「押している最中の別ボタンの押下・解放」を pointerdown/up ではなく
+      // pointermove（button に変化したボタン番号）で通知し、pointerup は全ボタンが離れたとき
+      // 最後に離したボタンで1回だけ来る。以前は右ボタンを離した時の contextmenu で判定して
+      // いたため、左を先に離すと pointerup（button=2）が先に来てテキスト・吹き出しが配置され、
+      // 直後の contextmenu は「吹き出し入力中は無視」に当たって切替が起きなかった
+      //（不具合報告 2026-09-11）。右ボタンを押した瞬間（pointermove の button===2）に切り替え、
+      // そのジェスチャの残り（pointermove / pointerup / 直後の contextmenu）は捨てる。
+      const chord = { active: false, at: 0 };
+      function chordToggle() {
+        discardDrawing();
+        toggleDefaultTool();
+        chord.active = true;
+        chord.at = performance.now();
+      }
+      // 切替直後の contextmenu（右ボタンを離した時に来る）は同じ操作の一部なので無視する。
+      const isChordContextmenu = () => performance.now() - chord.at < 1000;
       // 描きかけ（ドラッグ描画・ペン/ハイライト・消しゴム・モザイク・配置待ち）を捨てる。
       function discardDrawing() {
         if (drawing && tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
@@ -8025,7 +8275,10 @@
         e.preventDefault();
         // 右ボタンは contextmenu（右クリック削除メニュー）に任せる。
         // ここを素通しすると右ドラッグで描画・選択が始まってしまう。
+        // （左を押したままの右押下は通常 pointermove で届くが、別ポインタとして来た場合の保険）
+        if (e.button === 2 && (drawing || pendingPlace)) { chordToggle(); return; }
         if (e.button !== 0) return;
+        if (chord.active) return; // 右クリックで切り替えた直後のジェスチャの残りは無視
         // テキスト編集中に枠外を左クリック → 確定（空なら破棄）のみ。新規テキストは作らない。
         if (editingText) {
           const ta = canvasWrap.querySelector('.ie-text-input');
@@ -8038,6 +8291,7 @@
         if (activeCallout) {
           if (nearCalloutTip(p)) {
             activeCallout.dragTip = true;
+            activeCallout.tipAuto = false; // 自分で動かしたら本体への追従をやめる
             canvas.setPointerCapture(e.pointerId);
             activeCallout.render();
             return;
@@ -8138,6 +8392,9 @@
       });
 
       canvas.addEventListener('pointermove', (e) => {
+        // 左ボタンを押したまま右ボタンを押した（描きかけ・配置待ちがある間だけ）→ 即座に切替。
+        if (e.button === 2 && (drawing || pendingPlace)) { chordToggle(); return; }
+        if (chord.active) return; // 切替後、全ボタンが離れるまでは何もしない
         // 吹き出し編集中：尻尾ドラッグ、または先端付近ホバーでハンドルを表示。
         if (activeCallout) {
           const p = xy(e);
@@ -8208,6 +8465,10 @@
       });
 
       function finish(e) {
+        // 右クリックで切り替えたジェスチャの終わり（全ボタン解放）。配置・確定はしない。
+        if (chord.active) { chord.active = false; return; }
+        // 左以外のボタンで終わった pointerup では配置しない（二重防御）。
+        if (pendingPlace && e.button !== 0) { pendingPlace = null; return; }
         // テキスト・吹き出しは離した時に配置する（座標は押した位置＝見え方は従来どおり）。
         if (pendingPlace) {
           const { tool: pt, p: pp } = pendingPlace;
@@ -8281,6 +8542,7 @@
         if (tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
         if (tool === 'pen' || tool === 'marker') bakeLiveStroke(); // 描きかけ分は確定させる
         drawing = false; pendingPlace = null; cropDrag = null; objDrag = null; marquee = null; endPan();
+        chord.active = false;
         canvas.style.cursor = '';
         recomposite();
       });
@@ -8312,13 +8574,13 @@
       // 誤右クリックの即消滅を避けるため、選択枠で対象を見せてから「削除」を選ばせる。
       canvas.addEventListener('contextmenu', (e) => {
         e.preventDefault(); // 既定メニュー・選択系の既定動作を抑止（Electron では通常出ないが保険）
+        if (isChordContextmenu()) return; // 左押下中の右クリックは押した瞬間に処理済み（二重トグル防止）
         if (cropMode) return;      // トリミング中は「適用／取消」のUIに任せる
         if (activeCallout) return; // 吹き出しの本文入力中は編集に任せる
         // フリーフォーム描画中の右クリックは描きかけを破棄して既定モードへ
         if (activeFreeform) { cancelFreeform(); selectTool(lastDefaultTool); return; }
-        // 左ボタンを押したままの右クリック：描きかけ・配置待ちを破棄して既定モードを入れ替える。
-        // pointermove を待たずここで発火するので、マウスを動かさなくても効く。
-        if (drawing || pendingPlace) { discardDrawing(); toggleDefaultTool(); return; }
+        // 左ボタンを押したままの右クリック（押した瞬間に pointermove で処理できなかった場合の保険）。
+        if (drawing || pendingPlace) { chordToggle(); return; }
         // 図形の上なら、クリック選択と同じ対象に限り削除メニューを出す。
         if (tool === 'select' || OBJECT_TOOLS.includes(tool)) {
           const hit = hitObject(xy(e));
@@ -8378,16 +8640,20 @@
           'ドラッグで描きます。図形が決まるのはマウスを離した時です（テキスト・吹き出しも同じ）。',
           '多角形はクリックで頂点を足し、始点をクリックで閉じて確定します（ダブルクリックで開いたまま確定、<kbd>Esc</kbd>で中止）。',
           '直線は <kbd>Shift</kbd> を押しながらで45°刻みになります。',
-          'テキストと吹き出しは、ダブルクリックで文字を編集し直せます。',
+          'テキストと吹き出しは、ダブルクリックで文字を編集し直せます。<kbd>Enter</kbd> で確定、<kbd>Shift</kbd>+<kbd>Enter</kbd> か <kbd>Alt</kbd>+<kbd>Enter</kbd> で改行します。',
+          'テキストと吹き出しの文字は全角12字で自動的に折り返します。テキストボックスは左右の白丸ハンドルで幅を変えられ、変えた後はその幅で折り返して高さだけが文字量に合わせて変わります。',
           '消しゴムで消えるのは描いた注釈だけです（スクリーンショット本体は残ります）。',
         ]],
         ['モードの切り替え', [
           '「選択」と「ハンド」が既定のモードです。',
           '何も無い所を右クリックすると、この2つが入れ替わります。',
           '描画ツールを使っている最中に右クリックすると、直前の既定モードへ戻ります（描きかけは取りやめ）。',
+          '左ボタンを押したまま右クリックすると、その場で「選択」と「ハンド」が入れ替わります（どちらのボタンを先に離しても同じです）。',
+          '別の描画ツールに切り替えると、線色・塗りつぶし・文字色・線の太さは既定に戻ります（同じツールに戻ったときはそのままです）。',
         ]],
         ['色と書式', [
           '色は「線色」「塗りつぶし」「文字色」の3つに分かれています。図形を選んでから変えると、その図形に反映されます（複数選んでいればまとめて）。',
+          '「線の太さ」も同じで、図形を選んでから動かすとその図形の線（テキストボックスの枠線・吹き出しの枠も）が太くなったり細くなったりします。',
           '四角・丸・多角形（閉じたもの）・テキストボックス・吹き出しは塗りつぶせます。「塗りつぶしなし」で透明に戻せます。',
           'テキストボックスは「線色」で枠線を付けられます。文字の色は「文字色」で別に決めます。',
           '矢印・直線・×印は線だけの図形なので、塗りつぶしはありません。',
@@ -8432,6 +8698,7 @@
         document.removeEventListener('keydown', onKey);
         document.removeEventListener('keydown', onDragMod);
         document.removeEventListener('keyup', onDragMod);
+        document.documentElement.classList.remove('ie-open');
         overlay.remove();
       }
       function onKey(ev) {
@@ -8547,7 +8814,7 @@
       // edit-image はここに入れないこと。サムネイル(.thumb)は draggable なドラッグソース
       // でもあり、pointerdown の preventDefault は互換 mousedown ごと抑止するため
       // dragstart が発火しなくなる（画像コピー D&D が丸ごと死ぬ）。click 側で処理する。
-      if (!['insert-item-after', 'add-image', 'delete-image', 'move-item-up', 'move-item-down', 'merge-item-up'].includes(action)) return;
+      if (!['insert-item-after', 'insert-item-at', 'add-image', 'delete-image', 'move-item-up', 'move-item-down', 'merge-item-up'].includes(action)) return;
       e.preventDefault();
       const c = currentChecklist();
       if (!c) return;
@@ -8560,7 +8827,18 @@
           && active.matches('input, textarea')) {
         active.blur();
       }
-      if (action === 'insert-item-after') {
+      if (action === 'insert-item-at') { // 項目の間の「＋」: data-index の位置に空項目を挿入してフォーカス
+        const blank = M.createItem('');
+        pendingFocusItem = blank.id;
+        store.commit((s) => {
+          const cc = M.findChecklist(s, c.id);
+          const sec = cc.sections.find((x) => x.id === sectionId);
+          if (!sec) return;
+          const at = Math.max(0, Math.min(sec.items.length, Number.isInteger(index) ? index : sec.items.length));
+          sec.items.splice(at, 0, blank);
+          cc.updatedAt = Date.now();
+        });
+      } else if (action === 'insert-item-after') {
         const blank = M.createItem(''); // 対象項目の直後に挿入し、追加後にフォーカス
         pendingFocusItem = blank.id;
         store.commit((s) => {
@@ -8776,8 +9054,16 @@
           row?.querySelector('.item-text')?.focus();
           return;
         }
-        case 'add-section':
-          return c && store.commit((s) => M.addSection(M.findChecklist(s, c.id)));
+        case 'insert-section': { // セクションの間の「＋」／末尾の追加ゾーン（data-index の位置に挿入）
+          if (!c) return;
+          const at = Number(btn.dataset.index);
+          return store.commit((s) => {
+            const cc = M.findChecklist(s, c.id);
+            M.addSection(cc, '', at);
+            const added = cc.sections[Math.max(0, Math.min(cc.sections.length - 1, at))];
+            pendingFocusSection = added ? added.id : null; // 追加した見出しへ再描画後にフォーカス
+          });
+        }
         case 'add-item-btn': {
           if (!c) return;
           const blank = M.createItem(''); // IDを先に確定して追加後にフォーカス
@@ -8857,7 +9143,13 @@
 
     // セクションバーの「＋」で追加した項目に、再描画後フォーカスする
     let pendingFocusItem = null;
+    let pendingFocusSection = null; // 「＋」で挿入したセクションの見出し（名前をすぐ打てるように）
     function restoreFocus() {
+      if (pendingFocusSection) {
+        const title = app.querySelector(`.section[data-section="${pendingFocusSection}"] .section-title`);
+        pendingFocusSection = null;
+        if (title) title.focus();
+      }
       if (!pendingFocusItem) return;
       const input = app.querySelector(`[data-item="${pendingFocusItem}"] .item-text`);
       pendingFocusItem = null;
@@ -8991,12 +9283,12 @@
         // 画像一括インポート（フォルダから選択）
         naturalCompareFilenames, wizardStepsFromFiles, makeFilesSource, makeSessionSource,
         // 画像編集の図形ジオメトリ（8ハンドル・フリーフォーム・線分距離）
-        freeformBounds, distSeg, objHandles, applyObjDrag,
+        freeformBounds, distSeg, objHandles, applyObjDrag, wrapTextLines, textBoxPadOf, TEXT_WRAP_CHARS,
         // 画像編集の色モデル（線・塗り・文字）と多角形の内包判定
         normalizeObjColors, pointInPoly, marqueeRect, rectContainsBounds,
         // PDF出力の倍率・用紙・向き
         clampPdfScale, pdfPaperDims, pdfPageStyleCss, pdfOutSettings, setPdfOutSettings,
-        paginateBreaks,
+        paginateBreaks, parsePdfPageRange, pdfPageRangeString,
         // サムネイルサイドバー
         thumbStepModel, renderThumbSidebar, updateThumbSidebar, thumbsCollapsed, setThumbsCollapsed,
         clampThumbsWidth, thumbsWidth, setThumbsWidth,

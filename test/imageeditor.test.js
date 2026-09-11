@@ -193,3 +193,57 @@ test('imageeditor — 図形ジオメトリ（8ハンドル・フリーフォー
       '幅0どうし（クリックだけ）は点の一致のみ');
   });
 });
+
+// テキストの自動折り返しと幅ハンドル（仕様は docs/spec-image-editor-enhancements.md 14章）
+test('imageeditor — テキストの自動折り返しと幅ハンドル', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+  // 擬似の measureText: 全角＝10px・半角＝5px
+  const measure = (s) => Array.from(s).reduce((w, ch) => w + (ch.charCodeAt(0) > 0xff ? 10 : 5), 0);
+
+  await t.test('wrapTextLines — 上限幅で1文字単位に折る', () => {
+    assert.deepEqual(plain(T.wrapTextLines('あいうえおかきくけこさしすせそ', 120, measure)),
+      ['あいうえおかきくけこさし', 'すせそ'], '全角12字で折れる');
+    assert.deepEqual(plain(T.wrapTextLines('abcdefghijklmnopqrstuvwxyz', 120, measure)),
+      ['abcdefghijklmnopqrstuvwx', 'yz'], '半角は24字入る');
+  });
+  await t.test('wrapTextLines — 明示の改行と空行を残す', () => {
+    assert.deepEqual(plain(T.wrapTextLines('あい\nうえ', 120, measure)), ['あい', 'うえ']);
+    assert.deepEqual(plain(T.wrapTextLines('あ\n\nい', 120, measure)), ['あ', '', 'い'], '空段落は空行として残す');
+    assert.deepEqual(plain(T.wrapTextLines('', 120, measure)), [''], '空文字は1行');
+  });
+  await t.test('wrapTextLines — 上限が無ければ折らない・1字が上限を超えても止まらない', () => {
+    assert.deepEqual(plain(T.wrapTextLines('あいうえおかきくけこさしすせそ', null, measure)), ['あいうえおかきくけこさしすせそ']);
+    assert.deepEqual(plain(T.wrapTextLines('あいう', 120)), ['あいう'], 'measure 無しでも落ちない');
+    assert.deepEqual(plain(T.wrapTextLines('あいう', 5, measure)), ['あ', 'い', 'う'], '1字ずつになる');
+  });
+  await t.test('TEXT_WRAP_CHARS — 既定は全角12字', () => {
+    assert.equal(T.TEXT_WRAP_CHARS, 12);
+  });
+  await t.test('textBoxPadOf — 塗りか枠線があるときだけ余白が付く', () => {
+    assert.equal(T.textBoxPadOf({ fs: 20, color: null, fill: null }), 0);
+    assert.equal(T.textBoxPadOf({ fs: 20, color: '#000', fill: null }), 6);
+    assert.equal(T.textBoxPadOf({ fs: 20, color: null, fill: '#fff' }), 6);
+  });
+  await t.test('objHandles — text は左右の辺の中点2つ（幅が未計算なら無し）', () => {
+    const hs = plain(T.objHandles({ type: 'text', x: 10, y: 20, w: 100, h: 40, fs: 20, color: null, fill: null }));
+    assert.deepEqual(hs, [{ kind: 'w', x: 10, y: 40 }, { kind: 'e', x: 110, y: 40 }]);
+    const boxed = plain(T.objHandles({ type: 'text', x: 10, y: 20, w: 100, h: 40, fs: 20, color: '#000', fill: null }));
+    assert.deepEqual(boxed, [{ kind: 'w', x: 4, y: 40 }, { kind: 'e', x: 116, y: 40 }], '枠線ありは余白ぶん外側');
+    assert.deepEqual(plain(T.objHandles({ type: 'text', x: 10, y: 20, fs: 20 })), [], '描画前（w 無し）は無し');
+  });
+  await t.test('applyObjDrag — text の e で幅が増え wFixed が立つ。高さ・y は変わらない', () => {
+    const o = { type: 'text', x: 10, y: 20, w: 100, h: 40, fs: 20, text: 'あ' };
+    T.applyObjDrag({ mode: 'e', obj: o, sx: 110, sy: 40, orig: plain(o) }, { x: 150, y: 90 });
+    assert.equal(o.w, 140); assert.equal(o.x, 10); assert.equal(o.y, 20); assert.equal(o.h, 40);
+    assert.equal(o.wFixed, true);
+  });
+  await t.test('applyObjDrag — text の w は x と幅が同時に動く。最小幅は1文字ぶん（fs）', () => {
+    const o = { type: 'text', x: 10, y: 20, w: 100, h: 40, fs: 20, text: 'あ' };
+    T.applyObjDrag({ mode: 'w', obj: o, sx: 10, sy: 40, orig: plain(o) }, { x: 40, y: 40 });
+    assert.equal(o.x, 40); assert.equal(o.w, 70);
+    T.applyObjDrag({ mode: 'w', obj: o, sx: 10, sy: 40, orig: { type: 'text', x: 10, y: 20, w: 100, h: 40, fs: 20 } }, { x: 500, y: 40 });
+    assert.equal(o.w, 20, '最小幅は fs'); assert.equal(o.x, 90);
+  });
+});

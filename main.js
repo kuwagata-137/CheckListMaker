@@ -24,6 +24,7 @@ app.setName('CheckListMaker');
 const fs = require('fs');
 const screenshot = require('screenshot-desktop');
 const { uIOhook } = require('uiohook-napi');
+const windowStateKeeper = require('electron-window-state');
 const { initStorage } = require('./storage');
 const { initErrorLog } = require('./errorlog');
 const session = require('./session');
@@ -205,9 +206,17 @@ function buildAppMenu() {
 
 // ── ウィンドウ生成 ──────────────────────────────────────────
 function createMainWindow() {
+  // 前回のウインドウの位置・大きさ・最大化を <userData>/window-state.json に覚えて復元する
+  //（ユーザー要望 2026-09-11。毎回 1100×800 に戻るのを止める）。画面外に出た保存値は
+  // ライブラリが既定値に戻す。ガジェット窓・ガイド窓は固定サイズなので対象外。
+  const winState = windowStateKeeper({ defaultWidth: 1100, defaultHeight: 800 });
   mainWin = new BrowserWindow({
-    width: 1100,
-    height: 800,
+    x: winState.x,
+    y: winState.y,
+    width: winState.width,
+    height: winState.height,
+    minWidth: 640,
+    minHeight: 480,
     title: 'CheckListMaker',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -219,6 +228,7 @@ function createMainWindow() {
       backgroundThrottling: false,
     },
   });
+  winState.manage(mainWin); // resize / move / close で保存し、最大化状態も復元する
   mainWin.loadFile('index.html');
   mainWin.on('closed', () => {
     mainWin = null;
@@ -1332,7 +1342,7 @@ async function saveCsv(event, payload) {
 // printToPDF は @media print の CSS で描画されるため、画面と同じ見た目で
 // 印刷ビューだけが出力される。
 async function savePdfFile(event, payload) {
-  const { title, scale } = payload || {};
+  const { title, scale, pageRanges } = payload || {};
   const win = BrowserWindow.fromWebContents(event.sender) || mainWin;
   const safe =
     String(title || 'checklist')
@@ -1352,11 +1362,10 @@ async function savePdfFile(event, payload) {
     // 対応範囲（0.1〜2.0）に収まるようここでも防御的にクランプする。
     const n = Number(scale);
     const pdfScale = Number.isFinite(n) ? Math.max(0.3, Math.min(2, n)) : 1;
-    const buf = await event.sender.printToPDF({
-      printBackground: true,
-      preferCSSPageSize: true,
-      scale: pdfScale,
-    });
+    // pageRanges: 1 始まりの範囲文字列（'2-5' / '3-'）。形が合わなければ無視して全ページ。
+    const opts = { printBackground: true, preferCSSPageSize: true, scale: pdfScale };
+    if (typeof pageRanges === 'string' && /^\d+(-\d*)?$/.test(pageRanges)) opts.pageRanges = pageRanges;
+    const buf = await event.sender.printToPDF(opts);
     fs.writeFileSync(filePath, buf);
     // 出力結果をすぐ確認できるよう、既定のPDFビューアで開く。
     shell.openPath(filePath);

@@ -83,3 +83,27 @@
   `#print-root`）の両方から降ろす。`max-height`（210mm/140mm）は絶対単位なので
   二重には掛からない。ブラウザの `🖨 印刷` は倍率を OS のダイアログに任せる仕様のため
   等倍（1）のまま。
+
+## ページ範囲（2026-09-11 追加）
+
+ユーザー要望。倍率の行の下に「**ページ [最初] 〜 [最後]（全 N ページ）**」を置き、PDF に出す
+ページを絞れるようにする。空欄は最初／最後の意味。
+
+- **PDF 出力にのみ効く**（倍率と同じ扱い）。🖨 印刷は OS の印刷ダイアログ側にページ範囲が
+  あるので触らない。ヒント文にその旨を書く。
+- 総ページ数は改ページ線（`drawPageBreaks`）が数えた値（＝プレビューの推定）。
+  `pp-total` に「全 N ページ」と出し、両入力の `max` にも入れる。
+- 値はチェックリストの設定に**保存しない**（出力のたびに変わる一時的な指定。プレビューを
+  開くたび空欄）。
+- 純関数（`window.__test__`・`test/pdfout.test.js`）:
+  - `parsePdfPageRange(fromStr, toStr, total)` → 1 始まりの `{from, to}`。空欄は 1／total、
+    逆転は入れ替え、total を超えればクランプ、不正な文字や 0 以下は空欄扱い。total が不明
+    （null）で to が空欄なら `to = null`（最後まで）。
+  - `pdfPageRangeString(range, total)` → printToPDF に渡す文字列。全ページなら `null`
+    （＝指定なし）、それ以外は `'2-5'`（to が不明なら `'3-'`）。
+- `savePdfViaElectron(checklist, pageRanges)` の第2引数で受け、`printAPI.savePdf` の payload に
+  `pageRanges` として渡す。`main.js` の `savePdfFile` は `/^\d+(-\d*)?$/` に合う文字列のときだけ
+  `printToPDF` の `pageRanges` に入れる（壊れていれば無視して全ページ）。Electron 31 の
+  `printToPDF` は **1 始まりの文字列**を取る（`webContents.print()` の `[{from,to}]` 0 始まりとは
+  別物なので混同しない）。
+- ツールバー直下の 📕 PDF（プレビューを経ない出力）は従来どおり全ページ。
