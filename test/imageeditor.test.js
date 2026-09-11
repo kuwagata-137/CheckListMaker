@@ -247,3 +247,60 @@ test('imageeditor — テキストの自動折り返しと幅ハンドル', asyn
     assert.equal(o.w, 20, '最小幅は fs'); assert.equal(o.x, 90);
   });
 });
+
+// 線・矢印の始点スナップと文字サイズの表示px換算（仕様は docs/spec-image-editor-enhancements.md 16章）
+test('imageeditor — 始点スナップと文字サイズの表示px換算', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+
+  await t.test('snapStartPoint — 線・矢印の端点にスナップし、最も近い点を選ぶ', () => {
+    const objs = [
+      { type: 'line', x1: 0, y1: 0, x2: 100, y2: 0 },
+      { type: 'arrow', x1: 8, y1: 6, x2: 200, y2: 200 },
+    ];
+    // (5,5) から: line の (0,0) は距離7.07、arrow の (8,6) は距離3.16 → arrow の始点
+    assert.deepEqual(plain(T.snapStartPoint(objs, { x: 5, y: 5 }, 11)), { x: 8, y: 6 });
+    // 終点側にも効く
+    assert.deepEqual(plain(T.snapStartPoint(objs, { x: 98, y: 3 }, 11)), { x: 100, y: 0 });
+  });
+
+  await t.test('snapStartPoint — 矩形・×印は四隅、フリーフォームは頂点', () => {
+    const rect = [{ type: 'rect', x: 10, y: 20, w: 100, h: 60 }];
+    assert.deepEqual(plain(T.snapStartPoint(rect, { x: 108, y: 82 }, 11)), { x: 110, y: 80 }, '右下の角');
+    assert.equal(T.snapStartPoint(rect, { x: 60, y: 20 }, 11), null, '辺の中点は対象外');
+    const cross = [{ type: 'cross', x: 0, y: 0, w: 10, h: 10 }];
+    assert.deepEqual(plain(T.snapStartPoint(cross, { x: 9, y: 1 }, 11)), { x: 10, y: 0 });
+    const ff = [{ type: 'freeform', pts: [{ x: 1, y: 1 }, { x: 50, y: 5 }] }];
+    assert.deepEqual(plain(T.snapStartPoint(ff, { x: 48, y: 7 }, 11)), { x: 50, y: 5 });
+  });
+
+  await t.test('snapStartPoint — 許容外・対象外の図形・hidden は null', () => {
+    const objs = [{ type: 'line', x1: 0, y1: 0, x2: 100, y2: 0 }];
+    assert.equal(T.snapStartPoint(objs, { x: 20, y: 20 }, 11), null, '許容半径の外');
+    assert.equal(T.snapStartPoint([{ type: 'ellipse', x: 0, y: 0, w: 10, h: 10 }], { x: 0, y: 0 }, 11), null, '丸に頂点は無い');
+    assert.equal(T.snapStartPoint([{ type: 'text', x: 0, y: 0, w: 10, h: 10 }], { x: 0, y: 0 }, 11), null, 'テキストも対象外');
+    assert.equal(T.snapStartPoint([{ type: 'line', x1: 0, y1: 0, x2: 9, y2: 0, hidden: true }], { x: 0, y: 0 }, 11), null, '再編集中（hidden）は対象外');
+    assert.equal(T.snapStartPoint(null, { x: 0, y: 0 }, 11), null, 'objects が無くても落ちない');
+  });
+
+  await t.test('fsDispScale — 小さい画像は 1（等倍）', () => {
+    assert.equal(T.fsDispScale(600, 400, 1600, 848), 1, 'サムネにも本文幅にも収まる');
+    assert.equal(T.fsDispScale(848, 500, 1600, 848), 1, '本文幅ちょうどまで等倍');
+    assert.equal(T.fsDispScale(0, 0, 1600, 848), 1, '読み込み前（0×0）でも 1');
+  });
+
+  await t.test('fsDispScale — 本文幅・サムネで縮む率だけ大きく描く', () => {
+    // 幅1000: サムネはそのまま・本文で 848 に縮む → 1000/848
+    assert.ok(Math.abs(T.fsDispScale(1000, 600, 1600, 848) - 1000 / 848) < 1e-9);
+    // 2560×1440: サムネ幅1600 → 本文で848 → 2560/848 ≒ 3.02
+    assert.ok(Math.abs(T.fsDispScale(2560, 1440, 1600, 848) - 2560 / 848) < 1e-9);
+    // 縦長 800×3000: サムネ縮小 1600/3000 → 幅427 → 800/(800*1600/3000) = 3000/1600
+    assert.ok(Math.abs(T.fsDispScale(800, 3000, 1600, 848) - 3000 / 1600) < 1e-9);
+  });
+
+  await t.test('fsDispScale — アプリの定数（サムネ1600・本文幅848）が公開されている', () => {
+    assert.equal(T.IMG_MAX_EDGE, 1600);
+    assert.equal(T.APP_IMG_DISPLAY_W, 848);
+  });
+});

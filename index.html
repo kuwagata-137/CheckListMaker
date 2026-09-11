@@ -6627,6 +6627,42 @@
     function rectContainsBounds(m, b) {
       return b.x >= m.x && b.y >= m.y && b.x + b.w <= m.x + m.w && b.y + b.h <= m.y + m.h;
     }
+    // 線・矢印の始点スナップ（仕様 16章）: 既存図形の端点・頂点（線・矢印の両端、
+    // 矩形・×印の四隅、フリーフォームの頂点）のうち p から tol 以内で最も近い点を返す。
+    // 丸・テキスト・吹き出しには「頂点」が無いので対象外。無ければ null。
+    function snapStartPoint(objects, p, tol) {
+      let best = null, bestD = Infinity;
+      for (const o of (Array.isArray(objects) ? objects : [])) {
+        if (!o || o.hidden) continue;
+        let pts = [];
+        if (o.type === 'arrow' || o.type === 'line') {
+          pts = [{ x: o.x1, y: o.y1 }, { x: o.x2, y: o.y2 }];
+        } else if (o.type === 'rect' || o.type === 'cross') {
+          pts = [{ x: o.x, y: o.y }, { x: o.x + o.w, y: o.y },
+                 { x: o.x, y: o.y + o.h }, { x: o.x + o.w, y: o.y + o.h }];
+        } else if (o.type === 'freeform') {
+          pts = Array.isArray(o.pts) ? o.pts : [];
+        }
+        for (const q of pts) {
+          const d = Math.hypot(p.x - q.x, p.y - q.y);
+          if (d <= tol && d < bestD) { best = { x: q.x, y: q.y }; bestD = d; }
+        }
+      }
+      return best;
+    }
+    // アプリ本文で画像が表示される幅（#app の max-width 880px − 左右 padding 16px×2）。
+    // 文字サイズの表示px換算（fsDispScale）の基準に使う。
+    const APP_IMG_DISPLAY_W = 848;
+    // 文字サイズの「表示px → キャンバス（原寸）px」換算率（仕様 16章）。
+    // 保存時にサムネへ縮む率（長辺 maxEdge）と、本文幅 dispW に収まるよう縮む率を掛けた
+    // 「アプリで見える大きさ / キャンバス上の大きさ」の逆数。原寸のほうが小さい画像は 1（拡大はしない）。
+    function fsDispScale(w, h, maxEdge, dispW) {
+      w = Number(w) || 0; h = Number(h) || 0;
+      if (w <= 0 || h <= 0) return 1;
+      const thumbW = w * Math.min(1, maxEdge / Math.max(w, h)); // サムネの実幅
+      const shownW = Math.min(thumbW, dispW);                   // 本文で見える幅
+      return Math.max(1, w / shownW);
+    }
     // 旧データ（色は color 1つだけ）を、線 color / 塗り fill / 文字 textColor の3つへ移す。
     //  - text は color が文字色だった。textColor へ移し、枠線は無し（color = null）にする。
     //  - callout は color が枠線かつ文字色。文字色を写し取り、塗りは従来の白ベタにする。
@@ -6782,14 +6818,10 @@
               <span class="ie-toolitem"><button class="ie-tool" data-tool="eraser" title="消しゴム（描いた注釈だけ消す）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg></button><span class="ie-toolname">消しゴム</span></span>
               <span class="ie-toolitem"><button class="ie-tool" data-tool="text" title="テキスト"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4.5 6.5h15"/><path d="M4.5 12h15"/><path d="M4.5 17.5h9"/></svg></button><span class="ie-toolname">テキスト</span></span>
               <span class="ie-toolitem"><button class="ie-tool" data-tool="mosaic" title="モザイク/ぼかし"><svg class="ie-ic" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/></svg></button><span class="ie-toolname">モザイク</span></span>
-              <span class="ie-toolitem"><button class="ie-tool" data-tool="crop" title="トリミング"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M6.5 2v15.5H22"/><path d="M2 6.5h15.5V22"/></svg></button><span class="ie-toolname">トリミング</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="crop" title="トリミング（もう一度押すと適用）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M6.5 2v15.5H22"/><path d="M2 6.5h15.5V22"/></svg></button><span class="ie-toolname">トリミング</span></span>
             </div>
             <span class="ie-toolitem ie-help"><button type="button" class="ie-tool ie-help-btn" title="画像編集の使い方"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M12 6.5C10 4.6 7 4.2 3.5 4.8v12.6c3.5-.6 6.5-.2 8.5 1.7 2-1.9 5-2.3 8.5-1.7V4.8C17 4.2 14 4.6 12 6.5Z"/><path d="M12 6.5v12.6"/></svg></button><span class="ie-toolname">ヘルプ</span></span>
             <div class="ie-controls">
-              <span class="ie-crop-actions" hidden>
-                <button type="button" class="btn primary ie-crop-apply">トリミング適用</button>
-                <button type="button" class="btn ie-crop-cancel">取消</button>
-              </span>
               <span class="ie-toolitem ie-color">
                 <button type="button" class="ie-tool ie-color-btn" title="線の色（Excel風パレットから選択）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M3.5 17.5 20.5 6.5" stroke-width="3"/></svg><span class="ie-color-chip"></span></button>
                 <input type="color" value="#ff3b30" hidden />
@@ -6835,6 +6867,9 @@
               </span>
               <span class="ie-toolitem"><button class="ie-tool ie-undo" title="元に戻す (Ctrl+Z)"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4 9.5h11a5 5 0 0 1 0 10h-5"/><path d="M4 9.5 8 5.5"/><path d="m4 9.5 4 4"/></svg></button><span class="ie-toolname">元に戻す</span></span>
               <span class="ie-toolitem"><button class="ie-tool ie-redo" title="やり直す (Ctrl+Y)"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M20 9.5H9a5 5 0 0 0 0 10h5"/><path d="m20 9.5-4-4"/><path d="m20 9.5-4 4"/></svg></button><span class="ie-toolname">やり直す</span></span>
+              <span class="ie-crop-actions" hidden>
+                <button type="button" class="btn ie-crop-cancel" title="トリミングをやめる（適用しない）">取消</button>
+              </span>
             </div>
           </div>
           <div class="ie-canvas-wrap"><canvas class="ie-canvas"></canvas></div>
@@ -6844,6 +6879,12 @@
           </div>
         </div>`;
       document.body.appendChild(overlay);
+      // 背面の入力欄にフォーカスが残っていると、Delete キーが「入力中」扱いで図形削除に
+      // 効かない（キー入力も背面の欄へ流れる）。開いた時点で外しておく。
+      if (document.activeElement && typeof document.activeElement.blur === 'function'
+          && document.activeElement !== document.body) {
+        document.activeElement.blur();
+      }
 
       const canvas = overlay.querySelector('.ie-canvas');
       const canvasWrap = overlay.querySelector('.ie-canvas-wrap');
@@ -6872,6 +6913,9 @@
       // 移動・削除・色や書式の変更は選択中すべてに効く。
       let selectedIds = [];              // 選択順に並んだ id
       let marquee = null;                // 範囲選択中 { sx, sy, x, y, add }
+      // 線・矢印の始点スナップ（仕様 16章）。既存図形の端点・頂点をダブルクリックすると
+      // そこが始点になり、カーソル追従のプレビュー → 次のクリックで終点を確定する。
+      let lineAnchor = null;             // {x,y} スナップした始点。null = 通常のドラッグ描画
       const selectedObjs = () => objects.filter((o) => selectedIds.includes(o.id));
       const isSelected = (id) => selectedIds.includes(id);
       // 単独選択のときだけの実体。変形ハンドルはこれがあるときだけ出す。
@@ -7009,7 +7053,15 @@
       const fontSizeInput = overlay.querySelector('.ie-font-size');
       const boldBtn = overlay.querySelector('.ie-fmt-bold');
       const italicBtn = overlay.querySelector('.ie-fmt-italic');
-      const textFmt = { fs: 24, bold: true, italic: false }; // 新規作成の既定書式
+      // ---- 文字サイズの単位は「アプリで表示される大きさ（px）」（仕様 16章）----
+      // 編集キャンバスは原寸（サムネより大きい）ため、入力された数字（表示px）を
+      // そのまま fs にすると本文一覧では小さく見える。UI（入力欄・一覧・A˄A˅）と
+      // textFmt は表示px、オブジェクトの o.fs はキャンバスpx で持ち、applyTextFmt と
+      // syncTextFmtUI の2か所だけで換算する。
+      const fsScale = () => fsDispScale(canvas.width, canvas.height, IMG_MAX_EDGE, APP_IMG_DISPLAY_W);
+      const fsToCanvas = (v) => Math.max(1, Math.round((Number(v) || 16) * fsScale()));
+      const fsToDisp = (v) => Math.max(1, Math.round((Number(v) || 16) / fsScale()));
+      const textFmt = { fs: 24, bold: true, italic: false }; // 新規作成の既定書式（fs は表示px）
       let fmtTarget = null; // その場編集中の入力欄が登録するフック { get(), set(changes) }
       const isTextObj = (o) => !!o && (o.type === 'text' || o.type === 'callout');
       function syncTextFmtUI() {
@@ -7019,20 +7071,27 @@
           : (tool === 'text' || tool === 'callout') ? textFmt : null;
         textFmtWrap.hidden = !src;
         if (!src) return;
-        // 入力中のカーソルを飛ばさないよう、フォーカス中は値を書き戻さない
-        if (document.activeElement !== fontSizeInput) fontSizeInput.value = Math.round(Number(src.fs) || 16);
+        // 入力中のカーソルを飛ばさないよう、フォーカス中は値を書き戻さない。
+        // textFmt（新規の既定）は表示px、それ以外（オブジェクト・編集中フック）は
+        // キャンバスpx なので表示px へ換算して映す。
+        if (document.activeElement !== fontSizeInput) {
+          fontSizeInput.value = src === textFmt ? Math.round(Number(src.fs) || 16) : fsToDisp(src.fs);
+        }
         boldBtn.classList.toggle('active', src.bold !== false);
         italicBtn.classList.toggle('active', !!src.italic);
       }
       let fmtGestureFor = null; // 選択オブジェクトへの連続変更を1回の undo にまとめる
+      // changes.fs は表示px で受け取る（UI から呼ばれるため）。オブジェクト・編集中
+      // フックへはキャンバスpx へ換算して渡し、textFmt には表示px のまま引き継ぐ。
       function applyTextFmt(changes) {
         Object.assign(textFmt, changes); // 次回の新規作成にも引き継ぐ
-        if (fmtTarget) { fmtTarget.set(changes); syncTextFmtUI(); return; }
+        const conv = ('fs' in changes) ? { ...changes, fs: fsToCanvas(changes.fs) } : changes;
+        if (fmtTarget) { fmtTarget.set(conv); syncTextFmtUI(); return; }
         const targets = selectedObjs().filter(isTextObj);
         if (targets.length) {
           const gesture = targets.map((o) => o.id).join(',');
           if (fmtGestureFor !== gesture) { pushUndo(); fmtGestureFor = gesture; }
-          targets.forEach((o) => Object.assign(o, changes));
+          targets.forEach((o) => Object.assign(o, conv));
           recomposite();
         }
         syncTextFmtUI();
@@ -7214,6 +7273,7 @@
       function selectTool(t) {
         commitCallout(); // 別ツールへ移るときは編集中の吹き出しを確定
         finishFreeformIfAny(); // 描きかけのフリーフォームも確定（頂点不足なら破棄）
+        lineAnchor = null; // 始点スナップ待ちはツール切替で破棄
         if (t !== 'crop') exitCropMode(); // crop 以外へ移ると選択枠を破棄
         resetDrawStyleIfToolChanged(t);
         tool = t;
@@ -7250,7 +7310,12 @@
         selectTool(tool === 'hand' ? 'select' : 'hand');
       }
       // 同じツールを再クリックしたら既定モード（選択）へ戻す。
-      toolBtns.forEach((b) => b.addEventListener('click', () => selectTool(b.dataset.tool === tool ? 'select' : b.dataset.tool)));
+      // トリミングだけは、もう一度押したら「適用」（Office 製品と同じ挙動。仕様 16章）。
+      toolBtns.forEach((b) => b.addEventListener('click', () => {
+        const t = b.dataset.tool;
+        if (t === 'crop' && tool === 'crop') { applyCrop(); return; }
+        selectTool(t === tool ? 'select' : t);
+      }));
 
       const baseImg = new Image();
       baseImg.onload = () => {
@@ -7819,9 +7884,10 @@
       function beginText(p, existing) {
         const scale = canvas.offsetWidth ? canvas.offsetWidth / canvas.width : 1;
         // 書式（サイズ・太字・斜体）: 既存の再編集はその値、新規はツールバーの既定値
+        //（textFmt.fs は表示px なのでキャンバスpx へ換算する）
         const fmt = existing
           ? { fs: existing.fs, bold: existing.bold !== false, italic: !!existing.italic }
-          : { fs: textFmt.fs, bold: textFmt.bold, italic: textFmt.italic };
+          : { fs: fsToCanvas(textFmt.fs), bold: textFmt.bold, italic: textFmt.italic };
         const pos = existing ? { x: existing.x, y: existing.y } : p;
         // 入力欄に映すのは文字色（枠線色 color とは別。旧データは textColor へ移行済み）
         const textCol = existing ? existing.textColor : textColorValue;
@@ -7918,10 +7984,10 @@
       // existing を渡すと既存吹き出しオブジェクトの再編集（ダブルクリックから）。
       function beginCallout(p, existing) {
         commitCallout(); // 直前の未確定があれば確定してから
-        // 書式: 既存の再編集はその値、新規はツールバーの既定値
+        // 書式: 既存の再編集はその値、新規はツールバーの既定値（表示px → キャンバスpx）
         const fmt0 = existing
           ? { fs: existing.fs, bold: existing.bold !== false, italic: !!existing.italic }
-          : { fs: textFmt.fs, bold: textFmt.bold, italic: textFmt.italic };
+          : { fs: fsToCanvas(textFmt.fs), bold: textFmt.bold, italic: textFmt.italic };
         const ta = document.createElement('textarea');
         ta.className = 'ie-callout-input';
         ta.value = existing ? existing.text : 'ここをクリック';
@@ -8154,6 +8220,11 @@
         const rx = Math.round(cropRect.x), ry = Math.round(cropRect.y);
         const rw = Math.round(cropRect.w), rh = Math.round(cropRect.h);
         if (rw < 4 || rh < 4) return;
+        // 全画面のまま（＝何も切らない）なら履歴を積まずにモードを抜けるだけ
+        if (rx === 0 && ry === 0 && rw === canvas.width && rh === canvas.height) {
+          selectTool('select');
+          return;
+        }
         pushUndo();
         const tb = document.createElement('canvas'); tb.width = rw; tb.height = rh;
         tb.getContext('2d').drawImage(baseCanvas, rx, ry, rw, rh, 0, 0, rw, rh);
@@ -8177,7 +8248,6 @@
         recomposite();
       }
       if (cropActions) {
-        overlay.querySelector('.ie-crop-apply').addEventListener('click', applyCrop);
         overlay.querySelector('.ie-crop-cancel').addEventListener('click', () => selectTool('select'));
       }
       selectTool('select'); // 初期は選択モード（crop 系関数の定義後に呼ぶ）
@@ -8185,6 +8255,12 @@
       // ---- ポインタ操作 ----
       let drawing = false;
       let start = null;
+      function cancelLineAnchor() {
+        if (!lineAnchor) return false;
+        lineAnchor = null;
+        recomposite();
+        return true;
+      }
       // 選択オブジェクトのドラッグ。
       //   mode … 'move' か操作中のハンドル名  obj … 今掴んでいる実体（コピー中は複製）
       //   src  … 最初に掴んだ実体（再代入しない）  orig … 掴んだ瞬間の複製（差分の基準）
@@ -8227,6 +8303,7 @@
         }
         drawing = false;
         pendingPlace = null;
+        lineAnchor = null; // 始点スナップ待ちも破棄
         recomposite(); // プレビューを消す
       }
 
@@ -8301,6 +8378,19 @@
         }
         // フリーフォーム描画中：クリックは頂点の追加（始点なら閉じて確定）だけ。
         if (activeFreeform) { freeformClick(p); return; }
+        // 線・矢印の始点スナップ中：このクリックが終点＝ここで確定する。
+        if (lineAnchor && (tool === 'arrow' || tool === 'line')) {
+          const o = shapeFromDrag(tool, lineAnchor, p, e.shiftKey);
+          lineAnchor = null;
+          if (Math.hypot(o.x2 - o.x1, o.y2 - o.y1) >= 2) { // 始点と同じ場所ならゴミ図形を作らない
+            pushUndo();
+            o.id = newObjId();
+            objects.push(o);
+            setSelection([o.id]); // 描いた直後は選択状態（すぐ動かせる）
+          }
+          recomposite();
+          return;
+        }
         // 既存オブジェクトの選択・ドラッグ開始（ツール本来の動作より優先）。
         // 選択モード（'select'）でも描画ツール中でも、図形の選択・移動はできる。
         if (tool === 'select' || OBJECT_TOOLS.includes(tool)) {
@@ -8426,6 +8516,14 @@
         if (tool === 'hand') { doPan(e); return; }
         if (tool === 'crop') { if (cropDrag) updateCrop(xy(e)); return; }
         if (!drawing) {
+          // 線・矢印の始点スナップ中：カーソルまでの線をプレビュー（確定は次のクリック）。
+          if (lineAnchor && (tool === 'arrow' || tool === 'line')) {
+            const pa = xy(e);
+            recomposite();
+            drawObject(ctx, shapeFromDrag(tool, lineAnchor, pa, e.shiftKey));
+            canvas.style.cursor = 'crosshair';
+            return;
+          }
           // ホバー中のカーソル表示（ハンドル＝grab、本体＝move）。hand はパン用カーソル優先。
           // 選択モードでも描画ツール中でも図形は掴めるのでカーソルを出す。
           if ((tool === 'select' || OBJECT_TOOLS.includes(tool)) && tool !== 'hand') {
@@ -8541,7 +8639,7 @@
         if (activeCallout && activeCallout.dragTip) { activeCallout.dragTip = false; activeCallout.render(); return; }
         if (tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
         if (tool === 'pen' || tool === 'marker') bakeLiveStroke(); // 描きかけ分は確定させる
-        drawing = false; pendingPlace = null; cropDrag = null; objDrag = null; marquee = null; endPan();
+        drawing = false; pendingPlace = null; cropDrag = null; objDrag = null; marquee = null; lineAnchor = null; endPan();
         chord.active = false;
         canvas.style.cursor = '';
         recomposite();
@@ -8560,6 +8658,19 @@
           objDrag = null;
           if (hit.type === 'text') beginText(p, hit);
           else beginCallout(p, hit);
+          return;
+        }
+        // 線・矢印モード：既存図形の端点・頂点の近くでダブルクリックすると、その点を
+        // 始点にして描画開始（カーソル追従 → クリックで終点確定。Esc・右クリックで中止）。
+        if (tool === 'arrow' || tool === 'line') {
+          const sp = snapStartPoint(objects, p, 11 * dispScale());
+          if (sp) {
+            e.preventDefault();
+            clearSelection();
+            objDrag = null;
+            lineAnchor = sp;
+            recomposite();
+          }
         }
       });
       // 選択中オブジェクトの削除（Delete キーと右クリックメニューで共用）。複数選択なら全部消す。
@@ -8579,6 +8690,8 @@
         if (activeCallout) return; // 吹き出しの本文入力中は編集に任せる
         // フリーフォーム描画中の右クリックは描きかけを破棄して既定モードへ
         if (activeFreeform) { cancelFreeform(); selectTool(lastDefaultTool); return; }
+        // 線・矢印の始点スナップ中の右クリックも同じく破棄して既定モードへ
+        if (lineAnchor) { cancelLineAnchor(); selectTool(lastDefaultTool); return; }
         // 左ボタンを押したままの右クリック（押した瞬間に pointermove で処理できなかった場合の保険）。
         if (drawing || pendingPlace) { chordToggle(); return; }
         // 図形の上なら、クリック選択と同じ対象に限り削除メニューを出す。
@@ -8640,6 +8753,7 @@
           'ドラッグで描きます。図形が決まるのはマウスを離した時です（テキスト・吹き出しも同じ）。',
           '多角形はクリックで頂点を足し、始点をクリックで閉じて確定します（ダブルクリックで開いたまま確定、<kbd>Esc</kbd>で中止）。',
           '直線は <kbd>Shift</kbd> を押しながらで45°刻みになります。',
+          '矢印・直線モードでは、既存の線の端点や図形の頂点の近くでダブルクリックすると、その点を始点に描き始められます（カーソルに線が付いてくるので、クリックで終点を決めます。<kbd>Esc</kbd> か右クリックで中止）。',
           'テキストと吹き出しは、ダブルクリックで文字を編集し直せます。<kbd>Enter</kbd> で確定、<kbd>Shift</kbd>+<kbd>Enter</kbd> か <kbd>Alt</kbd>+<kbd>Enter</kbd> で改行します。',
           'テキストと吹き出しの文字は全角12字で自動的に折り返します。テキストボックスは左右の白丸ハンドルで幅を変えられ、変えた後はその幅で折り返して高さだけが文字量に合わせて変わります。',
           '消しゴムで消えるのは描いた注釈だけです（スクリーンショット本体は残ります）。',
@@ -8658,6 +8772,7 @@
           'テキストボックスは「線色」で枠線を付けられます。文字の色は「文字色」で別に決めます。',
           '矢印・直線・×印は線だけの図形なので、塗りつぶしはありません。',
           '文字サイズ・太字・斜体は、テキストか吹き出しを使っているときだけ出ます。',
+          '文字サイズの数字は「手順の一覧で表示される大きさ（px）」です。大きなスクリーンショットでも、24 なら一覧でおよそ24pxの文字になります。',
           '透過率はツールごとに覚えます（0%＝不透明）。',
         ]],
         ['取り消し', [
@@ -8665,7 +8780,7 @@
           '直前の20操作までさかのぼれます。',
         ]],
         ['トリミングと表示', [
-          'トリミングは範囲を決めてから「トリミング適用」を押します。',
+          'トリミングは範囲を決めてから、もう一度「トリミング」ボタンを押すと適用されます（Office と同じ）。やめるときは「取消」か <kbd>Esc</kbd>、別のツールへの切り替えでも取り消せます。',
           'ハンドで画像を動かせます。ホイールで拡大縮小（ハンド以外のツールは <kbd>Ctrl</kbd>＋ホイール）。',
           '表示倍率は編集中の見え方だけを変えるもので、保存される画像の仕上がりは変わりません。',
         ]],
@@ -8716,6 +8831,8 @@
         if ((objDrag || marquee) && ev.key !== 'Escape') return;
         if (ev.key === 'Escape') {
           if (cancelFreeform()) return; // 描きかけのフリーフォームは破棄だけ
+          if (cancelLineAnchor()) return; // 線・矢印の始点スナップ待ちも破棄だけ
+          if (cropMode) { selectTool('select'); return; } // トリミングは取消（エディタは閉じない）
           if (marquee) { marquee = null; recomposite(); return; } // 範囲選択の途中は取りやめ
           if (selectedIds.length) { clearSelection(); recomposite(); return; } // まず選択解除、もう一度で閉じる
           close();
@@ -9286,6 +9403,8 @@
         freeformBounds, distSeg, objHandles, applyObjDrag, wrapTextLines, textBoxPadOf, TEXT_WRAP_CHARS,
         // 画像編集の色モデル（線・塗り・文字）と多角形の内包判定
         normalizeObjColors, pointInPoly, marqueeRect, rectContainsBounds,
+        // 線・矢印の始点スナップと文字サイズの表示px換算（仕様 16章）
+        snapStartPoint, fsDispScale, APP_IMG_DISPLAY_W, IMG_MAX_EDGE,
         // PDF出力の倍率・用紙・向き
         clampPdfScale, pdfPaperDims, pdfPageStyleCss, pdfOutSettings, setPdfOutSettings,
         paginateBreaks, parsePdfPageRange, pdfPageRangeString,
