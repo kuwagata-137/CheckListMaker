@@ -709,6 +709,17 @@
   /* 「線なし」「塗りつぶしなし」は赤い斜線ハッチで示す */
   .ie-color-chip.none { background: repeating-linear-gradient(45deg, #fff 0 3px, #e24b4a 3px 4px); }
   .ie-size input { vertical-align: middle; }
+  /* 線の太さ・透過率の数値入力（表示倍率 .ie-zoom-num と同じ見た目） */
+  .ie-num {
+    width: 52px;
+    font: inherit;
+    text-align: right;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+  }
   /* テキスト/吹き出しの書式（サイズ・太字・斜体）。対象ツール/オブジェクトのときだけ表示。
      文字サイズは本文編集と共通の Word 風コンボ（.rb-sizebox）を使う。 */
   .ie-fmt {
@@ -724,7 +735,6 @@
   .ie-fmt:hover { background: var(--surface-2); }
   .ie-fmt.active { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
   .ie-opacity input[type="range"] { width: 90px; vertical-align: middle; }
-  .ie-opacity .ie-opacity-val { min-width: 3em; }
   .ie-canvas-wrap {
     /* ウインドウ固定のもと、ここが残り高さを埋めて内部スクロールする。
        100% では画像全体がちょうど収まり（fitScale）、スクロール不要。 */
@@ -6837,7 +6847,7 @@
               </span>
               <label class="ie-size ie-field" title="線の太さ">
                 <span class="ie-fieldname">線の太さ</span>
-                <span class="ie-fieldbody"><input type="range" min="1" max="40" value="6" /></span>
+                <span class="ie-fieldbody"><input type="range" min="1" max="40" value="6" /><input type="number" class="ie-num ie-size-num" min="1" max="40" step="1" value="6" aria-label="線の太さ（px）" /></span>
               </label>
               <span class="ie-textfmt ie-field" hidden>
                 <span class="ie-fieldname">文字の書式</span>
@@ -6855,7 +6865,7 @@
               </span>
               <label class="ie-opacity ie-field" title="透過率（0%=不透明）">
                 <span class="ie-fieldname">透過率</span>
-                <span class="ie-fieldbody"><input type="range" min="0" max="90" step="10" value="0" /><span class="ie-opacity-val">0%</span></span>
+                <span class="ie-fieldbody"><input type="range" min="0" max="90" step="10" value="0" /><input type="number" class="ie-num ie-opacity-num" min="0" max="90" step="10" value="0" aria-label="透過率（％）" />%</span>
               </label>
               <span class="ie-zoom ie-field" title="編集中の表示倍率（拡大縮小しても保存される画像の仕上がりは変わりません）">
                 <span class="ie-fieldname">表示倍率</span>
@@ -6929,23 +6939,35 @@
       // ---- ツール別の透過率（%）。スライダーはツール切替でそのツールの値に同期 ----
       const toolOpacity = { pen: 0, marker: 60, arrow: 0, line: 0, rect: 0, ellipse: 0, cross: 0, freeform: 0, text: 0, callout: 0 };
       const opacityWrap = overlay.querySelector('.ie-opacity');
-      const opacityInput = overlay.querySelector('.ie-opacity input');
-      const opacityVal = overlay.querySelector('.ie-opacity-val');
+      const opacityInput = overlay.querySelector('.ie-opacity input[type="range"]');
+      const opacityNum = overlay.querySelector('.ie-opacity-num');
       const toolAlpha = (t) => 1 - (toolOpacity[t] || 0) / 100;
       function syncOpacityUI() {
         const has = Object.prototype.hasOwnProperty.call(toolOpacity, tool);
         opacityWrap.style.visibility = has ? '' : 'hidden';
-        if (has) { opacityInput.value = toolOpacity[tool]; opacityVal.textContent = toolOpacity[tool] + '%'; }
+        if (!has) return;
+        opacityInput.value = toolOpacity[tool];
+        // 入力中のカーソルを飛ばさないよう、フォーカス中は値を書き戻さない（数値欄共通）
+        if (document.activeElement !== opacityNum) opacityNum.value = toolOpacity[tool];
       }
-      // 選択オブジェクトへの透過率変更を1操作として undo できるよう、つまみを
-      // 掴んだ時点でスナップショットを取る。
-      opacityInput.addEventListener('pointerdown', () => { if (selectedIds.length) pushUndo(); });
-      opacityInput.addEventListener('input', () => {
-        const v = Math.max(0, Math.min(90, Math.round(Number(opacityInput.value) || 0)));
-        opacityVal.textContent = v + '%';
+      // スライダーと数値入力の両方から呼ぶ。0〜90% に丸めて両方の欄へ映し、
+      // 選択中の図形があれば即時反映する。丸めた値を返す。
+      function applyOpacityValue(raw) {
+        const v = Math.max(0, Math.min(90, Math.round(Number(raw) || 0)));
+        opacityInput.value = v;
+        if (document.activeElement !== opacityNum) opacityNum.value = v;
         if (Object.prototype.hasOwnProperty.call(toolOpacity, tool)) toolOpacity[tool] = v;
         const sels = selectedObjs();
         if (sels.length) { sels.forEach((o) => { o.opacity = 1 - v / 100; }); recomposite(); } // 選択中すべてへ即時反映
+        return v;
+      }
+      // 選択オブジェクトへの透過率変更を1操作として undo できるよう、つまみを
+      // 掴んだ時点でスナップショットを取る。数値入力は change（確定）時に取る。
+      opacityInput.addEventListener('pointerdown', () => { if (selectedIds.length) pushUndo(); });
+      opacityInput.addEventListener('input', () => applyOpacityValue(opacityInput.value));
+      opacityNum.addEventListener('change', () => {
+        if (selectedIds.length) pushUndo();
+        opacityNum.value = applyOpacityValue(opacityNum.value);
       });
       // ---- 線の太さ ----
       // 透過率と同じく、選択中の図形があればその太さを即時に変える（テキストの枠線・吹き出し・
@@ -6953,19 +6975,34 @@
       // 選択が無いときに動かした値だけを「次に描く太さ」nextSize として覚える。
       const DEFAULT_SIZE = 6;
       let nextSize = DEFAULT_SIZE;
-      sizeInput.addEventListener('pointerdown', () => { if (selectedIds.length) pushUndo(); });
-      sizeInput.addEventListener('input', () => {
-        const v = Math.max(1, Math.round(Number(sizeInput.value) || 1));
+      const sizeNum = overlay.querySelector('.ie-size-num');
+      // スライダーと数値入力の両方から呼ぶ。1〜40 に丸めて両方の欄へ映し、
+      // 選択中の図形があれば即時反映、無ければ「次に描く太さ」を更新する。丸めた値を返す。
+      function applySizeValue(raw) {
+        const v = Math.max(1, Math.min(40, Math.round(Number(raw) || 1)));
+        sizeInput.value = v;
+        if (document.activeElement !== sizeNum) sizeNum.value = v;
         const sels = selectedObjs();
-        if (!sels.length) { nextSize = v; return; }
+        if (!sels.length) { nextSize = v; return v; }
         sels.forEach((o) => { o.size = v; });
         recomposite();
+        return v;
+      }
+      sizeInput.addEventListener('pointerdown', () => { if (selectedIds.length) pushUndo(); });
+      sizeInput.addEventListener('input', () => applySizeValue(sizeInput.value));
+      sizeNum.addEventListener('change', () => {
+        if (selectedIds.length) pushUndo();
+        sizeNum.value = applySizeValue(sizeNum.value);
       });
-      // 選択中があればその太さ（複数なら先頭）、無ければ「次に描く太さ」をつまみに映す。
+      // 選択中があればその太さ（複数なら先頭）、無ければ「次に描く太さ」を両方の欄に映す。
       function syncSizeUI() {
         const sel = selectedObj();
-        if (sel && Number.isFinite(sel.size)) sizeInput.value = sel.size;
-        else if (!selectedIds.length) sizeInput.value = nextSize;
+        let v = null;
+        if (sel && Number.isFinite(sel.size)) v = sel.size;
+        else if (!selectedIds.length) v = nextSize;
+        if (v === null) return;
+        sizeInput.value = v;
+        if (document.activeElement !== sizeNum) sizeNum.value = v;
       }
       // ---- 色は「線・塗り・文字」の3つ ----
       // 図形の色は color（線）1つきりで、テキストは color が文字色を兼ねていたため
@@ -7304,6 +7341,7 @@
         textColorValue = DEFAULT_LINE_COLOR;
         nextSize = DEFAULT_SIZE;
         sizeInput.value = DEFAULT_SIZE;
+        sizeNum.value = DEFAULT_SIZE;
       }
       // 選択とハンドを行き来する（左クリック押下中の右クリック。仕様12章）
       function toggleDefaultTool() {
@@ -8768,6 +8806,7 @@
         ['色と書式', [
           '色は「線色」「塗りつぶし」「文字色」の3つに分かれています。図形を選んでから変えると、その図形に反映されます（複数選んでいればまとめて）。',
           '「線の太さ」も同じで、図形を選んでから動かすとその図形の線（テキストボックスの枠線・吹き出しの枠も）が太くなったり細くなったりします。',
+          '線の太さと透過率は、スライダーの右の数値欄に直接入力もできます（<kbd>Enter</kbd> か欄の外クリックで確定）。',
           '四角・丸・多角形（閉じたもの）・テキストボックス・吹き出しは塗りつぶせます。「塗りつぶしなし」で透明に戻せます。',
           'テキストボックスは「線色」で枠線を付けられます。文字の色は「文字色」で別に決めます。',
           '矢印・直線・×印は線だけの図形なので、塗りつぶしはありません。',
@@ -8830,6 +8869,9 @@
         // 掴んでいる objDrag.items の実体が迷子になってしまう。
         if ((objDrag || marquee) && ev.key !== 'Escape') return;
         if (ev.key === 'Escape') {
+          // 数値入力欄（太さ・透過率・文字サイズ・表示倍率）の Esc はフォーカスを外すだけ。
+          // エディタごと閉じてしまうと入力中の編集内容が破棄されて危ない。
+          if (inField) { ev.preventDefault(); t.blur(); return; }
           if (cancelFreeform()) return; // 描きかけのフリーフォームは破棄だけ
           if (cancelLineAnchor()) return; // 線・矢印の始点スナップ待ちも破棄だけ
           if (cropMode) { selectTool('select'); return; } // トリミングは取消（エディタは閉じない）
