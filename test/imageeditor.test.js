@@ -247,3 +247,182 @@ test('imageeditor — テキストの自動折り返しと幅ハンドル', asyn
     assert.equal(o.w, 20, '最小幅は fs'); assert.equal(o.x, 90);
   });
 });
+
+// 線・矢印の始点スナップと文字サイズの表示px換算（仕様は docs/spec-image-editor-enhancements.md 16章）
+test('imageeditor — 始点スナップと文字サイズの表示px換算', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+
+  await t.test('snapStartPoint — 線・矢印の端点にスナップし、最も近い点を選ぶ', () => {
+    const objs = [
+      { type: 'line', x1: 0, y1: 0, x2: 100, y2: 0 },
+      { type: 'arrow', x1: 8, y1: 6, x2: 200, y2: 200 },
+    ];
+    // (5,5) から: line の (0,0) は距離7.07、arrow の (8,6) は距離3.16 → arrow の始点
+    assert.deepEqual(plain(T.snapStartPoint(objs, { x: 5, y: 5 }, 11)), { x: 8, y: 6 });
+    // 終点側にも効く
+    assert.deepEqual(plain(T.snapStartPoint(objs, { x: 98, y: 3 }, 11)), { x: 100, y: 0 });
+  });
+
+  await t.test('snapStartPoint — 矩形・×印は四隅、フリーフォームは頂点', () => {
+    const rect = [{ type: 'rect', x: 10, y: 20, w: 100, h: 60 }];
+    assert.deepEqual(plain(T.snapStartPoint(rect, { x: 108, y: 82 }, 11)), { x: 110, y: 80 }, '右下の角');
+    assert.equal(T.snapStartPoint(rect, { x: 60, y: 20 }, 11), null, '辺の中点は対象外');
+    const cross = [{ type: 'cross', x: 0, y: 0, w: 10, h: 10 }];
+    assert.deepEqual(plain(T.snapStartPoint(cross, { x: 9, y: 1 }, 11)), { x: 10, y: 0 });
+    const ff = [{ type: 'freeform', pts: [{ x: 1, y: 1 }, { x: 50, y: 5 }] }];
+    assert.deepEqual(plain(T.snapStartPoint(ff, { x: 48, y: 7 }, 11)), { x: 50, y: 5 });
+  });
+
+  await t.test('snapStartPoint — 許容外・対象外の図形・hidden は null', () => {
+    const objs = [{ type: 'line', x1: 0, y1: 0, x2: 100, y2: 0 }];
+    assert.equal(T.snapStartPoint(objs, { x: 20, y: 20 }, 11), null, '許容半径の外');
+    assert.equal(T.snapStartPoint([{ type: 'ellipse', x: 0, y: 0, w: 10, h: 10 }], { x: 0, y: 0 }, 11), null, '丸に頂点は無い');
+    assert.equal(T.snapStartPoint([{ type: 'text', x: 0, y: 0, w: 10, h: 10 }], { x: 0, y: 0 }, 11), null, 'テキストも対象外');
+    assert.equal(T.snapStartPoint([{ type: 'line', x1: 0, y1: 0, x2: 9, y2: 0, hidden: true }], { x: 0, y: 0 }, 11), null, '再編集中（hidden）は対象外');
+    assert.equal(T.snapStartPoint(null, { x: 0, y: 0 }, 11), null, 'objects が無くても落ちない');
+  });
+
+  await t.test('fsDispScale — 小さい画像は 1（等倍）', () => {
+    assert.equal(T.fsDispScale(600, 400, 1600, 848), 1, 'サムネにも本文幅にも収まる');
+    assert.equal(T.fsDispScale(848, 500, 1600, 848), 1, '本文幅ちょうどまで等倍');
+    assert.equal(T.fsDispScale(0, 0, 1600, 848), 1, '読み込み前（0×0）でも 1');
+  });
+
+  await t.test('fsDispScale — 本文幅・サムネで縮む率だけ大きく描く', () => {
+    // 幅1000: サムネはそのまま・本文で 848 に縮む → 1000/848
+    assert.ok(Math.abs(T.fsDispScale(1000, 600, 1600, 848) - 1000 / 848) < 1e-9);
+    // 2560×1440: サムネ幅1600 → 本文で848 → 2560/848 ≒ 3.02
+    assert.ok(Math.abs(T.fsDispScale(2560, 1440, 1600, 848) - 2560 / 848) < 1e-9);
+    // 縦長 800×3000: サムネ縮小 1600/3000 → 幅427 → 800/(800*1600/3000) = 3000/1600
+    assert.ok(Math.abs(T.fsDispScale(800, 3000, 1600, 848) - 3000 / 1600) < 1e-9);
+  });
+
+  await t.test('fsDispScale — アプリの定数（サムネ1600・本文幅848）が公開されている', () => {
+    assert.equal(T.IMG_MAX_EDGE, 1600);
+    assert.equal(T.APP_IMG_DISPLAY_W, 848);
+  });
+});
+
+// 図形の回転（仕様は docs/spec-image-editor-enhancements.md 18章）
+test('imageeditor — 図形の回転', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+
+  await t.test('canRotate — 線・矢印以外の図形が回転できる（19章で多角形・吹き出しを追加）', () => {
+    for (const type of ['rect', 'ellipse', 'cross', 'text', 'freeform', 'callout']) assert.ok(T.canRotate({ type }), type);
+    for (const type of ['line', 'arrow']) assert.ok(!T.canRotate({ type }), type);
+    assert.ok(!T.canRotate(null));
+  });
+
+  await t.test('normalizeAngle — 0〜359 の整数へ正規化', () => {
+    assert.equal(T.normalizeAngle(0), 0);
+    assert.equal(T.normalizeAngle(-90), 270);
+    assert.equal(T.normalizeAngle(450), 90);
+    assert.equal(T.normalizeAngle(359.6), 0, '四捨五入で360→0');
+    assert.equal(T.normalizeAngle(undefined), 0);
+  });
+
+  await t.test('rotatePointAround — 画面座標（y下向き）で時計回り', () => {
+    const p = T.rotatePointAround({ x: 10, y: 0 }, { x: 0, y: 0 }, 90);
+    assert.ok(Math.abs(p.x - 0) < 1e-9 && Math.abs(p.y - 10) < 1e-9, `(10,0)を90°→(0,10) 実際(${p.x},${p.y})`);
+  });
+
+  await t.test('toWorldPoint / toLocalPoint — 往復で元に戻る', () => {
+    const o = { type: 'rect', x: 0, y: 0, w: 100, h: 50, rot: 90 };
+    const w = T.toWorldPoint(o, { x: 0, y: 0 });
+    assert.ok(Math.abs(w.x - 75) < 1e-9 && Math.abs(w.y - (-25)) < 1e-9, `左上→(75,-25) 実際(${w.x},${w.y})`);
+    const back = T.toLocalPoint(o, w);
+    assert.ok(Math.abs(back.x) < 1e-9 && Math.abs(back.y) < 1e-9, '逆変換で(0,0)へ戻る');
+    const same = T.toWorldPoint({ type: 'rect', x: 0, y: 0, w: 100, h: 50 }, { x: 3, y: 4 });
+    assert.deepEqual(plain(same), { x: 3, y: 4 }, 'rot 無しはそのまま');
+  });
+
+  await t.test('applyObjDrag rotate — 中心からの向きが角度になる（真上=0°）', () => {
+    const obj = { type: 'rect', x: 0, y: 0, w: 100, h: 50 };
+    const drag = (px, py, shift) => {
+      T.applyObjDrag({ mode: 'rotate', obj, sx: 0, sy: 0, orig: { ...obj } }, { x: px, y: py }, shift);
+      return obj.rot;
+    };
+    assert.equal(drag(150, 25), 90, '中心の右＝90°');
+    assert.equal(drag(50, 200), 180, '中心の下＝180°');
+    assert.equal(drag(-100, 25), 270, '中心の左＝270°');
+    assert.equal(drag(50, -100), 0, '中心の上＝0°');
+    // Shift で15°刻み: 中心から少し右上（約80°）→ 75°
+    const c = { x: 50, y: 25 };
+    const rad = (80 - 90) * Math.PI / 180;
+    assert.equal(drag(c.x + 100 * Math.cos(rad), c.y + 100 * Math.sin(rad), true), 75);
+  });
+
+  await t.test('applyObjDrag — 回転中のリサイズは固定点（反対側）が動かない', () => {
+    const obj = { type: 'rect', x: 0, y: 0, w: 100, h: 50, rot: 90 };
+    const orig = { ...obj };
+    // 90°回転しているので、ワールドの下方向ドラッグ(0,30)がローカルの +x（e 側）になる
+    T.applyObjDrag({ mode: 'e', obj, sx: 0, sy: 0, orig }, { x: 0, y: 30 });
+    assert.ok(Math.abs(obj.w - 130) < 1e-9, `幅が130になる（実際 ${obj.w}）`);
+    assert.ok(Math.abs(obj.h - 50) < 1e-9, '高さは変わらない');
+    // 固定点＝左辺中点のワールド位置は移動前 (50,-25) のまま
+    const fixed = T.toWorldPoint(obj, { x: obj.x, y: obj.y + obj.h / 2 });
+    assert.ok(Math.abs(fixed.x - 50) < 1e-6 && Math.abs(fixed.y - (-25)) < 1e-6,
+      `固定点が動かない（実際 ${fixed.x},${fixed.y}）`);
+  });
+
+  await t.test('snapStartPoint — 回転した四角は回転後の角にスナップ', () => {
+    const objs = [{ type: 'rect', x: 0, y: 0, w: 100, h: 50, rot: 90 }];
+    // 左上角(0,0)は 90°回転で (75,-25) へ移る
+    const sp = T.snapStartPoint(objs, { x: 74, y: -24 }, 11);
+    assert.ok(sp && Math.abs(sp.x - 75) < 1e-9 && Math.abs(sp.y - (-25)) < 1e-9, JSON.stringify(sp));
+    assert.equal(T.snapStartPoint(objs, { x: 2, y: 2 }, 11), null, '回転前の角にはもう無い');
+  });
+});
+
+// 多角形・吹き出しの回転（仕様は docs/spec-image-editor-enhancements.md 19章）
+test('imageeditor — 多角形・吹き出しの回転', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+
+  await t.test('objRotationCenter — 多角形は外接矩形の中心', () => {
+    const c = T.objRotationCenter({ type: 'freeform', pts: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }] });
+    assert.deepEqual(plain(c), { x: 50, y: 25 });
+  });
+
+  await t.test('applyObjDrag rotate — 多角形も外接矩形の中心まわりに回る', () => {
+    const obj = { type: 'freeform', pts: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }] };
+    T.applyObjDrag({ mode: 'rotate', obj, sx: 0, sy: 0, orig: plain(obj) }, { x: 200, y: 25 });
+    assert.equal(obj.rot, 90, '中心(50,25)の右＝90°');
+  });
+
+  await t.test('applyObjDrag pt — 回転した多角形の頂点編集で、動かしていない頂点はワールドで固定', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }];
+    const obj = { type: 'freeform', pts: plain(pts), rot: 90 };
+    const orig = { type: 'freeform', pts: plain(pts), rot: 90 };
+    // 頂点0のワールド位置（編集前）: 中心(50,25) で90°回転 → (75,-25)
+    const before = T.toWorldPoint(orig, { x: 0, y: 0 });
+    assert.ok(Math.abs(before.x - 75) < 1e-9 && Math.abs(before.y - (-25)) < 1e-9);
+    // 頂点2をワールドで(0,30)ドラッグ（ローカルでは +x 方向）
+    T.applyObjDrag({ mode: 'pt2', obj, sx: 0, sy: 0, orig }, { x: 0, y: 30 });
+    const after = T.toWorldPoint(obj, obj.pts[0]);
+    assert.ok(Math.abs(after.x - 75) < 1e-6 && Math.abs(after.y - (-25)) < 1e-6,
+      `頂点0のワールド位置が変わらない（実際 ${after.x},${after.y}）`);
+  });
+
+  await t.test('applyObjDrag tip — 回転した吹き出しの尻尾はローカル軸で動く', () => {
+    const obj = { type: 'callout', x: 0, y: 0, w: 100, h: 50, rot: 90, tip: { x: 10, y: 60 } };
+    const orig = plain(obj);
+    // ワールドで(0,30)ドラッグ → 90°回転中はローカルの(30,0)
+    T.applyObjDrag({ mode: 'tip', obj, sx: 0, sy: 0, orig }, { x: 0, y: 30 });
+    assert.ok(Math.abs(obj.tip.x - 40) < 1e-9 && Math.abs(obj.tip.y - 60) < 1e-9,
+      `tip がローカルで(+30,0)動く（実際 ${obj.tip.x},${obj.tip.y}）`);
+  });
+
+  await t.test('snapStartPoint — 回転した多角形は頂点の回転後の位置にスナップ', () => {
+    const objs = [{ type: 'freeform', pts: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }], rot: 90 }];
+    // 頂点0 (0,0) は中心(50,25)の90°回転で (75,-25) へ
+    const sp = T.snapStartPoint(objs, { x: 74, y: -24 }, 11);
+    assert.ok(sp && Math.abs(sp.x - 75) < 1e-9 && Math.abs(sp.y - (-25)) < 1e-9, JSON.stringify(sp));
+    assert.equal(T.snapStartPoint(objs, { x: 2, y: 2 }, 11), null, '回転前の位置にはもう無い');
+  });
+});

@@ -709,6 +709,17 @@
   /* 「線なし」「塗りつぶしなし」は赤い斜線ハッチで示す */
   .ie-color-chip.none { background: repeating-linear-gradient(45deg, #fff 0 3px, #e24b4a 3px 4px); }
   .ie-size input { vertical-align: middle; }
+  /* 線の太さ・透過率の数値入力（表示倍率 .ie-zoom-num と同じ見た目） */
+  .ie-num {
+    width: 52px;
+    font: inherit;
+    text-align: right;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+  }
   /* テキスト/吹き出しの書式（サイズ・太字・斜体）。対象ツール/オブジェクトのときだけ表示。
      文字サイズは本文編集と共通の Word 風コンボ（.rb-sizebox）を使う。 */
   .ie-fmt {
@@ -724,7 +735,6 @@
   .ie-fmt:hover { background: var(--surface-2); }
   .ie-fmt.active { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
   .ie-opacity input[type="range"] { width: 90px; vertical-align: middle; }
-  .ie-opacity .ie-opacity-val { min-width: 3em; }
   .ie-canvas-wrap {
     /* ウインドウ固定のもと、ここが残り高さを埋めて内部スクロールする。
        100% では画像全体がちょうど収まり（fitScale）、スクロール不要。 */
@@ -6627,6 +6637,102 @@
     function rectContainsBounds(m, b) {
       return b.x >= m.x && b.y >= m.y && b.x + b.w <= m.x + m.w && b.y + b.h <= m.y + m.h;
     }
+    // ---- 図形の回転（仕様 18章・19章）----
+    // 回転できるのは四角・丸・×印・テキスト・多角形・吹き出し（要望 2026-09-14 で
+    // 多角形・吹き出しを追加）。線・矢印は端点を動かせば向きを変えられるので rot は
+    // 持たない。o.rot は度（時計回り・0〜359 の整数）。
+    const ROTATABLE_TYPES = ['rect', 'ellipse', 'cross', 'text', 'freeform', 'callout'];
+    const canRotate = (o) => !!o && ROTATABLE_TYPES.includes(o.type);
+    // 角度を 0〜359 の整数へ正規化する（-90 → 270、450 → 90）。
+    function normalizeAngle(v) {
+      let a = Math.round(Number(v) || 0) % 360;
+      if (a < 0) a += 360;
+      return a;
+    }
+    function rotatePointAround(p, c, deg) {
+      const a = deg * Math.PI / 180;
+      const dx = p.x - c.x, dy = p.y - c.y;
+      return { x: c.x + dx * Math.cos(a) - dy * Math.sin(a), y: c.y + dx * Math.sin(a) + dy * Math.cos(a) };
+    }
+    // 回転の中心＝矩形の中心（テキストは textLayout、吹き出しは drawObject が o.w / o.h を
+    // 最新に保つ）。多角形は頂点列の外接矩形の中心。
+    function objRotationCenter(o) {
+      if (o.type === 'freeform') {
+        const b = freeformBounds(o.pts);
+        return { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+      }
+      return { x: o.x + (o.w || 0) / 2, y: o.y + (o.h || 0) / 2 };
+    }
+    // ドラッグ差分（ワールド）を図形ローカル軸の差分へ写す（無回転ならそのまま）。
+    function localDelta(s, dx, dy) {
+      const rot = objRotation(s);
+      if (!rot) return { x: dx, y: dy };
+      return rotatePointAround({ x: dx, y: dy }, { x: 0, y: 0 }, -rot);
+    }
+    const objRotation = (o) => (canRotate(o) ? normalizeAngle(o.rot) : 0);
+    // ワールド座標 ⇄ 図形ローカル座標。ヒットテストはポインタをローカルへ写して
+    // 無回転の判定をそのまま使い、ハンドル表示はローカルの定位置をワールドへ写す。
+    function toLocalPoint(o, p) {
+      const r = objRotation(o);
+      return r ? rotatePointAround(p, objRotationCenter(o), -r) : p;
+    }
+    function toWorldPoint(o, p) {
+      const r = objRotation(o);
+      return r ? rotatePointAround(p, objRotationCenter(o), r) : p;
+    }
+    // 回転した図形のリサイズで、掴んだ側の反対（固定点）がワールド上で動かないよう
+    // 新しい箱（ローカル軸で計算した x1..y2）から位置を置き直す。Office と同じ挙動。
+    function reanchorRotatedBox(o, s, mode, rot, x1, y1, x2, y2) {
+      const c0 = { x: s.x + (s.w || 0) / 2, y: s.y + (s.h || 0) / 2 };
+      const fx = mode.includes('w') ? s.x + (s.w || 0) : mode.includes('e') ? s.x : c0.x;
+      const fy = mode.includes('n') ? s.y + (s.h || 0) : mode.includes('s') ? s.y : c0.y;
+      const Fw = rotatePointAround({ x: fx, y: fy }, c0, rot); // 固定点のワールド位置
+      const nfx = mode.includes('w') ? x2 : mode.includes('e') ? x1 : (x1 + x2) / 2;
+      const nfy = mode.includes('n') ? y2 : mode.includes('s') ? y1 : (y1 + y2) / 2;
+      const c1l = { x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
+      const v = rotatePointAround({ x: nfx - c1l.x, y: nfy - c1l.y }, { x: 0, y: 0 }, rot);
+      o.x = Fw.x - v.x - (x2 - x1) / 2;
+      o.y = Fw.y - v.y - (y2 - y1) / 2;
+    }
+    // 線・矢印の始点スナップ（仕様 16章）: 既存図形の端点・頂点（線・矢印の両端、
+    // 矩形・×印の四隅、フリーフォームの頂点）のうち p から tol 以内で最も近い点を返す。
+    // 丸・テキスト・吹き出しには「頂点」が無いので対象外。無ければ null。
+    function snapStartPoint(objects, p, tol) {
+      let best = null, bestD = Infinity;
+      for (const o of (Array.isArray(objects) ? objects : [])) {
+        if (!o || o.hidden) continue;
+        let pts = [];
+        if (o.type === 'arrow' || o.type === 'line') {
+          pts = [{ x: o.x1, y: o.y1 }, { x: o.x2, y: o.y2 }];
+        } else if (o.type === 'rect' || o.type === 'cross') {
+          // 回転している図形は、四隅のワールド上の位置（回転後の見た目の角）へスナップする
+          pts = [{ x: o.x, y: o.y }, { x: o.x + o.w, y: o.y },
+                 { x: o.x, y: o.y + o.h }, { x: o.x + o.w, y: o.y + o.h }]
+            .map((q) => toWorldPoint(o, q));
+        } else if (o.type === 'freeform') {
+          // 回転している多角形は、頂点の回転後の見た目の位置へスナップする
+          pts = (Array.isArray(o.pts) ? o.pts : []).map((q) => toWorldPoint(o, q));
+        }
+        for (const q of pts) {
+          const d = Math.hypot(p.x - q.x, p.y - q.y);
+          if (d <= tol && d < bestD) { best = { x: q.x, y: q.y }; bestD = d; }
+        }
+      }
+      return best;
+    }
+    // アプリ本文で画像が表示される幅（#app の max-width 880px − 左右 padding 16px×2）。
+    // 文字サイズの表示px換算（fsDispScale）の基準に使う。
+    const APP_IMG_DISPLAY_W = 848;
+    // 文字サイズの「表示px → キャンバス（原寸）px」換算率（仕様 16章）。
+    // 保存時にサムネへ縮む率（長辺 maxEdge）と、本文幅 dispW に収まるよう縮む率を掛けた
+    // 「アプリで見える大きさ / キャンバス上の大きさ」の逆数。原寸のほうが小さい画像は 1（拡大はしない）。
+    function fsDispScale(w, h, maxEdge, dispW) {
+      w = Number(w) || 0; h = Number(h) || 0;
+      if (w <= 0 || h <= 0) return 1;
+      const thumbW = w * Math.min(1, maxEdge / Math.max(w, h)); // サムネの実幅
+      const shownW = Math.min(thumbW, dispW);                   // 本文で見える幅
+      return Math.max(1, w / shownW);
+    }
     // 旧データ（色は color 1つだけ）を、線 color / 塗り fill / 文字 textColor の3つへ移す。
     //  - text は color が文字色だった。textColor へ移し、枠線は無し（color = null）にする。
     //  - callout は color が枠線かつ文字色。文字色を写し取り、塗りは従来の白ベタにする。
@@ -6706,12 +6812,22 @@
     // d.orig（ドラッグ開始時の複製）基準で差分を足すので累積誤差が出ない。
     // shift: 水平・垂直に拘束する（省略時は拘束しない＝従来どおり）。
     function applyObjDrag(d, p, shift) {
+      const o = d.obj, s = d.orig;
+      if (d.mode === 'rotate') {
+        // 回転ハンドル: 中心からポインタへの向きが角度になる（ハンドル定位置＝真上を 0° と
+        // するため +90）。Shift で15°刻み（Office と同じ）。中心は図形種別ごとの回転中心
+        //（多角形は頂点列の外接矩形の中心）。
+        const c = objRotationCenter(s);
+        let deg = Math.atan2(p.y - c.y, p.x - c.x) * 180 / Math.PI + 90;
+        if (shift) deg = Math.round(deg / 15) * 15;
+        o.rot = normalizeAngle(deg);
+        return;
+      }
       let dx = p.x - d.sx, dy = p.y - d.sy;
       if (shift && dragConstrains(d.mode)) {
         // 動きの大きい方の軸だけ残す。ちょうど等しいときは水平を採る。
         if (Math.abs(dx) >= Math.abs(dy)) dy = 0; else dx = 0;
       }
-      const o = d.obj, s = d.orig;
       if (d.mode === 'move') {
         if (o.type === 'arrow' || o.type === 'line') { o.x1 = s.x1 + dx; o.y1 = s.y1 + dy; o.x2 = s.x2 + dx; o.y2 = s.y2 + dy; }
         else if (o.type === 'freeform') { o.pts = s.pts.map((pt) => ({ x: pt.x + dx, y: pt.y + dy })); }
@@ -6719,12 +6835,37 @@
         if (o.tip) { o.tip.x = s.tip.x + dx; o.tip.y = s.tip.y + dy; }
       } else if (d.mode === 'p1') { o.x1 = s.x1 + dx; o.y1 = s.y1 + dy; }
       else if (d.mode === 'p2') { o.x2 = s.x2 + dx; o.y2 = s.y2 + dy; }
-      else if (d.mode === 'tip') { o.tip.x = s.tip.x + dx; o.tip.y = s.tip.y + dy; }
+      else if (d.mode === 'tip') { // 吹き出しの尻尾（tip はローカル座標なので差分もローカルへ）
+        const ld = localDelta(s, dx, dy);
+        o.tip.x = s.tip.x + ld.x; o.tip.y = s.tip.y + ld.y;
+      }
       else if (d.mode.startsWith('pt')) { // freeform の頂点を個別に動かす
         const i = Number(d.mode.slice(2));
-        if (o.pts && o.pts[i] && s.pts && s.pts[i]) { o.pts[i].x = s.pts[i].x + dx; o.pts[i].y = s.pts[i].y + dy; }
+        if (o.pts && o.pts[i] && s.pts && s.pts[i]) {
+          const ld = localDelta(s, dx, dy);
+          o.pts = s.pts.map((pt) => ({ x: pt.x, y: pt.y }));
+          o.pts[i].x = s.pts[i].x + ld.x;
+          o.pts[i].y = s.pts[i].y + ld.y;
+          const rot = objRotation(s);
+          if (rot) {
+            // 頂点が動くと外接矩形の中心（＝回転の軸）も動き、他の頂点までワールド上で
+            // ずれてしまう。軸の移動ぶん t = d0 - R(d0) だけ全頂点を平行移動して打ち消す
+            //（動かしていない頂点はワールド上で完全に固定される）。
+            const c0 = objRotationCenter(s);
+            const c1 = objRotationCenter({ type: s.type, pts: o.pts });
+            const d0 = { x: c0.x - c1.x, y: c0.y - c1.y };
+            const rd = rotatePointAround(d0, { x: 0, y: 0 }, rot);
+            const t = { x: d0.x - rd.x, y: d0.y - rd.y };
+            o.pts.forEach((pt) => { pt.x += t.x; pt.y += t.y; });
+          }
+        }
       }
       else { // nw/n/ne/w/e/sw/s/se（rect・ellipse・cross のリサイズ。単字は縦のみ／横のみ）
+        const rot = objRotation(s);
+        if (rot) { // 回転中はドラッグ差分を図形ローカル軸へ写してから辺の計算をする
+          const v = rotatePointAround({ x: dx, y: dy }, { x: 0, y: 0 }, -rot);
+          dx = v.x; dy = v.y;
+        }
         let x1 = s.x, y1 = s.y, x2 = s.x + s.w, y2 = s.y + s.h;
         if (d.mode.includes('w')) x1 = Math.min(x2 - 4, x1 + dx);
         if (d.mode.includes('e')) x2 = Math.max(x1 + 4, x2 + dx);
@@ -6737,9 +6878,11 @@
           if (d.mode.includes('w')) x1 = Math.min(x2 - minW, s.x + dx);
           if (d.mode.includes('e')) x2 = Math.max(x1 + minW, s.x + s.w + dx);
           o.x = x1; o.w = x2 - x1; o.wFixed = true;
+          if (rot) reanchorRotatedBox(o, s, d.mode, rot, x1, s.y, x2, s.y + (s.h || 0));
           return;
         }
         o.x = x1; o.y = y1; o.w = x2 - x1; o.h = y2 - y1;
+        if (rot) reanchorRotatedBox(o, s, d.mode, rot, x1, y1, x2, y2);
       }
     }
 
@@ -6782,14 +6925,10 @@
               <span class="ie-toolitem"><button class="ie-tool" data-tool="eraser" title="消しゴム（描いた注釈だけ消す）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg></button><span class="ie-toolname">消しゴム</span></span>
               <span class="ie-toolitem"><button class="ie-tool" data-tool="text" title="テキスト"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4.5 6.5h15"/><path d="M4.5 12h15"/><path d="M4.5 17.5h9"/></svg></button><span class="ie-toolname">テキスト</span></span>
               <span class="ie-toolitem"><button class="ie-tool" data-tool="mosaic" title="モザイク/ぼかし"><svg class="ie-ic" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/></svg></button><span class="ie-toolname">モザイク</span></span>
-              <span class="ie-toolitem"><button class="ie-tool" data-tool="crop" title="トリミング"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M6.5 2v15.5H22"/><path d="M2 6.5h15.5V22"/></svg></button><span class="ie-toolname">トリミング</span></span>
+              <span class="ie-toolitem"><button class="ie-tool" data-tool="crop" title="トリミング（もう一度押すと適用）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M6.5 2v15.5H22"/><path d="M2 6.5h15.5V22"/></svg></button><span class="ie-toolname">トリミング</span></span>
             </div>
             <span class="ie-toolitem ie-help"><button type="button" class="ie-tool ie-help-btn" title="画像編集の使い方"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M12 6.5C10 4.6 7 4.2 3.5 4.8v12.6c3.5-.6 6.5-.2 8.5 1.7 2-1.9 5-2.3 8.5-1.7V4.8C17 4.2 14 4.6 12 6.5Z"/><path d="M12 6.5v12.6"/></svg></button><span class="ie-toolname">ヘルプ</span></span>
             <div class="ie-controls">
-              <span class="ie-crop-actions" hidden>
-                <button type="button" class="btn primary ie-crop-apply">トリミング適用</button>
-                <button type="button" class="btn ie-crop-cancel">取消</button>
-              </span>
               <span class="ie-toolitem ie-color">
                 <button type="button" class="ie-tool ie-color-btn" title="線の色（Excel風パレットから選択）"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M3.5 17.5 20.5 6.5" stroke-width="3"/></svg><span class="ie-color-chip"></span></button>
                 <input type="color" value="#ff3b30" hidden />
@@ -6805,7 +6944,7 @@
               </span>
               <label class="ie-size ie-field" title="線の太さ">
                 <span class="ie-fieldname">線の太さ</span>
-                <span class="ie-fieldbody"><input type="range" min="1" max="40" value="6" /></span>
+                <span class="ie-fieldbody"><input type="range" min="1" max="40" value="6" /><input type="number" class="ie-num ie-size-num" min="1" max="40" step="1" value="6" aria-label="線の太さ（px）" /></span>
               </label>
               <span class="ie-textfmt ie-field" hidden>
                 <span class="ie-fieldname">文字の書式</span>
@@ -6823,8 +6962,17 @@
               </span>
               <label class="ie-opacity ie-field" title="透過率（0%=不透明）">
                 <span class="ie-fieldname">透過率</span>
-                <span class="ie-fieldbody"><input type="range" min="0" max="90" step="10" value="0" /><span class="ie-opacity-val">0%</span></span>
+                <span class="ie-fieldbody"><input type="range" min="0" max="90" step="10" value="0" /><input type="number" class="ie-num ie-opacity-num" min="0" max="90" step="10" value="0" aria-label="透過率（％）" />%</span>
               </label>
+              <span class="ie-rotate ie-field" hidden title="回転（0〜359°）。図形の上の丸ハンドルをドラッグしても回せます">
+                <span class="ie-fieldname">回転</span>
+                <span class="ie-fieldbody">
+                  <span class="rb-sizebox">
+                    <input type="number" class="rb-size-in ie-rotate-in" min="-360" max="720" step="1" value="0" aria-label="回転（度）" />
+                    <button type="button" class="rb-size-dd ie-rotate-dd" tabindex="-1" title="角度一覧（90°刻み）">▾</button>
+                  </span>°
+                </span>
+              </span>
               <span class="ie-zoom ie-field" title="編集中の表示倍率（拡大縮小しても保存される画像の仕上がりは変わりません）">
                 <span class="ie-fieldname">表示倍率</span>
                 <span class="ie-fieldbody">
@@ -6835,6 +6983,9 @@
               </span>
               <span class="ie-toolitem"><button class="ie-tool ie-undo" title="元に戻す (Ctrl+Z)"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4 9.5h11a5 5 0 0 1 0 10h-5"/><path d="M4 9.5 8 5.5"/><path d="m4 9.5 4 4"/></svg></button><span class="ie-toolname">元に戻す</span></span>
               <span class="ie-toolitem"><button class="ie-tool ie-redo" title="やり直す (Ctrl+Y)"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M20 9.5H9a5 5 0 0 0 0 10h5"/><path d="m20 9.5-4-4"/><path d="m20 9.5-4 4"/></svg></button><span class="ie-toolname">やり直す</span></span>
+              <span class="ie-crop-actions" hidden>
+                <button type="button" class="btn ie-crop-cancel" title="トリミングをやめる（適用しない）">取消</button>
+              </span>
             </div>
           </div>
           <div class="ie-canvas-wrap"><canvas class="ie-canvas"></canvas></div>
@@ -6844,6 +6995,12 @@
           </div>
         </div>`;
       document.body.appendChild(overlay);
+      // 背面の入力欄にフォーカスが残っていると、Delete キーが「入力中」扱いで図形削除に
+      // 効かない（キー入力も背面の欄へ流れる）。開いた時点で外しておく。
+      if (document.activeElement && typeof document.activeElement.blur === 'function'
+          && document.activeElement !== document.body) {
+        document.activeElement.blur();
+      }
 
       const canvas = overlay.querySelector('.ie-canvas');
       const canvasWrap = overlay.querySelector('.ie-canvas-wrap');
@@ -6872,6 +7029,9 @@
       // 移動・削除・色や書式の変更は選択中すべてに効く。
       let selectedIds = [];              // 選択順に並んだ id
       let marquee = null;                // 範囲選択中 { sx, sy, x, y, add }
+      // 線・矢印の始点スナップ（仕様 16章）。既存図形の端点・頂点をダブルクリックすると
+      // そこが始点になり、カーソル追従のプレビュー → 次のクリックで終点を確定する。
+      let lineAnchor = null;             // {x,y} スナップした始点。null = 通常のドラッグ描画
       const selectedObjs = () => objects.filter((o) => selectedIds.includes(o.id));
       const isSelected = (id) => selectedIds.includes(id);
       // 単独選択のときだけの実体。変形ハンドルはこれがあるときだけ出す。
@@ -6885,23 +7045,35 @@
       // ---- ツール別の透過率（%）。スライダーはツール切替でそのツールの値に同期 ----
       const toolOpacity = { pen: 0, marker: 60, arrow: 0, line: 0, rect: 0, ellipse: 0, cross: 0, freeform: 0, text: 0, callout: 0 };
       const opacityWrap = overlay.querySelector('.ie-opacity');
-      const opacityInput = overlay.querySelector('.ie-opacity input');
-      const opacityVal = overlay.querySelector('.ie-opacity-val');
+      const opacityInput = overlay.querySelector('.ie-opacity input[type="range"]');
+      const opacityNum = overlay.querySelector('.ie-opacity-num');
       const toolAlpha = (t) => 1 - (toolOpacity[t] || 0) / 100;
       function syncOpacityUI() {
         const has = Object.prototype.hasOwnProperty.call(toolOpacity, tool);
         opacityWrap.style.visibility = has ? '' : 'hidden';
-        if (has) { opacityInput.value = toolOpacity[tool]; opacityVal.textContent = toolOpacity[tool] + '%'; }
+        if (!has) return;
+        opacityInput.value = toolOpacity[tool];
+        // 入力中のカーソルを飛ばさないよう、フォーカス中は値を書き戻さない（数値欄共通）
+        if (document.activeElement !== opacityNum) opacityNum.value = toolOpacity[tool];
       }
-      // 選択オブジェクトへの透過率変更を1操作として undo できるよう、つまみを
-      // 掴んだ時点でスナップショットを取る。
-      opacityInput.addEventListener('pointerdown', () => { if (selectedIds.length) pushUndo(); });
-      opacityInput.addEventListener('input', () => {
-        const v = Math.max(0, Math.min(90, Math.round(Number(opacityInput.value) || 0)));
-        opacityVal.textContent = v + '%';
+      // スライダーと数値入力の両方から呼ぶ。0〜90% に丸めて両方の欄へ映し、
+      // 選択中の図形があれば即時反映する。丸めた値を返す。
+      function applyOpacityValue(raw) {
+        const v = Math.max(0, Math.min(90, Math.round(Number(raw) || 0)));
+        opacityInput.value = v;
+        if (document.activeElement !== opacityNum) opacityNum.value = v;
         if (Object.prototype.hasOwnProperty.call(toolOpacity, tool)) toolOpacity[tool] = v;
         const sels = selectedObjs();
         if (sels.length) { sels.forEach((o) => { o.opacity = 1 - v / 100; }); recomposite(); } // 選択中すべてへ即時反映
+        return v;
+      }
+      // 選択オブジェクトへの透過率変更を1操作として undo できるよう、つまみを
+      // 掴んだ時点でスナップショットを取る。数値入力は change（確定）時に取る。
+      opacityInput.addEventListener('pointerdown', () => { if (selectedIds.length) pushUndo(); });
+      opacityInput.addEventListener('input', () => applyOpacityValue(opacityInput.value));
+      opacityNum.addEventListener('change', () => {
+        if (selectedIds.length) pushUndo();
+        opacityNum.value = applyOpacityValue(opacityNum.value);
       });
       // ---- 線の太さ ----
       // 透過率と同じく、選択中の図形があればその太さを即時に変える（テキストの枠線・吹き出し・
@@ -6909,20 +7081,81 @@
       // 選択が無いときに動かした値だけを「次に描く太さ」nextSize として覚える。
       const DEFAULT_SIZE = 6;
       let nextSize = DEFAULT_SIZE;
-      sizeInput.addEventListener('pointerdown', () => { if (selectedIds.length) pushUndo(); });
-      sizeInput.addEventListener('input', () => {
-        const v = Math.max(1, Math.round(Number(sizeInput.value) || 1));
+      const sizeNum = overlay.querySelector('.ie-size-num');
+      // スライダーと数値入力の両方から呼ぶ。1〜40 に丸めて両方の欄へ映し、
+      // 選択中の図形があれば即時反映する。丸めた値を返す。
+      // 「次に描く太さ」nextSize は選択の有無によらず常に更新する。描いた直後の図形は
+      // 自動選択されるため、そこで調整した太さが次の図形へ引き継がれず「配置するたびに
+      // リセットされる」ように見えていた（要望 2026-09-14。色・透過率と同じ扱いに揃える）。
+      function applySizeValue(raw) {
+        const v = Math.max(1, Math.min(40, Math.round(Number(raw) || 1)));
+        sizeInput.value = v;
+        if (document.activeElement !== sizeNum) sizeNum.value = v;
+        nextSize = v;
         const sels = selectedObjs();
-        if (!sels.length) { nextSize = v; return; }
-        sels.forEach((o) => { o.size = v; });
-        recomposite();
+        if (sels.length) {
+          sels.forEach((o) => { o.size = v; });
+          recomposite();
+        }
+        return v;
+      }
+      sizeInput.addEventListener('pointerdown', () => { if (selectedIds.length) pushUndo(); });
+      sizeInput.addEventListener('input', () => applySizeValue(sizeInput.value));
+      sizeNum.addEventListener('change', () => {
+        if (selectedIds.length) pushUndo();
+        sizeNum.value = applySizeValue(sizeNum.value);
       });
-      // 選択中があればその太さ（複数なら先頭）、無ければ「次に描く太さ」をつまみに映す。
+      // 選択中があればその太さ（複数なら先頭）、無ければ「次に描く太さ」を両方の欄に映す。
       function syncSizeUI() {
         const sel = selectedObj();
-        if (sel && Number.isFinite(sel.size)) sizeInput.value = sel.size;
-        else if (!selectedIds.length) sizeInput.value = nextSize;
+        let v = null;
+        if (sel && Number.isFinite(sel.size)) v = sel.size;
+        else if (!selectedIds.length) v = nextSize;
+        if (v === null) return;
+        sizeInput.value = v;
+        if (document.activeElement !== sizeNum) sizeNum.value = v;
       }
+      // ---- 回転（透過率の右の角度欄。図形の上の回転ハンドルと同じ o.rot を書く）----
+      // 回転できる図形（四角・丸・×印・テキスト）を選んでいるときだけ出す。
+      // プルダウンは90°刻みの候補、数値欄は任意の角度を直接入力できる。
+      const rotateWrap = overlay.querySelector('.ie-rotate');
+      const rotateInput = overlay.querySelector('.ie-rotate-in');
+      const rotateDd = overlay.querySelector('.ie-rotate-dd');
+      const IE_ROTATE_PRESETS = [0, 90, 180, 270];
+      function syncRotateUI() {
+        const show = selectedObjs().some(canRotate);
+        rotateWrap.hidden = !show;
+        if (!show) return;
+        const sel = selectedObj();
+        const rep = canRotate(sel) ? sel : selectedObjs().find(canRotate); // 代表（最後に選んだもの優先）
+        if (document.activeElement !== rotateInput) rotateInput.value = objRotation(rep);
+      }
+      // 角度を 0〜359 へ正規化して、選択中の回転できる図形すべてへ適用する（1確定＝1 undo）。
+      function applyRotateValue(raw) {
+        const v = normalizeAngle(raw);
+        const targets = selectedObjs().filter(canRotate);
+        if (targets.length) {
+          pushUndo();
+          targets.forEach((o) => { o.rot = v; });
+          recomposite();
+        }
+        if (document.activeElement !== rotateInput) rotateInput.value = v;
+        return v;
+      }
+      rotateInput.addEventListener('change', () => { rotateInput.value = applyRotateValue(rotateInput.value); });
+      // ▾の角度一覧（文字サイズの▾と同じ Word 風メニュー。mousedown 時点の開閉でトグル）
+      let rotateMenuWasOpen = false;
+      rotateDd.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        rotateMenuWasOpen = !!document.getElementById('rb-palette');
+      });
+      rotateDd.addEventListener('click', () => {
+        if (rotateMenuWasOpen) { rotateMenuWasOpen = false; rbClosePalette(); return; }
+        rbOpenPopup(rotateDd, buildSizeMenu(IE_ROTATE_PRESETS, Number(rotateInput.value) || 0, (v) => {
+          rbClosePalette();
+          rotateInput.value = applyRotateValue(v);
+        }));
+      });
       // ---- 色は「線・塗り・文字」の3つ ----
       // 図形の色は color（線）1つきりで、テキストは color が文字色を兼ねていたため
       // 枠線に色を付けられなかった。3つに分けて、塗りつぶしと枠線を別々に決められるようにする。
@@ -7009,7 +7242,15 @@
       const fontSizeInput = overlay.querySelector('.ie-font-size');
       const boldBtn = overlay.querySelector('.ie-fmt-bold');
       const italicBtn = overlay.querySelector('.ie-fmt-italic');
-      const textFmt = { fs: 24, bold: true, italic: false }; // 新規作成の既定書式
+      // ---- 文字サイズの単位は「アプリで表示される大きさ（px）」（仕様 16章）----
+      // 編集キャンバスは原寸（サムネより大きい）ため、入力された数字（表示px）を
+      // そのまま fs にすると本文一覧では小さく見える。UI（入力欄・一覧・A˄A˅）と
+      // textFmt は表示px、オブジェクトの o.fs はキャンバスpx で持ち、applyTextFmt と
+      // syncTextFmtUI の2か所だけで換算する。
+      const fsScale = () => fsDispScale(canvas.width, canvas.height, IMG_MAX_EDGE, APP_IMG_DISPLAY_W);
+      const fsToCanvas = (v) => Math.max(1, Math.round((Number(v) || 16) * fsScale()));
+      const fsToDisp = (v) => Math.max(1, Math.round((Number(v) || 16) / fsScale()));
+      const textFmt = { fs: 24, bold: true, italic: false }; // 新規作成の既定書式（fs は表示px）
       let fmtTarget = null; // その場編集中の入力欄が登録するフック { get(), set(changes) }
       const isTextObj = (o) => !!o && (o.type === 'text' || o.type === 'callout');
       function syncTextFmtUI() {
@@ -7019,20 +7260,27 @@
           : (tool === 'text' || tool === 'callout') ? textFmt : null;
         textFmtWrap.hidden = !src;
         if (!src) return;
-        // 入力中のカーソルを飛ばさないよう、フォーカス中は値を書き戻さない
-        if (document.activeElement !== fontSizeInput) fontSizeInput.value = Math.round(Number(src.fs) || 16);
+        // 入力中のカーソルを飛ばさないよう、フォーカス中は値を書き戻さない。
+        // textFmt（新規の既定）は表示px、それ以外（オブジェクト・編集中フック）は
+        // キャンバスpx なので表示px へ換算して映す。
+        if (document.activeElement !== fontSizeInput) {
+          fontSizeInput.value = src === textFmt ? Math.round(Number(src.fs) || 16) : fsToDisp(src.fs);
+        }
         boldBtn.classList.toggle('active', src.bold !== false);
         italicBtn.classList.toggle('active', !!src.italic);
       }
       let fmtGestureFor = null; // 選択オブジェクトへの連続変更を1回の undo にまとめる
+      // changes.fs は表示px で受け取る（UI から呼ばれるため）。オブジェクト・編集中
+      // フックへはキャンバスpx へ換算して渡し、textFmt には表示px のまま引き継ぐ。
       function applyTextFmt(changes) {
         Object.assign(textFmt, changes); // 次回の新規作成にも引き継ぐ
-        if (fmtTarget) { fmtTarget.set(changes); syncTextFmtUI(); return; }
+        const conv = ('fs' in changes) ? { ...changes, fs: fsToCanvas(changes.fs) } : changes;
+        if (fmtTarget) { fmtTarget.set(conv); syncTextFmtUI(); return; }
         const targets = selectedObjs().filter(isTextObj);
         if (targets.length) {
           const gesture = targets.map((o) => o.id).join(',');
           if (fmtGestureFor !== gesture) { pushUndo(); fmtGestureFor = gesture; }
-          targets.forEach((o) => Object.assign(o, changes));
+          targets.forEach((o) => Object.assign(o, conv));
           recomposite();
         }
         syncTextFmtUI();
@@ -7207,6 +7455,7 @@
         syncTextFmtUI(); // ツール・選択・編集状態に書式コントロールを追随させる
         syncColorUI();   // 線・塗り・文字色のチップも同じタイミングで追随させる
         syncSizeUI();    // 線の太さのつまみも選択中の図形に追随させる
+        syncRotateUI();  // 回転欄も選択中の図形に追随させる（回転できる図形のときだけ表示）
       }
       // 表示 px / canvas px の比率（ハンドルや点線を画面上一定サイズに保つのに使う）。
       function dispScale() { return canvas.offsetWidth ? canvas.width / canvas.offsetWidth : 1; }
@@ -7214,6 +7463,7 @@
       function selectTool(t) {
         commitCallout(); // 別ツールへ移るときは編集中の吹き出しを確定
         finishFreeformIfAny(); // 描きかけのフリーフォームも確定（頂点不足なら破棄）
+        lineAnchor = null; // 始点スナップ待ちはツール切替で破棄
         if (t !== 'crop') exitCropMode(); // crop 以外へ移ると選択枠を破棄
         resetDrawStyleIfToolChanged(t);
         tool = t;
@@ -7244,13 +7494,19 @@
         textColorValue = DEFAULT_LINE_COLOR;
         nextSize = DEFAULT_SIZE;
         sizeInput.value = DEFAULT_SIZE;
+        sizeNum.value = DEFAULT_SIZE;
       }
       // 選択とハンドを行き来する（左クリック押下中の右クリック。仕様12章）
       function toggleDefaultTool() {
         selectTool(tool === 'hand' ? 'select' : 'hand');
       }
       // 同じツールを再クリックしたら既定モード（選択）へ戻す。
-      toolBtns.forEach((b) => b.addEventListener('click', () => selectTool(b.dataset.tool === tool ? 'select' : b.dataset.tool)));
+      // トリミングだけは、もう一度押したら「適用」（Office 製品と同じ挙動。仕様 16章）。
+      toolBtns.forEach((b) => b.addEventListener('click', () => {
+        const t = b.dataset.tool;
+        if (t === 'crop' && tool === 'crop') { applyCrop(); return; }
+        selectTool(t === tool ? 'select' : t);
+      }));
 
       const baseImg = new Image();
       baseImg.onload = () => {
@@ -7463,6 +7719,17 @@
       }
       function drawObject(g, o) {
         if (o.hidden) return; // 入力欄で再編集中は canvas 側を消しておく
+        // 回転は中心まわりの座標変換で掛ける（各描画関数は無回転のまま）。
+        const rot = objRotation(o);
+        if (rot) {
+          // 回転の中心は最新の箱で決める。テキスト・吹き出しは文字量で箱が変わるため、
+          // 中心を計算する前に o.w / o.h を測り直す（保存データを開いた直後も正しく回る）。
+          if (o.type === 'callout') { const b = calloutBox(o.text, o.fs, o); o.w = b.w; o.h = b.h; }
+          else if (o.type === 'text') textLayout(o);
+          const c = objRotationCenter(o);
+          g.save();
+          g.translate(c.x, c.y); g.rotate(rot * Math.PI / 180); g.translate(-c.x, -c.y);
+        }
         if (o.type === 'arrow') drawArrowObj(g, o);
         else if (o.type === 'line') drawLineObj(g, o);
         else if (o.type === 'rect') drawRectObj(g, o);
@@ -7471,6 +7738,7 @@
         else if (o.type === 'freeform') drawFreeformObj(g, o);
         else if (o.type === 'text') drawTextObj(g, o);
         else if (o.type === 'callout') drawCalloutObj(g, o, true);
+        if (rot) g.restore();
       }
       function drawObjects(g) { objects.forEach((o) => drawObject(g, o)); }
       // ドラッグ中の始点・終点から図形オブジェクトを組み立てる（プレビューと確定で共用）。
@@ -7527,7 +7795,14 @@
             g.beginPath(); g.moveTo(o.x1, o.y1); g.lineTo(o.x2, o.y2); g.stroke();
           } else {
             const b = objBounds(o);
+            const rot = objRotation(o); // 回転している図形は破線枠も一緒に回す
+            if (rot) {
+              const c = objRotationCenter(o);
+              g.save();
+              g.translate(c.x, c.y); g.rotate(rot * Math.PI / 180); g.translate(-c.x, -c.y);
+            }
             g.strokeRect(b.x - 4 * s, b.y - 4 * s, b.w + 8 * s, b.h + 8 * s);
+            if (rot) g.restore();
           }
           g.setLineDash([]);
         });
@@ -7540,11 +7815,13 @@
           g.strokeStyle = '#1a73e8';
           g.lineWidth = 2 * s;
           objHandles(sole).forEach((h) => {
+            const wp = toWorldPoint(sole, h); // 回転している図形はハンドルも回転後の位置へ
             g.beginPath();
-            g.arc(h.x, h.y, hr, 0, Math.PI * 2);
+            g.arc(wp.x, wp.y, hr, 0, Math.PI * 2);
             g.fill();
             g.stroke();
           });
+          if (canRotate(sole)) drawRotateHandle(g, sole, s);
         }
         if (marquee) { // 範囲選択の枠
           const m = marqueeRect(marquee);
@@ -7558,9 +7835,36 @@
         }
         g.restore();
       }
+      // 回転ハンドル（Office 風: 枠の上の丸に回転矢印。ドラッグで回す）。
+      function drawRotateHandle(g, o, s) {
+        const rp = rotateHandleWorldPos(o);
+        const b = objBounds(o);
+        const top = toWorldPoint(o, { x: b.x + b.w / 2, y: b.y - 4 * s });
+        g.save();
+        g.strokeStyle = '#1a73e8';
+        g.lineWidth = 1.2 * s;
+        g.beginPath(); g.moveTo(top.x, top.y); g.lineTo(rp.x, rp.y); g.stroke(); // 枠との継ぎ線
+        g.fillStyle = '#ffffff';
+        g.lineWidth = 2 * s;
+        g.beginPath(); g.arc(rp.x, rp.y, 7.5 * s, 0, Math.PI * 2); g.fill(); g.stroke();
+        // 中に小さな回転矢印（3/4 円弧＋矢先）
+        g.lineWidth = 1.5 * s;
+        g.beginPath(); g.arc(rp.x, rp.y, 3.6 * s, -Math.PI * 0.4, Math.PI * 1.05); g.stroke();
+        const aa = -Math.PI * 0.4; // 円弧の終端（時計の1時あたり）に矢先を付ける
+        const ax = rp.x + 3.6 * s * Math.cos(aa), ay = rp.y + 3.6 * s * Math.sin(aa);
+        g.beginPath();
+        g.moveTo(ax + 2.6 * s, ay + 0.4 * s);
+        g.lineTo(ax - 0.8 * s, ay - 2.2 * s);
+        g.lineTo(ax - 1.4 * s, ay + 2.4 * s);
+        g.closePath();
+        g.fillStyle = '#1a73e8';
+        g.fill();
+        g.restore();
+      }
       // ---- オブジェクトのヒットテスト（クリック選択・消しゴム削除用） ----
       // pad: 判定を広げる追加量（消しゴムの半径など）
       function objHit(o, p, pad) {
+        p = toLocalPoint(o, p); // 回転している図形はローカル座標で無回転の判定を使う
         const tol = Math.max((o.size || 0) / 2 + 4, 8 * dispScale()) + (pad || 0);
         if (o.type === 'arrow' || o.type === 'line') return distSeg(p, o.x1, o.y1, o.x2, o.y2) <= tol;
         if (o.type === 'cross') {
@@ -7612,10 +7916,34 @@
       }
       function hitObjHandle(o, p) {
         const tol = 11 * dispScale();
+        if (canRotate(o)) { // 回転ハンドル（枠の上に浮かぶ丸）
+          const rp = rotateHandleWorldPos(o);
+          if (Math.abs(p.x - rp.x) <= tol && Math.abs(p.y - rp.y) <= tol) return 'rotate';
+        }
         for (const h of objHandles(o)) {
-          if (Math.abs(p.x - h.x) <= tol && Math.abs(p.y - h.y) <= tol) return h.kind;
+          const wp = toWorldPoint(o, h); // 回転している図形はハンドルもワールドへ写して判定
+          if (Math.abs(p.x - wp.x) <= tol && Math.abs(p.y - wp.y) <= tol) return h.kind;
         }
         return null;
+      }
+      // 回転ハンドルのワールド座標（選択枠の上辺中央の上 26px。画面上一定の距離）。
+      function rotateHandleWorldPos(o) {
+        const b = objBounds(o);
+        return toWorldPoint(o, { x: b.x + b.w / 2, y: b.y - 26 * dispScale() });
+      }
+      // 回転を含めた外接矩形（範囲選択の「丸ごと入った」判定用）。
+      function objAabb(o) {
+        const b = objBounds(o);
+        const rot = objRotation(o);
+        if (!rot) return b;
+        const c = objRotationCenter(o);
+        const corners = [
+          { x: b.x, y: b.y }, { x: b.x + b.w, y: b.y },
+          { x: b.x, y: b.y + b.h }, { x: b.x + b.w, y: b.y + b.h },
+        ].map((q) => rotatePointAround(q, c, rot));
+        const xs = corners.map((q) => q.x), ys = corners.map((q) => q.y);
+        const x1 = Math.min(...xs), y1 = Math.min(...ys);
+        return { x: x1, y: y1, w: Math.max(...xs) - x1, h: Math.max(...ys) - y1 };
       }
       // 消しゴムが触れたオブジェクトを丸ごと削除する（要件：元画像以外はすべて消せる）
       function eraseObjectsAt(p) {
@@ -7819,9 +8147,10 @@
       function beginText(p, existing) {
         const scale = canvas.offsetWidth ? canvas.offsetWidth / canvas.width : 1;
         // 書式（サイズ・太字・斜体）: 既存の再編集はその値、新規はツールバーの既定値
+        //（textFmt.fs は表示px なのでキャンバスpx へ換算する）
         const fmt = existing
           ? { fs: existing.fs, bold: existing.bold !== false, italic: !!existing.italic }
-          : { fs: textFmt.fs, bold: textFmt.bold, italic: textFmt.italic };
+          : { fs: fsToCanvas(textFmt.fs), bold: textFmt.bold, italic: textFmt.italic };
         const pos = existing ? { x: existing.x, y: existing.y } : p;
         // 入力欄に映すのは文字色（枠線色 color とは別。旧データは textColor へ移行済み）
         const textCol = existing ? existing.textColor : textColorValue;
@@ -7918,10 +8247,10 @@
       // existing を渡すと既存吹き出しオブジェクトの再編集（ダブルクリックから）。
       function beginCallout(p, existing) {
         commitCallout(); // 直前の未確定があれば確定してから
-        // 書式: 既存の再編集はその値、新規はツールバーの既定値
+        // 書式: 既存の再編集はその値、新規はツールバーの既定値（表示px → キャンバスpx）
         const fmt0 = existing
           ? { fs: existing.fs, bold: existing.bold !== false, italic: !!existing.italic }
-          : { fs: textFmt.fs, bold: textFmt.bold, italic: textFmt.italic };
+          : { fs: fsToCanvas(textFmt.fs), bold: textFmt.bold, italic: textFmt.italic };
         const ta = document.createElement('textarea');
         ta.className = 'ie-callout-input';
         ta.value = existing ? existing.text : 'ここをクリック';
@@ -8154,6 +8483,11 @@
         const rx = Math.round(cropRect.x), ry = Math.round(cropRect.y);
         const rw = Math.round(cropRect.w), rh = Math.round(cropRect.h);
         if (rw < 4 || rh < 4) return;
+        // 全画面のまま（＝何も切らない）なら履歴を積まずにモードを抜けるだけ
+        if (rx === 0 && ry === 0 && rw === canvas.width && rh === canvas.height) {
+          selectTool('select');
+          return;
+        }
         pushUndo();
         const tb = document.createElement('canvas'); tb.width = rw; tb.height = rh;
         tb.getContext('2d').drawImage(baseCanvas, rx, ry, rw, rh, 0, 0, rw, rh);
@@ -8177,7 +8511,6 @@
         recomposite();
       }
       if (cropActions) {
-        overlay.querySelector('.ie-crop-apply').addEventListener('click', applyCrop);
         overlay.querySelector('.ie-crop-cancel').addEventListener('click', () => selectTool('select'));
       }
       selectTool('select'); // 初期は選択モード（crop 系関数の定義後に呼ぶ）
@@ -8185,6 +8518,12 @@
       // ---- ポインタ操作 ----
       let drawing = false;
       let start = null;
+      function cancelLineAnchor() {
+        if (!lineAnchor) return false;
+        lineAnchor = null;
+        recomposite();
+        return true;
+      }
       // 選択オブジェクトのドラッグ。
       //   mode … 'move' か操作中のハンドル名  obj … 今掴んでいる実体（コピー中は複製）
       //   src  … 最初に掴んだ実体（再代入しない）  orig … 掴んだ瞬間の複製（差分の基準）
@@ -8227,6 +8566,7 @@
         }
         drawing = false;
         pendingPlace = null;
+        lineAnchor = null; // 始点スナップ待ちも破棄
         recomposite(); // プレビューを消す
       }
 
@@ -8301,6 +8641,19 @@
         }
         // フリーフォーム描画中：クリックは頂点の追加（始点なら閉じて確定）だけ。
         if (activeFreeform) { freeformClick(p); return; }
+        // 線・矢印の始点スナップ中：このクリックが終点＝ここで確定する。
+        if (lineAnchor && (tool === 'arrow' || tool === 'line')) {
+          const o = shapeFromDrag(tool, lineAnchor, p, e.shiftKey);
+          lineAnchor = null;
+          if (Math.hypot(o.x2 - o.x1, o.y2 - o.y1) >= 2) { // 始点と同じ場所ならゴミ図形を作らない
+            pushUndo();
+            o.id = newObjId();
+            objects.push(o);
+            setSelection([o.id]); // 描いた直後は選択状態（すぐ動かせる）
+          }
+          recomposite();
+          return;
+        }
         // 既存オブジェクトの選択・ドラッグ開始（ツール本来の動作より優先）。
         // 選択モード（'select'）でも描画ツール中でも、図形の選択・移動はできる。
         if (tool === 'select' || OBJECT_TOOLS.includes(tool)) {
@@ -8426,6 +8779,14 @@
         if (tool === 'hand') { doPan(e); return; }
         if (tool === 'crop') { if (cropDrag) updateCrop(xy(e)); return; }
         if (!drawing) {
+          // 線・矢印の始点スナップ中：カーソルまでの線をプレビュー（確定は次のクリック）。
+          if (lineAnchor && (tool === 'arrow' || tool === 'line')) {
+            const pa = xy(e);
+            recomposite();
+            drawObject(ctx, shapeFromDrag(tool, lineAnchor, pa, e.shiftKey));
+            canvas.style.cursor = 'crosshair';
+            return;
+          }
           // ホバー中のカーソル表示（ハンドル＝grab、本体＝move）。hand はパン用カーソル優先。
           // 選択モードでも描画ツール中でも図形は掴めるのでカーソルを出す。
           if ((tool === 'select' || OBJECT_TOOLS.includes(tool)) && tool !== 'hand') {
@@ -8485,9 +8846,9 @@
           }
           return;
         }
-        if (marquee) { // 範囲に完全に収まった図形を選ぶ
+        if (marquee) { // 範囲に完全に収まった図形を選ぶ（回転している図形は回転後の外接矩形で見る）
           const m = marqueeRect(marquee);
-          const ids = objects.filter((o) => !o.hidden && rectContainsBounds(m, objBounds(o))).map((o) => o.id);
+          const ids = objects.filter((o) => !o.hidden && rectContainsBounds(m, objAabb(o))).map((o) => o.id);
           if (marquee.add) ids.forEach((id) => { if (!isSelected(id)) selectedIds.push(id); });
           else setSelection(ids);
           marquee = null;
@@ -8541,7 +8902,7 @@
         if (activeCallout && activeCallout.dragTip) { activeCallout.dragTip = false; activeCallout.render(); return; }
         if (tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
         if (tool === 'pen' || tool === 'marker') bakeLiveStroke(); // 描きかけ分は確定させる
-        drawing = false; pendingPlace = null; cropDrag = null; objDrag = null; marquee = null; endPan();
+        drawing = false; pendingPlace = null; cropDrag = null; objDrag = null; marquee = null; lineAnchor = null; endPan();
         chord.active = false;
         canvas.style.cursor = '';
         recomposite();
@@ -8560,6 +8921,19 @@
           objDrag = null;
           if (hit.type === 'text') beginText(p, hit);
           else beginCallout(p, hit);
+          return;
+        }
+        // 線・矢印モード：既存図形の端点・頂点の近くでダブルクリックすると、その点を
+        // 始点にして描画開始（カーソル追従 → クリックで終点確定。Esc・右クリックで中止）。
+        if (tool === 'arrow' || tool === 'line') {
+          const sp = snapStartPoint(objects, p, 11 * dispScale());
+          if (sp) {
+            e.preventDefault();
+            clearSelection();
+            objDrag = null;
+            lineAnchor = sp;
+            recomposite();
+          }
         }
       });
       // 選択中オブジェクトの削除（Delete キーと右クリックメニューで共用）。複数選択なら全部消す。
@@ -8579,6 +8953,8 @@
         if (activeCallout) return; // 吹き出しの本文入力中は編集に任せる
         // フリーフォーム描画中の右クリックは描きかけを破棄して既定モードへ
         if (activeFreeform) { cancelFreeform(); selectTool(lastDefaultTool); return; }
+        // 線・矢印の始点スナップ中の右クリックも同じく破棄して既定モードへ
+        if (lineAnchor) { cancelLineAnchor(); selectTool(lastDefaultTool); return; }
         // 左ボタンを押したままの右クリック（押した瞬間に pointermove で処理できなかった場合の保険）。
         if (drawing || pendingPlace) { chordToggle(); return; }
         // 図形の上なら、クリック選択と同じ対象に限り削除メニューを出す。
@@ -8631,6 +9007,8 @@
           '「選択」モードで何も無い所からドラッグすると範囲選択になります。<strong>枠に丸ごと入った図形だけ</strong>が選ばれます（<kbd>Ctrl</kbd> か <kbd>Shift</kbd> を押しながらだと今の選択に足します）。',
           '選んだ図形はドラッグで移動できます。複数選んでいればまとめて動きます。',
           '白丸のハンドルで変形できるのは、1つだけ選んでいるときです（辺の中央は縦だけ・横だけ）。',
+          '四角・丸・×印・テキスト・多角形・吹き出しは、選択したときに枠の上へ出る丸いハンドルをドラッグすると回転できます（<kbd>Shift</kbd> で15°刻み）。角度はツールバーの「回転」欄でも指定できます（▾に90°刻みの候補、直接入力も可）。',
+          '直線・矢印は端点を動かして向きを変えてください（回転ハンドルは出ません）。',
           '図形の外をクリックすると選択が外れます。',
           '<kbd>Ctrl</kbd>＋ドラッグでコピーします（ドラッグを始めた後に押しても効きます）。',
           '<kbd>Shift</kbd>＋ドラッグで水平・垂直に固定します。',
@@ -8640,6 +9018,7 @@
           'ドラッグで描きます。図形が決まるのはマウスを離した時です（テキスト・吹き出しも同じ）。',
           '多角形はクリックで頂点を足し、始点をクリックで閉じて確定します（ダブルクリックで開いたまま確定、<kbd>Esc</kbd>で中止）。',
           '直線は <kbd>Shift</kbd> を押しながらで45°刻みになります。',
+          '矢印・直線モードでは、既存の線の端点や図形の頂点の近くでダブルクリックすると、その点を始点に描き始められます（カーソルに線が付いてくるので、クリックで終点を決めます。<kbd>Esc</kbd> か右クリックで中止）。',
           'テキストと吹き出しは、ダブルクリックで文字を編集し直せます。<kbd>Enter</kbd> で確定、<kbd>Shift</kbd>+<kbd>Enter</kbd> か <kbd>Alt</kbd>+<kbd>Enter</kbd> で改行します。',
           'テキストと吹き出しの文字は全角12字で自動的に折り返します。テキストボックスは左右の白丸ハンドルで幅を変えられ、変えた後はその幅で折り返して高さだけが文字量に合わせて変わります。',
           '消しゴムで消えるのは描いた注釈だけです（スクリーンショット本体は残ります）。',
@@ -8650,14 +9029,17 @@
           '描画ツールを使っている最中に右クリックすると、直前の既定モードへ戻ります（描きかけは取りやめ）。',
           '左ボタンを押したまま右クリックすると、その場で「選択」と「ハンド」が入れ替わります（どちらのボタンを先に離しても同じです）。',
           '別の描画ツールに切り替えると、線色・塗りつぶし・文字色・線の太さは既定に戻ります（同じツールに戻ったときはそのままです）。',
+          '同じツールで描き続けている間は、これらの設定は図形を置いても保持されます。選択中の図形に加えた変更（太さ・色・透過率）も、次に描く図形へそのまま引き継がれます。',
         ]],
         ['色と書式', [
           '色は「線色」「塗りつぶし」「文字色」の3つに分かれています。図形を選んでから変えると、その図形に反映されます（複数選んでいればまとめて）。',
           '「線の太さ」も同じで、図形を選んでから動かすとその図形の線（テキストボックスの枠線・吹き出しの枠も）が太くなったり細くなったりします。',
+          '線の太さと透過率は、スライダーの右の数値欄に直接入力もできます（<kbd>Enter</kbd> か欄の外クリックで確定）。',
           '四角・丸・多角形（閉じたもの）・テキストボックス・吹き出しは塗りつぶせます。「塗りつぶしなし」で透明に戻せます。',
           'テキストボックスは「線色」で枠線を付けられます。文字の色は「文字色」で別に決めます。',
           '矢印・直線・×印は線だけの図形なので、塗りつぶしはありません。',
           '文字サイズ・太字・斜体は、テキストか吹き出しを使っているときだけ出ます。',
+          '文字サイズの数字は「手順の一覧で表示される大きさ（px）」です。大きなスクリーンショットでも、24 なら一覧でおよそ24pxの文字になります。',
           '透過率はツールごとに覚えます（0%＝不透明）。',
         ]],
         ['取り消し', [
@@ -8665,7 +9047,7 @@
           '直前の20操作までさかのぼれます。',
         ]],
         ['トリミングと表示', [
-          'トリミングは範囲を決めてから「トリミング適用」を押します。',
+          'トリミングは範囲を決めてから、もう一度「トリミング」ボタンを押すと適用されます（Office と同じ）。やめるときは「取消」か <kbd>Esc</kbd>、別のツールへの切り替えでも取り消せます。',
           'ハンドで画像を動かせます。ホイールで拡大縮小（ハンド以外のツールは <kbd>Ctrl</kbd>＋ホイール）。',
           '表示倍率は編集中の見え方だけを変えるもので、保存される画像の仕上がりは変わりません。',
         ]],
@@ -8715,7 +9097,12 @@
         // 掴んでいる objDrag.items の実体が迷子になってしまう。
         if ((objDrag || marquee) && ev.key !== 'Escape') return;
         if (ev.key === 'Escape') {
+          // 数値入力欄（太さ・透過率・文字サイズ・表示倍率）の Esc はフォーカスを外すだけ。
+          // エディタごと閉じてしまうと入力中の編集内容が破棄されて危ない。
+          if (inField) { ev.preventDefault(); t.blur(); return; }
           if (cancelFreeform()) return; // 描きかけのフリーフォームは破棄だけ
+          if (cancelLineAnchor()) return; // 線・矢印の始点スナップ待ちも破棄だけ
+          if (cropMode) { selectTool('select'); return; } // トリミングは取消（エディタは閉じない）
           if (marquee) { marquee = null; recomposite(); return; } // 範囲選択の途中は取りやめ
           if (selectedIds.length) { clearSelection(); recomposite(); return; } // まず選択解除、もう一度で閉じる
           close();
@@ -9286,6 +9673,11 @@
         freeformBounds, distSeg, objHandles, applyObjDrag, wrapTextLines, textBoxPadOf, TEXT_WRAP_CHARS,
         // 画像編集の色モデル（線・塗り・文字）と多角形の内包判定
         normalizeObjColors, pointInPoly, marqueeRect, rectContainsBounds,
+        // 線・矢印の始点スナップと文字サイズの表示px換算（仕様 16章）
+        snapStartPoint, fsDispScale, APP_IMG_DISPLAY_W, IMG_MAX_EDGE,
+        // 図形の回転（仕様 18章）
+        canRotate, normalizeAngle, rotatePointAround, objRotationCenter,
+        toLocalPoint, toWorldPoint, reanchorRotatedBox,
         // PDF出力の倍率・用紙・向き
         clampPdfScale, pdfPaperDims, pdfPageStyleCss, pdfOutSettings, setPdfOutSettings,
         paginateBreaks, parsePdfPageRange, pdfPageRangeString,
