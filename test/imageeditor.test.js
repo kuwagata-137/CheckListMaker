@@ -311,9 +311,9 @@ test('imageeditor — 図形の回転', async (t) => {
   t.after(() => app.close());
   const T = await app.api();
 
-  await t.test('canRotate — 対象は矩形ベースの図形だけ', () => {
-    for (const type of ['rect', 'ellipse', 'cross', 'text']) assert.ok(T.canRotate({ type }), type);
-    for (const type of ['line', 'arrow', 'freeform', 'callout']) assert.ok(!T.canRotate({ type }), type);
+  await t.test('canRotate — 線・矢印以外の図形が回転できる（19章で多角形・吹き出しを追加）', () => {
+    for (const type of ['rect', 'ellipse', 'cross', 'text', 'freeform', 'callout']) assert.ok(T.canRotate({ type }), type);
+    for (const type of ['line', 'arrow']) assert.ok(!T.canRotate({ type }), type);
     assert.ok(!T.canRotate(null));
   });
 
@@ -375,5 +375,54 @@ test('imageeditor — 図形の回転', async (t) => {
     const sp = T.snapStartPoint(objs, { x: 74, y: -24 }, 11);
     assert.ok(sp && Math.abs(sp.x - 75) < 1e-9 && Math.abs(sp.y - (-25)) < 1e-9, JSON.stringify(sp));
     assert.equal(T.snapStartPoint(objs, { x: 2, y: 2 }, 11), null, '回転前の角にはもう無い');
+  });
+});
+
+// 多角形・吹き出しの回転（仕様は docs/spec-image-editor-enhancements.md 19章）
+test('imageeditor — 多角形・吹き出しの回転', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+
+  await t.test('objRotationCenter — 多角形は外接矩形の中心', () => {
+    const c = T.objRotationCenter({ type: 'freeform', pts: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }] });
+    assert.deepEqual(plain(c), { x: 50, y: 25 });
+  });
+
+  await t.test('applyObjDrag rotate — 多角形も外接矩形の中心まわりに回る', () => {
+    const obj = { type: 'freeform', pts: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }] };
+    T.applyObjDrag({ mode: 'rotate', obj, sx: 0, sy: 0, orig: plain(obj) }, { x: 200, y: 25 });
+    assert.equal(obj.rot, 90, '中心(50,25)の右＝90°');
+  });
+
+  await t.test('applyObjDrag pt — 回転した多角形の頂点編集で、動かしていない頂点はワールドで固定', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }];
+    const obj = { type: 'freeform', pts: plain(pts), rot: 90 };
+    const orig = { type: 'freeform', pts: plain(pts), rot: 90 };
+    // 頂点0のワールド位置（編集前）: 中心(50,25) で90°回転 → (75,-25)
+    const before = T.toWorldPoint(orig, { x: 0, y: 0 });
+    assert.ok(Math.abs(before.x - 75) < 1e-9 && Math.abs(before.y - (-25)) < 1e-9);
+    // 頂点2をワールドで(0,30)ドラッグ（ローカルでは +x 方向）
+    T.applyObjDrag({ mode: 'pt2', obj, sx: 0, sy: 0, orig }, { x: 0, y: 30 });
+    const after = T.toWorldPoint(obj, obj.pts[0]);
+    assert.ok(Math.abs(after.x - 75) < 1e-6 && Math.abs(after.y - (-25)) < 1e-6,
+      `頂点0のワールド位置が変わらない（実際 ${after.x},${after.y}）`);
+  });
+
+  await t.test('applyObjDrag tip — 回転した吹き出しの尻尾はローカル軸で動く', () => {
+    const obj = { type: 'callout', x: 0, y: 0, w: 100, h: 50, rot: 90, tip: { x: 10, y: 60 } };
+    const orig = plain(obj);
+    // ワールドで(0,30)ドラッグ → 90°回転中はローカルの(30,0)
+    T.applyObjDrag({ mode: 'tip', obj, sx: 0, sy: 0, orig }, { x: 0, y: 30 });
+    assert.ok(Math.abs(obj.tip.x - 40) < 1e-9 && Math.abs(obj.tip.y - 60) < 1e-9,
+      `tip がローカルで(+30,0)動く（実際 ${obj.tip.x},${obj.tip.y}）`);
+  });
+
+  await t.test('snapStartPoint — 回転した多角形は頂点の回転後の位置にスナップ', () => {
+    const objs = [{ type: 'freeform', pts: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }], rot: 90 }];
+    // 頂点0 (0,0) は中心(50,25)の90°回転で (75,-25) へ
+    const sp = T.snapStartPoint(objs, { x: 74, y: -24 }, 11);
+    assert.ok(sp && Math.abs(sp.x - 75) < 1e-9 && Math.abs(sp.y - (-25)) < 1e-9, JSON.stringify(sp));
+    assert.equal(T.snapStartPoint(objs, { x: 2, y: 2 }, 11), null, '回転前の位置にはもう無い');
   });
 });

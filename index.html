@@ -6637,11 +6637,11 @@
     function rectContainsBounds(m, b) {
       return b.x >= m.x && b.y >= m.y && b.x + b.w <= m.x + m.w && b.y + b.h <= m.y + m.h;
     }
-    // ---- 図形の回転（仕様 18章）----
-    // 回転できるのは矩形ベースの図形（四角・丸・×印・テキスト）。線・矢印は端点を、
-    // フリーフォームは頂点を動かせば向きを変えられるので rot は持たない。吹き出しは
-    // 尻尾の幾何が崩れるため対象外。o.rot は度（時計回り・0〜359 の整数）。
-    const ROTATABLE_TYPES = ['rect', 'ellipse', 'cross', 'text'];
+    // ---- 図形の回転（仕様 18章・19章）----
+    // 回転できるのは四角・丸・×印・テキスト・多角形・吹き出し（要望 2026-09-14 で
+    // 多角形・吹き出しを追加）。線・矢印は端点を動かせば向きを変えられるので rot は
+    // 持たない。o.rot は度（時計回り・0〜359 の整数）。
+    const ROTATABLE_TYPES = ['rect', 'ellipse', 'cross', 'text', 'freeform', 'callout'];
     const canRotate = (o) => !!o && ROTATABLE_TYPES.includes(o.type);
     // 角度を 0〜359 の整数へ正規化する（-90 → 270、450 → 90）。
     function normalizeAngle(v) {
@@ -6654,8 +6654,21 @@
       const dx = p.x - c.x, dy = p.y - c.y;
       return { x: c.x + dx * Math.cos(a) - dy * Math.sin(a), y: c.y + dx * Math.sin(a) + dy * Math.cos(a) };
     }
-    // 回転の中心＝矩形の中心（テキストは textLayout が o.w / o.h を最新に保っている）。
-    function objRotationCenter(o) { return { x: o.x + (o.w || 0) / 2, y: o.y + (o.h || 0) / 2 }; }
+    // 回転の中心＝矩形の中心（テキストは textLayout、吹き出しは drawObject が o.w / o.h を
+    // 最新に保つ）。多角形は頂点列の外接矩形の中心。
+    function objRotationCenter(o) {
+      if (o.type === 'freeform') {
+        const b = freeformBounds(o.pts);
+        return { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+      }
+      return { x: o.x + (o.w || 0) / 2, y: o.y + (o.h || 0) / 2 };
+    }
+    // ドラッグ差分（ワールド）を図形ローカル軸の差分へ写す（無回転ならそのまま）。
+    function localDelta(s, dx, dy) {
+      const rot = objRotation(s);
+      if (!rot) return { x: dx, y: dy };
+      return rotatePointAround({ x: dx, y: dy }, { x: 0, y: 0 }, -rot);
+    }
     const objRotation = (o) => (canRotate(o) ? normalizeAngle(o.rot) : 0);
     // ワールド座標 ⇄ 図形ローカル座標。ヒットテストはポインタをローカルへ写して
     // 無回転の判定をそのまま使い、ハンドル表示はローカルの定位置をワールドへ写す。
@@ -6697,7 +6710,8 @@
                  { x: o.x, y: o.y + o.h }, { x: o.x + o.w, y: o.y + o.h }]
             .map((q) => toWorldPoint(o, q));
         } else if (o.type === 'freeform') {
-          pts = Array.isArray(o.pts) ? o.pts : [];
+          // 回転している多角形は、頂点の回転後の見た目の位置へスナップする
+          pts = (Array.isArray(o.pts) ? o.pts : []).map((q) => toWorldPoint(o, q));
         }
         for (const q of pts) {
           const d = Math.hypot(p.x - q.x, p.y - q.y);
@@ -6801,8 +6815,9 @@
       const o = d.obj, s = d.orig;
       if (d.mode === 'rotate') {
         // 回転ハンドル: 中心からポインタへの向きが角度になる（ハンドル定位置＝真上を 0° と
-        // するため +90）。Shift で15°刻み（Office と同じ）。
-        const c = { x: s.x + (s.w || 0) / 2, y: s.y + (s.h || 0) / 2 };
+        // するため +90）。Shift で15°刻み（Office と同じ）。中心は図形種別ごとの回転中心
+        //（多角形は頂点列の外接矩形の中心）。
+        const c = objRotationCenter(s);
         let deg = Math.atan2(p.y - c.y, p.x - c.x) * 180 / Math.PI + 90;
         if (shift) deg = Math.round(deg / 15) * 15;
         o.rot = normalizeAngle(deg);
@@ -6820,10 +6835,30 @@
         if (o.tip) { o.tip.x = s.tip.x + dx; o.tip.y = s.tip.y + dy; }
       } else if (d.mode === 'p1') { o.x1 = s.x1 + dx; o.y1 = s.y1 + dy; }
       else if (d.mode === 'p2') { o.x2 = s.x2 + dx; o.y2 = s.y2 + dy; }
-      else if (d.mode === 'tip') { o.tip.x = s.tip.x + dx; o.tip.y = s.tip.y + dy; }
+      else if (d.mode === 'tip') { // 吹き出しの尻尾（tip はローカル座標なので差分もローカルへ）
+        const ld = localDelta(s, dx, dy);
+        o.tip.x = s.tip.x + ld.x; o.tip.y = s.tip.y + ld.y;
+      }
       else if (d.mode.startsWith('pt')) { // freeform の頂点を個別に動かす
         const i = Number(d.mode.slice(2));
-        if (o.pts && o.pts[i] && s.pts && s.pts[i]) { o.pts[i].x = s.pts[i].x + dx; o.pts[i].y = s.pts[i].y + dy; }
+        if (o.pts && o.pts[i] && s.pts && s.pts[i]) {
+          const ld = localDelta(s, dx, dy);
+          o.pts = s.pts.map((pt) => ({ x: pt.x, y: pt.y }));
+          o.pts[i].x = s.pts[i].x + ld.x;
+          o.pts[i].y = s.pts[i].y + ld.y;
+          const rot = objRotation(s);
+          if (rot) {
+            // 頂点が動くと外接矩形の中心（＝回転の軸）も動き、他の頂点までワールド上で
+            // ずれてしまう。軸の移動ぶん t = d0 - R(d0) だけ全頂点を平行移動して打ち消す
+            //（動かしていない頂点はワールド上で完全に固定される）。
+            const c0 = objRotationCenter(s);
+            const c1 = objRotationCenter({ type: s.type, pts: o.pts });
+            const d0 = { x: c0.x - c1.x, y: c0.y - c1.y };
+            const rd = rotatePointAround(d0, { x: 0, y: 0 }, rot);
+            const t = { x: d0.x - rd.x, y: d0.y - rd.y };
+            o.pts.forEach((pt) => { pt.x += t.x; pt.y += t.y; });
+          }
+        }
       }
       else { // nw/n/ne/w/e/sw/s/se（rect・ellipse・cross のリサイズ。単字は縦のみ／横のみ）
         const rot = objRotation(s);
@@ -7048,15 +7083,20 @@
       let nextSize = DEFAULT_SIZE;
       const sizeNum = overlay.querySelector('.ie-size-num');
       // スライダーと数値入力の両方から呼ぶ。1〜40 に丸めて両方の欄へ映し、
-      // 選択中の図形があれば即時反映、無ければ「次に描く太さ」を更新する。丸めた値を返す。
+      // 選択中の図形があれば即時反映する。丸めた値を返す。
+      // 「次に描く太さ」nextSize は選択の有無によらず常に更新する。描いた直後の図形は
+      // 自動選択されるため、そこで調整した太さが次の図形へ引き継がれず「配置するたびに
+      // リセットされる」ように見えていた（要望 2026-09-14。色・透過率と同じ扱いに揃える）。
       function applySizeValue(raw) {
         const v = Math.max(1, Math.min(40, Math.round(Number(raw) || 1)));
         sizeInput.value = v;
         if (document.activeElement !== sizeNum) sizeNum.value = v;
+        nextSize = v;
         const sels = selectedObjs();
-        if (!sels.length) { nextSize = v; return v; }
-        sels.forEach((o) => { o.size = v; });
-        recomposite();
+        if (sels.length) {
+          sels.forEach((o) => { o.size = v; });
+          recomposite();
+        }
         return v;
       }
       sizeInput.addEventListener('pointerdown', () => { if (selectedIds.length) pushUndo(); });
@@ -7682,6 +7722,10 @@
         // 回転は中心まわりの座標変換で掛ける（各描画関数は無回転のまま）。
         const rot = objRotation(o);
         if (rot) {
+          // 回転の中心は最新の箱で決める。テキスト・吹き出しは文字量で箱が変わるため、
+          // 中心を計算する前に o.w / o.h を測り直す（保存データを開いた直後も正しく回る）。
+          if (o.type === 'callout') { const b = calloutBox(o.text, o.fs, o); o.w = b.w; o.h = b.h; }
+          else if (o.type === 'text') textLayout(o);
           const c = objRotationCenter(o);
           g.save();
           g.translate(c.x, c.y); g.rotate(rot * Math.PI / 180); g.translate(-c.x, -c.y);
@@ -8963,8 +9007,8 @@
           '「選択」モードで何も無い所からドラッグすると範囲選択になります。<strong>枠に丸ごと入った図形だけ</strong>が選ばれます（<kbd>Ctrl</kbd> か <kbd>Shift</kbd> を押しながらだと今の選択に足します）。',
           '選んだ図形はドラッグで移動できます。複数選んでいればまとめて動きます。',
           '白丸のハンドルで変形できるのは、1つだけ選んでいるときです（辺の中央は縦だけ・横だけ）。',
-          '四角・丸・×印・テキストは、選択したときに枠の上へ出る丸いハンドルをドラッグすると回転できます（<kbd>Shift</kbd> で15°刻み）。角度はツールバーの「回転」欄でも指定できます（▾に90°刻みの候補、直接入力も可）。',
-          '直線・矢印は端点を、多角形は頂点を動かして向きを変えてください（回転ハンドルは出ません）。',
+          '四角・丸・×印・テキスト・多角形・吹き出しは、選択したときに枠の上へ出る丸いハンドルをドラッグすると回転できます（<kbd>Shift</kbd> で15°刻み）。角度はツールバーの「回転」欄でも指定できます（▾に90°刻みの候補、直接入力も可）。',
+          '直線・矢印は端点を動かして向きを変えてください（回転ハンドルは出ません）。',
           '図形の外をクリックすると選択が外れます。',
           '<kbd>Ctrl</kbd>＋ドラッグでコピーします（ドラッグを始めた後に押しても効きます）。',
           '<kbd>Shift</kbd>＋ドラッグで水平・垂直に固定します。',
@@ -8985,6 +9029,7 @@
           '描画ツールを使っている最中に右クリックすると、直前の既定モードへ戻ります（描きかけは取りやめ）。',
           '左ボタンを押したまま右クリックすると、その場で「選択」と「ハンド」が入れ替わります（どちらのボタンを先に離しても同じです）。',
           '別の描画ツールに切り替えると、線色・塗りつぶし・文字色・線の太さは既定に戻ります（同じツールに戻ったときはそのままです）。',
+          '同じツールで描き続けている間は、これらの設定は図形を置いても保持されます。選択中の図形に加えた変更（太さ・色・透過率）も、次に描く図形へそのまま引き継がれます。',
         ]],
         ['色と書式', [
           '色は「線色」「塗りつぶし」「文字色」の3つに分かれています。図形を選んでから変えると、その図形に反映されます（複数選んでいればまとめて）。',
