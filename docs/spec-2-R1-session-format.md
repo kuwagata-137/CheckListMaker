@@ -93,7 +93,7 @@ R2（UIA＋文生成）・R3（自動ズーム）・R4（取り込みウィザ�
 | `imagePoint` | **撮影画像内**のクリック位置（物理px。画像の左上原点）。R3 の切り出し中心はこれを使う |
 | `display` | Electron の Display 情報。`boundsDip` は DIP 座標（uiohook の物理pxとは `scaleFactor` 倍違う点に注意） |
 | `marker` | 赤丸を焼き込んだか。焼き込み時は画像内座標・実効半径（`scaleFactor` 乗算後）・線幅・色。R3 が「旧式マーカーが写っている領域」を知るために使う |
-| `capture.source` | `"precapture"`（事前キャプチャ採用）か `"ondemand"`（押下時撮影） |
+| `capture.source` | `"precapture"`（事前キャプチャ採用）か `"ondemand"`（押下時撮影）。**v1.0.8 で `"preclick"`（常駐の撮影プロセスがクリック・キー押下より前に撮り終えた1枚）と `"grab"`（撮影プロセスでその場）を追加し、`capture.ageMs`（preclick のとき、イベントの何 ms 前に撮り終えたか。それ以外は null）を足した** → `docs/spec-preclick-capture.md` |
 | `uia` | **R2 で埋める枠**。R1 時点では `resolved: false`・全項目 null の雛形のみ |
 
 > **2026-07-13 更新**: 2-R2 でスキーマ **v2** となり、`uia` に実データが入り

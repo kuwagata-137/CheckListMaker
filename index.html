@@ -737,7 +737,8 @@
   .ie-opacity input[type="range"] { width: 90px; vertical-align: middle; }
   .ie-canvas-wrap {
     /* ウインドウ固定のもと、ここが残り高さを埋めて内部スクロールする。
-       100% では画像全体がちょうど収まり（fitScale）、スクロール不要。 */
+       100% は手順一覧で見える大きさ（仕様 20章）。枠より大きいときはスクロールし、
+       「フィット」で枠に収まる大きさにできる。 */
     position: relative; /* テキスト入力オーバーレイの絶対配置基準 */
     flex: 1 1 auto;
     min-height: 0;
@@ -1201,8 +1202,48 @@
   }
   .tsb-card:hover { background: var(--surface-2); box-shadow: var(--shadow-item); }
   .tsb-card:hover .tsb-ops { display: flex; }
-  .tsb-card.is-current { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
-  .tsb-card.is-current .tsb-no { color: var(--primary); }
+  /* 複数選択（仕様 docs/spec-thumbnail-multiselect.md・モック screenshots/mock-thumbs-multiselect.png）。
+     選択＝枠と薄い地色（1件だけのときは従来の「編集中」の見た目と同じ）。編集中で選んでいない
+     カードは番号だけ青。Shift+クリックで文字が選択されないよう user-select を切る。 */
+  .tsb-card { user-select: none; }
+  .tsb-card.is-selected { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
+  .tsb-card.is-current .tsb-no, .tsb-card.is-selected .tsb-no { color: var(--primary); }
+  /* 2件以上：地色を少し濃くし、番号を青丸で塗って「まとめて操作する対象」と分かるようにする */
+  #thumbs.has-multi .tsb-card.is-selected { background: color-mix(in srgb, var(--primary) 16%, transparent); }
+  #thumbs.has-multi .tsb-card.is-selected .tsb-no {
+    align-self: start; margin-top: 1px; padding: 1px 0; border-radius: 999px;
+    background: var(--primary); color: var(--primary-text);
+  }
+  #thumbs:focus { outline: none; }
+  /* 選択バー（2件以上で見出しの下に出す） */
+  .tsb-selbar {
+    display: flex; align-items: center; gap: 4px;
+    padding: 6px 6px 6px 12px;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+    font-size: 0.76rem;
+  }
+  .tsb-selbar[hidden], #thumbs.is-collapsed .tsb-selbar { display: none; }
+  .tsb-selbar .cnt { flex: 1; min-width: 0; white-space: nowrap; font-weight: 700; color: var(--primary); }
+  .tsb-selbar button {
+    font: inherit; padding: 2px 8px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  }
+  .tsb-selbar button.del { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+  /* まとめてドラッグするときの絵（setDragImage に渡す。画面外に置いて撮らせる） */
+  .tsb-drag-ghost {
+    position: fixed; top: -1000px; left: -1000px; z-index: -1;
+    width: 132px; padding: 4px;
+    background: var(--surface); border: 1px solid var(--primary); border-radius: 8px;
+    box-shadow: 4px 4px 0 -1px var(--surface), 4px 4px 0 0 var(--border-strong),
+                8px 8px 0 -1px var(--surface), 8px 8px 0 0 var(--border-strong);
+  }
+  .tsb-drag-ghost img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: contain; border-radius: 4px; }
+  .tsb-drag-ghost .n {
+    position: absolute; top: -9px; right: -9px; min-width: 24px; height: 22px; padding: 0 7px;
+    border-radius: 11px; background: var(--primary); color: var(--primary-text);
+    font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  }
   .tsb-no {
     font-size: var(--tsb-no-fs); font-weight: 700; color: var(--muted);
     text-align: center; padding-top: 2px; font-variant-numeric: tabular-nums;
@@ -1255,6 +1296,10 @@
     display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
     font-size: 13pt; font-weight: 800; color: var(--print-accent);
     border-bottom: 2px solid var(--print-accent); padding-bottom: 5px; margin: 0 0 14px;
+    /* フェーズ見出しの直後では改ページしない（最初の項目と別ページにしない。v1.0.8）。
+       見出し＋最初の項目を avoid の枠で包む案は、最初の項目が1ページより大きいと見出しだけの
+       ページができた（Electron 31 で実測）ため採らない。仕様は docs/spec-pdf-output-scale.md */
+    break-after: avoid;
   }
   .print-sec-mins { font-weight: 400; font-size: 10.5pt; color: #808080; white-space: nowrap; }
 
@@ -2023,6 +2068,29 @@
       to.items.splice(insertAt, 0, item);
       return touch(checklist);
     }
+    // 複数の手順をまとめて消す（フェーズをまたいでよい。サムネイルの複数選択 v1.0.8）
+    function removeItems(checklist, itemIds) {
+      const ids = new Set(itemIds || []);
+      checklist.sections.forEach((s) => { s.items = s.items.filter((x) => !ids.has(x.id)); });
+      return touch(checklist);
+    }
+    // 複数の手順を toSectionId の「表示上の位置」toIndex（動かす前の並びで、どの手順の前に
+    // 入れるか）へ、番号順（フェーズ順→手順順）に固めて動かす。toIndex より前にある動かす手順の
+    // 数だけ詰めて換算する（ドラッグの破線の位置にそのまま入る。v1.0.8）。
+    // moveItem は「取り除いた後の位置」を受け取る別の約束（↑↓ボタン用）なので混同しない。
+    function moveItems(checklist, itemIds, toSectionId, toIndex) {
+      const to = findSection(checklist, toSectionId);
+      if (!to) return checklist;
+      const ids = new Set(itemIds || []);
+      const moving = [];
+      checklist.sections.forEach((s) => s.items.forEach((x) => { if (ids.has(x.id)) moving.push(x); }));
+      if (!moving.length) return checklist;
+      const at = Math.max(0, Math.min(Number(toIndex) || 0, to.items.length));
+      const before = to.items.slice(0, at).filter((x) => ids.has(x.id)).length;
+      checklist.sections.forEach((s) => { s.items = s.items.filter((x) => !ids.has(x.id)); });
+      to.items.splice(Math.min(at - before, to.items.length), 0, ...moving);
+      return touch(checklist);
+    }
     function moveSection(checklist, sectionId, toIndex) {
       const idx = checklist.sections.findIndex((s) => s.id === sectionId);
       if (idx < 0) return checklist;
@@ -2080,8 +2148,8 @@
       findChecklist, progress, sumMinutes, addChecklist, mergeChecklistsInto,
       removeChecklist, duplicateChecklist,
       renameChecklist, addSection, renameSection, removeSection, addItem, addBlankItem,
-      setItemField, editItem, toggleItem, removeItem, resetChecklist, clearCompleted,
-      moveItem, moveSection, mergeItemUp, mergeItemInto, mergeTimeValue,
+      setItemField, editItem, toggleItem, removeItem, removeItems, resetChecklist, clearCompleted,
+      moveItem, moveItems, moveSection, mergeItemUp, mergeItemInto, mergeTimeValue,
       addItemImage, replaceItemImage, removeItemImage, copyItemImage,
     };
 
@@ -3256,6 +3324,11 @@
           <button class="icon" type="button" data-action="toggle-thumbs"
                   title="${collapsed ? 'サムネイルを開く' : 'サムネイルを閉じる'}">${collapsed ? '»' : '«'}</button>
         </div>
+        <div class="tsb-selbar" hidden>
+          <span class="cnt"></span>
+          <button type="button" class="del" data-action="thumbs-delete-selected" title="選んだ${todo ? '項目' : '手順'}を削除（Delete キーでも）">削除</button>
+          <button type="button" data-action="thumbs-clear-selection" title="選択を外す（Esc キーでも）">選択解除</button>
+        </div>
         <div class="tsb-scroll">${phases || `<p class="tsb-empty">${todo ? '項目' : '手順'}がありません</p>`}</div>`;
     }
     // <aside id="thumbs"> を #app の前に作る（buildStandaloneHtml の body 定義に
@@ -3270,6 +3343,7 @@
         thumbsEl.setAttribute('aria-label', 'サムネイル');
         document.body.insertBefore(thumbsEl, document.getElementById('app'));
       }
+      if (!thumbsEl.__keysWired) { thumbsEl.__keysWired = true; wireThumbsKeys(thumbsEl); }
       return thumbsEl;
     }
     // 表示状態と幅（--thumbs-w）を反映する。この変数だけがサイドバーの幅と、
@@ -3306,8 +3380,11 @@
         list: '.tsb-body',
         section: '.tsb-phase',
         handle: '.tsb-grip',
+        // 選択中のカード（2件以上）を掴んだら、選んだ手順をまとめて動かす
+        dragIds: (id) => (thumbSel.size >= 2 && thumbSel.has(id) ? thumbOrder().filter((x) => thumbSel.has(x)) : [id]),
       });
       markCurrentThumb(currentItemId);
+      markThumbSelection(); // 描き直したカードへ選択を付け直す（消えた手順は外れる）
     }
     // 本文で編集中の手順に対応するカードを強調する。再描画すると入力欄の
     // フォーカスが壊れるため、class の付け替えだけで追随させる。
@@ -3317,6 +3394,102 @@
       if (!thumbsEl) return;
       thumbsEl.querySelectorAll('.tsb-card').forEach((el) => {
         el.classList.toggle('is-current', !!itemId && el.dataset.item === itemId);
+      });
+    }
+
+    // ---- 複数選択（仕様 docs/spec-thumbnail-multiselect.md。v1.0.8）----
+    // 選択は手順 ID の Set と、Shift の範囲の起点。表示は class の付け替えだけで行う。
+    let thumbSel = new Set();
+    let thumbAnchor = null;
+    // -- 純関数（テスト対象。window.__test__ に公開） --
+    // order は表示順（番号順）の手順 ID。クリック＝その1件（起点）、Ctrl＝足す／外す（起点を移す）、
+    // Shift＝起点からの範囲（起点は変えない）、Ctrl+Shift＝範囲を足す。返り値の sel は表示順。
+    function nextThumbSelection(order, sel, anchor, target, { ctrl = false, shift = false } = {}) {
+      const list = Array.isArray(order) ? order : [];
+      const cur = new Set(sel || []);
+      const sorted = (set) => list.filter((id) => set.has(id));
+      if (!list.includes(target)) return { sel: sorted(cur), anchor: anchor || null };
+      const a = anchor && list.includes(anchor) ? anchor : null;
+      if (shift && a) {
+        const [i, j] = [list.indexOf(a), list.indexOf(target)].sort((x, y) => x - y);
+        const range = list.slice(i, j + 1);
+        const next = ctrl ? new Set([...cur, ...range]) : new Set(range);
+        return { sel: sorted(next), anchor: a };
+      }
+      if (ctrl) {
+        if (cur.has(target)) cur.delete(target); else cur.add(target);
+        return { sel: sorted(cur), anchor: target };
+      }
+      return { sel: [target], anchor: target };
+    }
+    const thumbOrder = () => (thumbsEl ? [...thumbsEl.querySelectorAll('.tsb-card')].map((el) => el.dataset.item) : []);
+    function setThumbSelection(ids, anchor) {
+      thumbSel = new Set(ids || []);
+      thumbAnchor = anchor === undefined ? thumbAnchor : anchor;
+      markThumbSelection();
+    }
+    // 選択を画面へ反映する（カードの class・2件以上の見た目・選択バー）。消えた手順は外す。
+    function markThumbSelection() {
+      if (!thumbsEl) return;
+      const order = thumbOrder();
+      thumbSel = new Set(order.filter((id) => thumbSel.has(id)));
+      if (thumbAnchor && !order.includes(thumbAnchor)) thumbAnchor = null;
+      thumbsEl.querySelectorAll('.tsb-card').forEach((el) => {
+        el.classList.toggle('is-selected', thumbSel.has(el.dataset.item));
+      });
+      const n = thumbSel.size;
+      thumbsEl.classList.toggle('has-multi', n >= 2);
+      const bar = thumbsEl.querySelector('.tsb-selbar');
+      if (bar) {
+        bar.hidden = n < 2;
+        const cnt = bar.querySelector('.cnt');
+        if (cnt) cnt.textContent = `${n}件選択中`;
+      }
+    }
+    function selectThumb(itemId, mods) {
+      const r = nextThumbSelection(thumbOrder(), [...thumbSel], thumbAnchor, itemId, mods);
+      setThumbSelection(r.sel, r.anchor);
+    }
+    // サイドバーからの削除（Delete キー・選択バー・カードの ✕）。1件でも確認を出し（ユーザー決定
+    // 2026-09-29）、1回の削除＝元に戻す1回にまとめる。消したあとは右下に通知する。
+    function deleteThumbItems(ids) {
+      const c = currentChecklist();
+      if (!c || !ids.length) return;
+      const model = thumbStepModel(c).flatMap((p) => p.items);
+      const targets = model.filter((it) => ids.includes(it.id));
+      if (!targets.length) return;
+      const noun = c.type === MODES.TODO ? '項目' : '手順';
+      const one = targets[0];
+      const text = one.text ? (one.text.length > 30 ? one.text.slice(0, 30) + '…' : one.text) : '（未入力）';
+      const msg = targets.length >= 2
+        ? `選択した ${targets.length} 件の${noun}を削除しますか？`
+        : `${noun} ${one.no}「${text}」を削除しますか？`;
+      if (!confirm(msg)) return;
+      const idList = targets.map((it) => it.id);
+      store.commit((s) => M.removeItems(M.findChecklist(s, c.id), idList));
+      setThumbSelection([], null);
+      showToast(`${targets.length}件の${noun}を削除しました（Ctrl+Z で元に戻せます）`);
+    }
+    // #thumbs のキー操作と空白クリック（ensureThumbsEl から1回だけ配線する）
+    function wireThumbsKeys(el) {
+      el.setAttribute('tabindex', '-1');
+      el.addEventListener('keydown', (e) => {
+        if (e.target.closest && e.target.closest('input, textarea, select')) return;
+        const ctrl = e.ctrlKey || e.metaKey;
+        if ((e.key === 'Delete' || e.key === 'Backspace') && thumbSel.size) {
+          e.preventDefault();
+          deleteThumbItems([...thumbSel]);
+        } else if (e.key === 'Escape' && thumbSel.size) {
+          setThumbSelection([], null);
+        } else if (ctrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'a') {
+          e.preventDefault();
+          const order = thumbOrder();
+          setThumbSelection(order, thumbAnchor || order[0] || null);
+        }
+      });
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.tsb-card, button, .tsb-resizer, .tsb-selbar')) return;
+        if (thumbSel.size) setThumbSelection([], null); // 空白クリックで選択を外す
       });
     }
 
@@ -4337,22 +4510,37 @@
         const kind = el.dataset.drag;
         if (kind === 'item') {
           const li = el.closest(SEL.item);
-          dragging = { kind, id: li.dataset.item, fromSection: li.dataset.section };
+          const id = li.dataset.item;
+          // opts.dragIds があれば、まとめて動かす手順の一覧をもらう（サムネイルの複数選択）
+          const ids = typeof SEL.dragIds === 'function' ? SEL.dragIds(id) : [id];
+          dragging = { kind, id, fromSection: li.dataset.section, ids: ids && ids.length ? ids : [id] };
         } else if (kind === 'section') {
           const sec = el.closest(SEL.section);
           dragging = { kind, id: sec.dataset.section, fromSection: null };
         }
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', dragging ? dragging.id : '');
-        requestAnimationFrame(() => el.closest(`${SEL.item}, ${SEL.section}`)?.classList.add('dragging'));
+        const many = dragging && dragging.ids && dragging.ids.length > 1;
+        if (many) setMultiDragImage(e, el.closest(SEL.item), dragging.ids.length);
+        requestAnimationFrame(() => {
+          if (!dragging) return;
+          if (many) {
+            dragging.ids.forEach((id) => container.querySelector(`${SEL.item}[data-item="${CSS.escape(id)}"]`)?.classList.add('dragging'));
+          } else {
+            el.closest(`${SEL.item}, ${SEL.section}`)?.classList.add('dragging');
+          }
+        });
       });
-      container.addEventListener('dragend', () => {
+      // ドラッグの後片づけ。ドロップで描き直すとドラッグ元の要素が消えて dragend が届かないため、
+      // drop の最後でも呼ぶ（残ったままだと、あとで別のものを落としたときに前の手順が動く）。
+      const endDrag = () => {
         container.querySelectorAll('.dragging, .drop-target')
           .forEach((n) => n.classList.remove('dragging', 'drop-target'));
         dragging = null;
         hideDragIndicator();
         disarm();
-      });
+      };
+      container.addEventListener('dragend', endDrag);
       // 挿入位置（どの行とどの行の間に入るか）を drop と同じ中点判定で求める。
       // dragover での表示と drop での確定が必ず一致するよう、判定を共通化する。
       function itemDropAt(e) {
@@ -4424,22 +4612,47 @@
         if (!dragging) return;
         e.preventDefault();
         hideDragIndicator();
-        if (dragging.kind === 'item') {
+        const d = dragging;
+        endDrag(); // 先に片づける（onMove の描き直しで dragend が届かなくなるため）
+        if (d.kind === 'item') {
           const at = itemDropAt(e);
           if (!at) return;
+          // toIndex は「動かす前の並び」での挿入位置（破線の位置）。換算は M.moveItems が行う。
           onMove({
             kind: 'item',
-            itemId: dragging.id,
-            fromSection: dragging.fromSection,
+            itemId: d.id,
+            itemIds: d.ids || [d.id],
+            fromSection: d.fromSection,
             toSection: at.toSection,
             toIndex: at.toIndex,
           });
-        } else if (dragging.kind === 'section') {
+        } else if (d.kind === 'section') {
           const at = sectionDropAt(e);
-          if (!at || at.id === dragging.id) return;
-          onMove({ kind: 'section', sectionId: dragging.id, toIndex: at.toIndex });
+          if (!at || at.id === d.id) return;
+          onMove({ kind: 'section', sectionId: d.id, toIndex: at.toIndex });
         }
       });
+    }
+    // まとめてドラッグするときの絵：最初の1枚の縮小画像に「N件」の札（モック承認済み）。
+    // setDragImage は描画済みの要素を撮るので、画面外に置いて渡し、次の描画で片づける。
+    function setMultiDragImage(e, cardEl, count) {
+      if (!e.dataTransfer || typeof e.dataTransfer.setDragImage !== 'function') return;
+      const ghost = document.createElement('div');
+      ghost.className = 'tsb-drag-ghost';
+      const img = cardEl && cardEl.querySelector('img');
+      if (img) {
+        const pic = document.createElement('img');
+        pic.src = img.src;
+        pic.alt = '';
+        ghost.appendChild(pic);
+      }
+      const badge = document.createElement('span');
+      badge.className = 'n';
+      badge.textContent = `${count}件`;
+      ghost.appendChild(badge);
+      document.body.appendChild(ghost);
+      e.dataTransfer.setDragImage(ghost, 16, 16);
+      setTimeout(() => ghost.remove(), 0);
     }
 
     // 手順間の画像コピー（サムネイルを別の手順へD&D）。並べ替え用DnDや外部ファイル
@@ -5635,9 +5848,16 @@
       const c = currentChecklist();
       if (!c) return;
       if (move.kind === 'item') {
+        // toIndex はドラッグの破線の位置（動かす前の並び）。M.moveItems がその約束で動かす。
+        // 並びが変わらないドロップはコミットしない（元に戻す履歴を汚さない）。
+        const ids = move.itemIds && move.itemIds.length ? move.itemIds : [move.itemId];
+        const orderKey = (cl) => cl.sections.map((s) => s.id + ':' + s.items.map((i) => i.id).join(',')).join('|');
+        const trial = JSON.parse(JSON.stringify({ sections: c.sections.map((s) => ({ id: s.id, items: s.items.map((i) => ({ id: i.id })) })) }));
+        M.moveItems(trial, ids, move.toSection, move.toIndex);
+        if (orderKey(trial) === orderKey(c)) return;
         store.commit((s) => {
           const cc = M.findChecklist(s, c.id);
-          M.moveItem(cc, move.fromSection, move.itemId, move.toSection, move.toIndex);
+          M.moveItems(cc, ids, move.toSection, move.toIndex);
         });
       } else if (move.kind === 'section') {
         store.commit((s) => {
@@ -5789,13 +6009,16 @@
       return to == null ? `${from}-` : `${from}-${to}`;
     }
     // 実出力で「途中では切らない」と決めてある塊。CSS の break-inside: avoid と対で持つ。
-    // .print-step の中の .print-step-keep のように入れ子になるものは外側だけを数える。
+    // 入れ子になるもの（手順カードの中の画像・表）は、外側の塊の kids として持つ。
     const PRINT_ATOM_SEL = '.print-step, .print-todo, .print-toc-sec, .print-body table, .print-img';
+    const PX_PER_MM = 96 / 25.4; // CSS の 1mm は常に 96/25.4 px
+    // 印刷の本文の上下余白（@page の margin 15mm×2）。1ページの本文の高さ＝用紙の高さ − これ
+    const PRINT_PAGE_MARGIN_V_MM = 30;
     // -- 純関数（テスト対象。window.__test__ に公開） --
-    // 改ページ位置を求める。blocks は「途中では切らない塊」の { top, bottom }（上端の昇順）。
-    // ページ境界にかかった塊が1ページに収まるなら、実際の組版と同じくその塊の先頭まで
-    // 改ページを繰り上げる。収まらない塊は実際にも分割されるので、そのまま境界で切る。
-    // 送り先に塊の枠の上端を使うことで、ページ境界で捨てられる上マージンも自然に合う。
+    // 改ページ位置を求める。blocks は「途中では切らない塊」の { top, bottom, kids }（上端の昇順）。
+    // 規則は Electron 31（Chromium 126）の printToPDF の実測に合わせる（v1.0.8。仕様
+    // docs/spec-pdf-output-scale.md）。送り先に塊の枠の上端を使うことで、ページ境界で
+    // 捨てられる上マージンも自然に合う。
     function paginateBreaks(blocks, contentH, total, start) {
       const out = [];
       if (!(Number(contentH) > 1)) return out;
@@ -5803,26 +6026,176 @@
       let top = Number(start) || 0;
       // guard: 塊の位置が壊れていても無限ループにしない（現実には数十ページで終わる）
       for (let guard = 0; guard < 5000; guard++) {
-        let at = top + contentH;
-        if (!(at < total - 2)) break;
-        const hit = list.find(
-          (b) => b.top > top && b.top < at && b.bottom > at && b.bottom - b.top <= contentH
-        );
-        if (hit) at = hit.top; // 丸ごと次ページへ送られる
+        const end = top + contentH;
+        if (!(end < total - 2)) break;
+        const at = pageBreakAt(list, top, end);
         out.push(at);
         top = at;
       }
       return out;
     }
+    // 塊と塊のあいだが余白（margin・gap）だけとみなせる幅。印刷ビューの余白は最大でも
+    // 手順カードの下マージン 28px なので、それより少し広くとる。
+    const PRINT_BLOCK_GAP_MAX = 40;
+    // 画面のプレビューと印刷の組版には ±1〜2px の差が出ることがある（画像2列で、ページの終わりを
+    // 2px 超える塊が実際には収まった例がある一方、逆の例もある）。許容幅を足しても外れは減らなかった
+    // ため足さない（試験文書で −3〜+3px を比べ、0px が最少。仕様 docs/spec-pdf-output-scale.md）。
+    // ページ [top, end) の終わりでの改ページ位置。end をまたぐ塊がページの途中から始まって
+    // いれば、その塊ごと次ページへ送る（1ページに収まらない塊でも送られる）。ページの先頭から
+    // 始まる塊は送れないので、中の塊（kids）で同じことを調べ、無ければ end で切る。
+    // end が塊と塊のあいだの余白に落ちたときは、次のページは次の塊の上端から始まる
+    // （ページ境界の余白は切り捨てられる）。こうしないと、その塊が次のページの途中から
+    // 始まったと数えられ、1ページに収まらない塊なら空のページを1枚余計に数えてしまう。
+    function pageBreakAt(blocks, top, end) {
+      const hit = blocks.find((b) => b.top < end && b.bottom > end);
+      if (!hit) {
+        const next = blocks.find((b) => b.top >= end);
+        const prev = next && blocks.filter((b) => b.bottom <= end).pop();
+        return prev && next.top - prev.bottom <= PRINT_BLOCK_GAP_MAX ? next.top : end;
+      }
+      if (hit.top > top + 0.5) return hit.top; // 位置は必ず前へ進む
+      return pageBreakAt(hit.kids || [], top, end);
+    }
+    // 印刷ビュー（root の中）から、paginateBreaks に渡す塊の木を組む。boxOf(el) は本文の
+    // 内部座標の { top, bottom }。フェーズ見出しは CSS の break-after: avoid と対で、最初の
+    // 項目と1つの塊にする（上端＝見出しの上端・kids＝最初の項目の中の塊）。見出しだけの
+    // フェーズは見出しを1つの塊にする（1行なので途中では切れない）。
+    function printBreakBlocks(root, boxOf) {
+      const atoms = Array.from(root.querySelectorAll(PRINT_ATOM_SEL));
+      const nodeOf = new Map(atoms.map((el) => [el, { ...boxOf(el), kids: [] }]));
+      const roots = [];
+      for (const el of atoms) {
+        let p = el.parentElement;
+        while (p && p !== root && !nodeOf.has(p)) p = p.parentElement;
+        (p && nodeOf.has(p) ? nodeOf.get(p).kids : roots).push(nodeOf.get(el));
+      }
+      root.querySelectorAll('.print-section').forEach((sec) => {
+        const title = sec.querySelector(':scope > .print-section-title');
+        if (!title) return;
+        const first = sec.querySelector(':scope > .print-items > .print-step, :scope > .print-items > .print-todo');
+        const t = boxOf(title);
+        if (first && nodeOf.has(first)) nodeOf.get(first).top = t.top;
+        else roots.push({ top: t.top, bottom: t.bottom, kids: [] });
+      });
+      const sortTree = (list) => {
+        list.sort((a, b) => a.top - b.top);
+        list.forEach((n) => sortTree(n.kids));
+        return list;
+      };
+      return sortTree(roots);
+    }
+    // 用紙に合わせた倍率（%）を選ぶ（v1.0.8）。needsAt(pct) は倍率 pct で組んだときの
+    // 「1ページに収めたい高さ」（本文の内部座標 px）の配列。倍率 pct では内部座標の1ページが
+    // pageH ÷ (pct/100) になるので、h × pct/100 ≤ pageH なら収まる。下限でも収まらない項目は
+    // 外す（全体を下限へ引きずらない）。倍率を下げるほど収まりやすいので刻みを二分探索する。
+    function autoPrintScale(needsAt, pageH, { min = 30, max = 100, step = 5 } = {}) {
+      const H = Number(pageH);
+      if (!(H > 0) || typeof needsAt !== 'function') return max;
+      const fitsAt = (pct, h) => Number(h) * pct / 100 <= H + 0.5;
+      const base = needsAt(min) || [];
+      const idx = base.map((h, i) => (fitsAt(min, h) ? i : -1)).filter((i) => i >= 0);
+      if (!idx.length) return max;
+      const ok = (pct) => {
+        const n = needsAt(pct) || [];
+        return idx.every((i) => fitsAt(pct, n[i]));
+      };
+      const cands = [];
+      for (let p = max; p >= min; p -= step) cands.push(p);
+      if (ok(cands[0])) return cands[0];
+      let lo = 0; // 収まらない
+      let hi = cands.length - 1; // 収まる（下限は idx の作り方から必ず収まる）
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (ok(cands[mid])) hi = mid;
+        else lo = mid;
+      }
+      return cands[hi];
+    }
+    // -- DOM を測る道具（プレビューの紙面 .pp-zoom の中で使う） --
+    // 本文の内部座標（zoom が掛かる前の px）で要素の上端・下端を測る。zoom の中の
+    // getBoundingClientRect の座標系は Chromium の版で違う（M128 で標準化。Electron 31 は
+    // 旧挙動）ため、既知の高さ 100px の物差しを先頭に差して unit を実測して割る。
+    function printRuler(zoomWrap) {
+      const ruler = document.createElement('div');
+      ruler.style.cssText = 'height:100px;margin:0 0 -100px;padding:0;border:0;visibility:hidden;';
+      zoomWrap.insertBefore(ruler, zoomWrap.firstChild);
+      const rr = ruler.getBoundingClientRect();
+      const unit = rr.height / 100 || 1;
+      const origin = rr.top; // 本文の先頭（紙の上余白 15mm の直下）
+      return {
+        boxOf: (el) => {
+          const r = el.getBoundingClientRect();
+          return { top: (r.top - origin) / unit, bottom: (r.bottom - origin) / unit };
+        },
+        remove: () => ruler.remove(),
+      };
+    }
+    // プレビューの紙面の改ページ位置（本文の内部座標）。contentH は内部座標の1ページ分。
+    // 表紙・目次は break-after:page で1ページを丸ごと使うため、その下端を起点に取り直す。
+    function printPageBreaks(zoomWrap, contentH) {
+      const m = printRuler(zoomWrap);
+      const endMark = document.createElement('div');
+      endMark.style.cssText = 'height:0;margin:0;padding:0;border:0;';
+      zoomWrap.appendChild(endMark);
+      try {
+        const total = m.boxOf(endMark).top; // 本文の終わり（紙の下余白は含まれない）
+        const blocks = printBreakBlocks(zoomWrap, m.boxOf);
+        const out = [];
+        let y = 0;
+        const cover = zoomWrap.querySelector('.print-cover');
+        if (cover) { y = m.boxOf(cover).bottom; out.push(y); } // 表紙は余白0の専用ページ
+        const toc = zoomWrap.querySelector('.print-toc');
+        if (toc) {
+          const end = m.boxOf(toc).bottom;
+          out.push(...paginateBreaks(blocks, contentH, end, y)); // 目次が2ページ以上のとき
+          y = end;
+          out.push(y);
+        }
+        out.push(...paginateBreaks(blocks, contentH, total, y));
+        return out;
+      } finally {
+        m.remove();
+        endMark.remove();
+      }
+    }
+    // 倍率 pct で組んだ紙面の「1ページに収めたい高さ」（autoPrintScale の needsAt）。
+    // 画像1枚ずつの高さと、手順カードの上端（フェーズの最初の手順は見出しの上端）から
+    // 最初の画像の行の下端まで（画像が1行だけならカードの下端まで）。画像の無い手順は数えない。
+    function measurePrintFitNeeds(zoomWrap, pct) {
+      const s = pct / 100;
+      zoomWrap.style.zoom = String(s);
+      zoomWrap.style.setProperty('--print-img-scale', String(s));
+      const m = printRuler(zoomWrap);
+      try {
+        const needs = [];
+        zoomWrap.querySelectorAll('.print-step, .print-todo').forEach((card) => {
+          const boxes = Array.from(card.querySelectorAll('.print-img')).map(m.boxOf);
+          if (!boxes.length) return;
+          boxes.forEach((b) => needs.push(b.bottom - b.top));
+          const rowTop = Math.min(...boxes.map((b) => b.top));
+          const firstRow = boxes.filter((b) => b.top < rowTop + 1);
+          const c = m.boxOf(card);
+          const sec = card.closest('.print-section');
+          const title = sec && sec.querySelector(':scope > .print-section-title');
+          const isFirst = !!title && sec.querySelector(':scope > .print-items > .print-step, :scope > .print-items > .print-todo') === card;
+          const top = isFirst ? m.boxOf(title).top : c.top;
+          const bottom = firstRow.length === boxes.length ? c.bottom : Math.max(...firstRow.map((b) => b.bottom));
+          needs.push(bottom - top);
+        });
+        return needs;
+      } finally {
+        m.remove();
+      }
+    }
     // @page の size 上書き CSS。coverpage（表紙・余白0）も同じ用紙に合わせる。
-    // imgScale は画像の幅に掛ける倍率（1＝等倍）。printToPDF の scale と同じ値を渡すと、
-    // % 幅で相殺されてしまう画像も文字と同じだけ縮む（CSS の --print-img-scale を参照）。
-    function pdfPageStyleCss(paper, orient, imgScale) {
+    // scale は出力の倍率（1＝等倍）。#print-root の zoom で掛け（印刷・PDF 共通。v1.0.8）、
+    // % 幅で相殺されてしまう画像にも --print-img-scale として同じ値を降ろす。
+    function pdfPageStyleCss(paper, orient, scale) {
       const d = pdfPaperDims(paper, orient);
       const size = `${d.w}mm ${d.h}mm`;
-      const n = Number(imgScale);
+      const n = Number(scale);
       const s = Number.isFinite(n) && n > 0 ? n : 1;
-      return `@page { size: ${size}; }\n@page coverpage { size: ${size}; }\n#print-root { --print-img-scale: ${s}; }`;
+      return `@page { size: ${size}; }\n@page coverpage { size: ${size}; }\n#print-root { zoom: ${s}; --print-img-scale: ${s}; }`;
     }
     function pdfOutSettings() {
       const s = store.state.settings || {};
@@ -5841,16 +6214,16 @@
       }, { history: false });
     }
     // head 末尾に @page の上書き <style> を注入（後勝ちで基本CSSの margin は維持）。
-    // imgScale 省略時は等倍（＝ブラウザの印刷。倍率は OS のダイアログ側に任せる）。
-    function applyPrintPageStyle(imgScale) {
-      const { paper, orient } = pdfOutSettings();
+    // 用紙・向き・倍率は印刷と PDF の両方に効く（倍率は #print-root の zoom。v1.0.8）。
+    function applyPrintPageStyle() {
+      const { paper, orient, scale } = pdfOutSettings();
       let el = document.getElementById('print-page-style');
       if (!el) {
         el = document.createElement('style');
         el.id = 'print-page-style';
         document.head.appendChild(el);
       }
-      el.textContent = pdfPageStyleCss(paper, orient, imgScale);
+      el.textContent = pdfPageStyleCss(paper, orient, scale / 100);
     }
 
     // #print-root に印刷ビューを流し込む（window.print / printToPDF の直前に呼ぶ）。
@@ -5896,14 +6269,15 @@
         // 画像参照を dataURL に戻してから印刷ビューを組む（ツールバー直下から呼ばれた
         // ときは未 materialize の checklist が渡るため。dataURL は素通しなので二重適用も安全）。
         checklist = await materializeChecklist(checklist);
-        // 用紙・向きの @page 上書き。ページ全体は printToPDF の scale で縮むが、画像だけは
-        // % 幅で相殺されるため、同じ倍率を --print-img-scale としても渡す。
-        applyPrintPageStyle(pdfOutSettings().scale / 100);
+        // 用紙・向きの @page 上書きと倍率（#print-root の zoom）。印刷と同じ仕組みで掛ける。
+        applyPrintPageStyle();
         const root = fillPrintRoot(checklist);
         await waitForPrintImages(root); // 画像のデコード完了を待ってから撮る（欠け防止）
         const res = await window.printAPI.savePdf({
           title: sanitizeFilename(checklist.title || 'checklist'),
-          scale: pdfOutSettings().scale / 100,
+          // 倍率は zoom で掛け済み。printToPDF の scale で二重に掛けない（zoom と scale は
+          // 同じ組版になることを Electron 31 で実測済み。仕様 docs/spec-pdf-output-scale.md）
+          scale: 1,
           pageRanges: pageRanges || undefined,
         });
         if (res && res.error) alert('PDF の保存に失敗しました: ' + res.error);
@@ -5917,7 +6291,7 @@
     // 印刷ビューを差し込んでブラウザの印刷ダイアログを開く。
     // 印刷後（またはキャンセル後）は中身を空にして画面に残らないようにする。
     function printChecklist(checklist) {
-      applyPrintPageStyle(); // 用紙・向きは印刷にも効く（倍率はOSダイアログ側に任せる）
+      applyPrintPageStyle(); // 用紙・向き・倍率は印刷にも効く（PDF・プレビューと同じ zoom）
       fillPrintRoot(checklist);
       const cleanup = () => {
         clearPrintRoot();
@@ -5947,12 +6321,12 @@
           <button type="button" class="btn" data-close>閉じる</button>
         </div>
         <div class="print-preview-bar pp-out">
-          ${window.printAPI ? `
           <span class="pp-row">
             <span class="pp-label">倍率</span>
-            <input class="pp-scale" type="number" min="30" max="200" step="5" aria-label="PDF出力の倍率（％）" />
+            <input class="pp-scale" type="number" min="30" max="200" step="5" aria-label="印刷と PDF の倍率（％）" />
             <span class="pp-unit">%</span>
           </span>
+          ${window.printAPI ? `
           <span class="pp-row pp-range">
             <span class="pp-label">ページ</span>
             <input class="pp-from" type="number" min="1" step="1" placeholder="最初" aria-label="PDF出力の開始ページ" />
@@ -5974,7 +6348,8 @@
               <option value="landscape">横</option>
             </select>
           </span>
-          ${window.printAPI ? '<span class="pp-hint">倍率とページ範囲は PDF 出力に効きます（印刷は OS のダイアログで指定）。ページは空欄で最初／最後まで</span>' : ''}
+          <span class="pp-hint">倍率は印刷と PDF に効きます。用紙・向き・画像の配置を変えると、画像が見出しごと1ページに収まる倍率に自動で合わせます${
+            window.printAPI ? '。ページ範囲は PDF だけ（空欄で最初／最後まで）' : ''}</span>
           <span class="pp-hint">赤い破線は改ページ位置です（手順・図・表は途中で切らずに次ページへ送ります）</span>
         </div>
         <div class="print-preview-body"><div class="print-preview-stage"><div class="print-preview-page"></div></div></div>
@@ -5999,66 +6374,27 @@
       };
       // 改ページ線を引く。プレビューは1枚の連続した紙なので、@page の上下余白（15mm）は
       // ページごとには入らない＝本文は「1ページ分の本文高さ」で積み上がる。そのうえで
-      // break-inside:avoid の塊（手順カード・図・表）が境界にかかったときの送りを再現する。
-      // 表紙・目次は break-after:page で1ページを丸ごと使うため、その下端を起点に取り直す。
+      // break-inside:avoid の塊（手順カード・図・表）が境界にかかったときの送りを再現する
+      // （printPageBreaks。規則は Electron 31 の実測に合わせてある）。
       // 線は送られた手順の上辺に密着させず、少し上に浮かせる（見た目の要望 2026-09-10）
       const BREAK_LINE_GAP = 6;
-      // 計測はすべて「本文の内部座標」（zoom が掛かる前の px）で行う。倍率は .pp-zoom の
-      // zoom で掛かっているので、内部座標の1ページ分は「物理の1ページ高 ÷ 倍率」になる
-      // （printToPDF の scale と同じ意味論）。zoom の中の getBoundingClientRect の座標系は
-      // Chromium の版で違うため（M128 で標準化。Electron 31 は旧挙動）、既知の高さ 100px の
-      // 物差しを本文の先頭に差し、unit（内部1pxが gBCR で何pxか。fitPage の
-      // transform:scale の縮小も込み）を実測して割る。線を置くときだけページ座標へ戻す。
+      // 計測は「本文の内部座標」（zoom が掛かる前の px）で行う。倍率は .pp-zoom の zoom で
+      // 掛かっているので、内部座標の1ページ分は「物理の1ページ高 ÷ 倍率」になる（印刷・PDF の
+      // #print-root の zoom と同じ意味論）。線を置くときだけページ座標へ戻す。
       const drawPageBreaks = () => {
         page.querySelectorAll('.pp-break').forEach((el) => el.remove());
         const zoomWrap = page.querySelector('.pp-zoom');
         const { paper, orient, scale } = pdfOutSettings();
         const s = scale / 100;
-        const MM = 96 / 25.4; // CSS の 1mm は常に 96/25.4 px
-        const pageContentH = (pdfPaperDims(paper, orient).h - 30) * MM; // ページ座標での1ページ分
+        const pageContentH = (pdfPaperDims(paper, orient).h - PRINT_PAGE_MARGIN_V_MM) * PX_PER_MM; // ページ座標での1ページ分
         if (!zoomWrap || !(pageContentH > 1) || !(s > 0)) return;
-        // 物差しと終端の印。負マージンで高さを打ち消し、レイアウトを動かさずに差し込む。
-        const ruler = document.createElement('div');
-        ruler.style.cssText = 'height:100px;margin:0 0 -100px;padding:0;border:0;visibility:hidden;';
-        const endMark = document.createElement('div');
-        endMark.style.cssText = 'height:0;margin:0;padding:0;border:0;';
-        zoomWrap.insertBefore(ruler, zoomWrap.firstChild);
-        zoomWrap.appendChild(endMark);
-        const rr = ruler.getBoundingClientRect();
-        const unit = rr.height / 100 || 1;
-        const origin = rr.top; // 本文の先頭（紙の上余白 15mm の直下）
-        const boxOf = (el) => {
-          const r = el.getBoundingClientRect();
-          return { top: (r.top - origin) / unit, bottom: (r.bottom - origin) / unit };
-        };
-        const contentH = pageContentH / s; // 内部座標の1ページ分（倍率を下げると多く入る）
-        const total = boxOf(endMark).top;  // 本文の終わり（紙の下余白は含まれない）
         let no = 1;
-        const emit = (at) => {
+        printPageBreaks(zoomWrap, pageContentH / s).forEach((at) => {
           no += 1;
-          const top = 15 * MM + at * s - BREAK_LINE_GAP; // 内部座標 → ページ座標
+          const top = (PRINT_PAGE_MARGIN_V_MM / 2) * PX_PER_MM + at * s - BREAK_LINE_GAP; // 内部座標 → ページ座標
           page.insertAdjacentHTML('beforeend',
             `<div class="pp-break" style="top:${top.toFixed(1)}px"><span>${no}ページ目</span></div>`);
-        };
-        // 途中では切らない塊。入れ子になっているものは外側だけを数える。
-        const atoms = Array.from(zoomWrap.querySelectorAll(PRINT_ATOM_SEL));
-        const blocks = atoms
-          .filter((el) => !atoms.some((o) => o !== el && o.contains(el)))
-          .map(boxOf)
-          .sort((a, b) => a.top - b.top);
-        let y = 0; // 内部座標での本文の先頭
-        const cover = zoomWrap.querySelector('.print-cover');
-        if (cover) { y = boxOf(cover).bottom; emit(y); } // 表紙は余白0の専用ページを丸ごと使う
-        const toc = zoomWrap.querySelector('.print-toc');
-        if (toc) {
-          const end = boxOf(toc).bottom;
-          paginateBreaks(blocks, contentH, end, y).forEach(emit); // 目次が2ページ以上のとき
-          y = end;
-          emit(y);
-        }
-        paginateBreaks(blocks, contentH, total, y).forEach(emit);
-        ruler.remove();
-        endMark.remove();
+        });
         setPreviewPageTotal(no);
       };
       // 改ページ線が数えた総ページ数を「全 N ページ」に出し、ページ範囲の上限にも使う。
@@ -6104,18 +6440,38 @@
         // 画像は読み込むまで高さ0なので、デコード完了後に引き直す（線の位置がずれるため）
         waitForPrintImages(page).then(() => { if (page.isConnected) relayoutPreview(); });
       };
+      // 用紙・向き・画像の配置を変えたら、画像が見出しごと1ページに収まる最大の倍率
+      // （30〜100%・5%刻み）に決め直す（v1.0.8）。紙面に候補の倍率を掛けて実際に組版し、
+      // 高さを実測する。続けて変えたときは最後の変更だけを反映する。
+      let fitSeq = 0;
+      const autoFitScale = async () => {
+        const my = ++fitSeq;
+        await waitForPrintImages(page); // 画像の高さが決まってから測る
+        const zoomWrap = page.querySelector('.pp-zoom');
+        if (my !== fitSeq || !page.isConnected || !zoomWrap) return;
+        const { paper, orient } = pdfOutSettings();
+        const pageH = (pdfPaperDims(paper, orient).h - PRINT_PAGE_MARGIN_V_MM) * PX_PER_MM;
+        const pct = autoPrintScale((p) => measurePrintFitNeeds(zoomWrap, p), pageH);
+        setPdfOutSettings({ scale: pct });
+        renderPreview(); // 測るために掛けた倍率を戻し、決めた倍率で描き直す
+      };
+      const changeLayout = (patch) => {
+        if (patch.cols) setPrintImgLayout(patch.cols);
+        else setPdfOutSettings(patch);
+        renderPreview();
+        autoFitScale();
+      };
       renderPreview();
       overlay.querySelectorAll('[data-pp-cols]').forEach((b) =>
-        b.addEventListener('click', () => { setPrintImgLayout(b.dataset.ppCols); renderPreview(); })
+        b.addEventListener('click', () => changeLayout({ cols: b.dataset.ppCols }))
       );
-      if (scaleInput) {
-        scaleInput.addEventListener('change', () => {
-          setPdfOutSettings({ scale: scaleInput.value });
-          renderPreview();
-        });
-      }
-      paperSelect.addEventListener('change', () => { setPdfOutSettings({ paper: paperSelect.value }); renderPreview(); });
-      orientSelect.addEventListener('change', () => { setPdfOutSettings({ orient: orientSelect.value }); renderPreview(); });
+      scaleInput.addEventListener('change', () => {
+        fitSeq += 1; // 手で変えたら、測り途中の自動調整は捨てる
+        setPdfOutSettings({ scale: scaleInput.value });
+        renderPreview();
+      });
+      paperSelect.addEventListener('change', () => changeLayout({ paper: paperSelect.value }));
+      orientSelect.addEventListener('change', () => changeLayout({ orient: orientSelect.value }));
       overlay.querySelector('[data-pp-print]').addEventListener('click', () => printChecklist(checklist));
       const pdfBtn = overlay.querySelector('[data-pp-pdf]');
       if (pdfBtn) {
@@ -6726,12 +7082,37 @@
     // 文字サイズの「表示px → キャンバス（原寸）px」換算率（仕様 16章）。
     // 保存時にサムネへ縮む率（長辺 maxEdge）と、本文幅 dispW に収まるよう縮む率を掛けた
     // 「アプリで見える大きさ / キャンバス上の大きさ」の逆数。原寸のほうが小さい画像は 1（拡大はしない）。
-    function fsDispScale(w, h, maxEdge, dispW) {
+    // maxH（省略可）は一覧の画像の高さの上限（.item-images.is-large .thumb の max-height: 70vh を px で）。
+    // v1.0.8（仕様 20章）から、画像編集は dispW に一覧の欄の実測幅、maxH に 70vh を渡す。
+    function fsDispScale(w, h, maxEdge, dispW, maxH) {
       w = Number(w) || 0; h = Number(h) || 0;
       if (w <= 0 || h <= 0) return 1;
       const thumbW = w * Math.min(1, maxEdge / Math.max(w, h)); // サムネの実幅
-      const shownW = Math.min(thumbW, dispW);                   // 本文で見える幅
+      let shownW = Math.min(thumbW, dispW);                     // 本文で見える幅
+      if (Number(maxH) > 0) shownW = Math.min(shownW, maxH * w / h); // 縦長は高さの上限で縮む
       return Math.max(1, w / shownW);
+    }
+    // ---- 大きさの基準＝手順一覧などのプレビューでの見た目（仕様 20章。v1.0.8）----
+    // k は fsDispScale の換算率（キャンバス px ÷ 一覧で見える px）。壊れた値は 1 とみなす。
+    const ieK = (k) => (Number(k) > 0 ? Number(k) : 1);
+    // 表示倍率 pct（%）のときの「CSS px ÷ キャンバス px」。100% ＝ 一覧での見た目。
+    function ieZoomCssScale(pct, k) {
+      return (Number(pct) || 100) / 100 / ieK(k);
+    }
+    // 編集画面の枠（availW × availH）に収まる表示倍率（%・整数・10〜400）。
+    // 小さい画像は原寸より拡大しない（以前の fitScale と同じ上限）。
+    function ieFitZoomPercent(w, h, availW, availH, k) {
+      w = Number(w) || 0; h = Number(h) || 0;
+      if (w <= 0 || h <= 0) return 100;
+      const fit = Math.min(availW / w, availH / h, 1); // CSS px ÷ キャンバス px
+      return Math.max(10, Math.min(400, Math.floor(fit * ieK(k) * 100)));
+    }
+    // 線の太さなどの換算。UI はプレビュー px、図形の値はキャンバス px（小数第2位まで）で持つ。
+    function prevToCanvasPx(v, k) {
+      return Math.round((Number(v) || 0) * ieK(k) * 100) / 100;
+    }
+    function canvasToPrevPx(v, k) {
+      return (Number(v) || 0) / ieK(k);
     }
     // 旧データ（色は color 1つだけ）を、線 color / 塗り fill / 文字 textColor の3つへ移す。
     //  - text は color が文字色だった。textColor へ移し、枠線は無し（color = null）にする。
@@ -6973,12 +7354,12 @@
                   </span>°
                 </span>
               </span>
-              <span class="ie-zoom ie-field" title="編集中の表示倍率（拡大縮小しても保存される画像の仕上がりは変わりません）">
+              <span class="ie-zoom ie-field" title="編集中の表示倍率（100%＝手順一覧で見える大きさ。拡大縮小しても保存される画像の仕上がりは変わりません）">
                 <span class="ie-fieldname">表示倍率</span>
                 <span class="ie-fieldbody">
                   <input type="range" class="ie-zoom-range" min="10" max="400" step="5" value="100" aria-label="表示倍率" />
                   <input type="number" class="ie-zoom-num" min="10" max="400" step="5" value="100" aria-label="表示倍率（％）" />%
-                  <button type="button" class="ie-zoom-fit" title="画面に収まる倍率に合わせる">フィット</button>
+                  <button type="button" class="ie-zoom-fit" title="編集画面の枠に収まる大きさで表示する">フィット</button>
                 </span>
               </span>
               <span class="ie-toolitem"><button class="ie-tool ie-undo" title="元に戻す (Ctrl+Z)"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4 9.5h11a5 5 0 0 1 0 10h-5"/><path d="M4 9.5 8 5.5"/><path d="m4 9.5 4 4"/></svg></button><span class="ie-toolname">元に戻す</span></span>
@@ -7087,6 +7468,8 @@
       // 「次に描く太さ」nextSize は選択の有無によらず常に更新する。描いた直後の図形は
       // 自動選択されるため、そこで調整した太さが次の図形へ引き継がれず「配置するたびに
       // リセットされる」ように見えていた（要望 2026-09-14。色・透過率と同じ扱いに揃える）。
+      // 欄の値はプレビュー px（手順一覧で見える太さ。仕様 20章）。図形の o.size はキャンバス px
+      // なので sizeToCanvas で換算し、太さから決まる大きさ（矢印の先など）用に換算率 o.u も入れる。
       function applySizeValue(raw) {
         const v = Math.max(1, Math.min(40, Math.round(Number(raw) || 1)));
         sizeInput.value = v;
@@ -7094,7 +7477,8 @@
         nextSize = v;
         const sels = selectedObjs();
         if (sels.length) {
-          sels.forEach((o) => { o.size = v; });
+          const cv = sizeToCanvas(v), k = fsScale();
+          sels.forEach((o) => { o.size = cv; o.u = k; });
           recomposite();
         }
         return v;
@@ -7106,10 +7490,11 @@
         sizeNum.value = applySizeValue(sizeNum.value);
       });
       // 選択中があればその太さ（複数なら先頭）、無ければ「次に描く太さ」を両方の欄に映す。
+      // 図形の太さはキャンバス px なので、プレビュー px（1〜40）へ換算して映す。
       function syncSizeUI() {
         const sel = selectedObj();
         let v = null;
-        if (sel && Number.isFinite(sel.size)) v = sel.size;
+        if (sel && Number.isFinite(sel.size)) v = Math.max(1, Math.min(40, Math.round(sizeToPrev(sel.size))));
         else if (!selectedIds.length) v = nextSize;
         if (v === null) return;
         sizeInput.value = v;
@@ -7247,9 +7632,21 @@
       // そのまま fs にすると本文一覧では小さく見える。UI（入力欄・一覧・A˄A˅）と
       // textFmt は表示px、オブジェクトの o.fs はキャンバスpx で持ち、applyTextFmt と
       // syncTextFmtUI の2か所だけで換算する。
-      const fsScale = () => fsDispScale(canvas.width, canvas.height, IMG_MAX_EDGE, APP_IMG_DISPLAY_W);
+      // 基準の幅は、一覧でこの手順の画像が表示されている欄の実測幅（手順は字下げされるため
+      // 本文幅 848px より狭い。枠線 1px×2 を除く）。高さは一覧と同じく画面の 70% まで（仕様 20章）。
+      // 欄が見つからないとき（描き直しの途中など）は本文幅の既定値。
+      const listImgAvailW = () => {
+        const box = document.querySelector(`.item-images[data-item="${CSS.escape(itemId)}"]`);
+        const w = box ? box.clientWidth - 2 : 0;
+        return w > 0 ? w : APP_IMG_DISPLAY_W;
+      };
+      const fsScale = () => fsDispScale(canvas.width, canvas.height, IMG_MAX_EDGE, listImgAvailW(), window.innerHeight * 0.7);
       const fsToCanvas = (v) => Math.max(1, Math.round((Number(v) || 16) * fsScale()));
       const fsToDisp = (v) => Math.max(1, Math.round((Number(v) || 16) / fsScale()));
+      // 線の太さも同じ基準（仕様 20章）。UI の値（プレビュー px）⇔ 図形の値（キャンバス px）。
+      const sizeToCanvas = (v) => prevToCanvasPx(v, fsScale());
+      const sizeToPrev = (v) => canvasToPrevPx(v, fsScale());
+      const curSize = () => sizeToCanvas(Number(sizeInput.value)); // 次に描く太さ（キャンバス px）
       const textFmt = { fs: 24, bold: true, italic: false }; // 新規作成の既定書式（fs は表示px）
       let fmtTarget = null; // その場編集中の入力欄が登録するフック { get(), set(changes) }
       const isTextObj = (o) => !!o && (o.type === 'text' || o.type === 'callout');
@@ -7341,20 +7738,12 @@
       const zoomFit = overlay.querySelector('.ie-zoom-fit');
       const ZOOM_MIN = 10, ZOOM_MAX = 400;
       let zoom = 100;
-      // 100% ＝ ウインドウ（キャンバス枠）にちょうど収まる倍率（フィット）と定義する。
-      // これにより 100% では画像全体が見えてスクロール不要。100% を超えたときだけ
-      // 内部スクロールが出る。ウインドウ自体の大きさはズームで変わらない（CSSで固定）。
-      function fitScale() {
-        const availW = Math.max(20, canvasWrap.clientWidth - 24);
-        const availH = Math.max(20, canvasWrap.clientHeight - 24);
-        if (!canvas.width || !canvas.height) return 1;
-        // 小さい画像を拡大しすぎないよう上限は等倍（1.0）。大きい画像は枠に合わせて縮小。
-        return Math.min(availW / canvas.width, availH / canvas.height, 1);
-      }
+      // 100% ＝ 手順一覧での見た目（仕様 20章。換算率は文字サイズと同じ fsScale）。
+      // 以前は「編集画面の枠に収まる大きさ」を 100% にしていたため、一覧の見た目と違い、
+      // 線の太さなどの基準もずれていた。ウインドウ自体の大きさはズームで変わらない（CSSで固定）。
       function applyZoom() {
         canvas.style.maxWidth = 'none';
-        const scale = fitScale() * (zoom / 100);
-        canvas.style.width = (canvas.width * scale) + 'px';
+        canvas.style.width = (canvas.width * ieZoomCssScale(zoom, fsScale())) + 'px';
         canvas.style.height = 'auto';
       }
       function setZoom(p) {
@@ -7363,12 +7752,17 @@
         zoomNum.value = zoom;
         applyZoom();
       }
-      // 「フィット」＝全体表示＝100%。
-      function fitZoom() { setZoom(100); }
+      // 「フィット」＝編集画面の枠に収まる大きさ（そのときの % を表示する）。
+      // 小さい画像は原寸より拡大しない。
+      function fitZoom() {
+        const availW = Math.max(20, canvasWrap.clientWidth - 24);
+        const availH = Math.max(20, canvasWrap.clientHeight - 24);
+        setZoom(ieFitZoomPercent(canvas.width, canvas.height, availW, availH, fsScale()));
+      }
       zoomRange.addEventListener('input', () => setZoom(zoomRange.value));
       zoomNum.addEventListener('change', () => setZoom(zoomNum.value));
       zoomFit.addEventListener('click', fitZoom);
-      // ウインドウのリサイズでフィット基準が変わるため、開いている間は追従させる。
+      // 100% は一覧での見た目なのでウインドウの大きさには依らないが、念のため引き直す。
       const onResize = () => applyZoom();
       window.addEventListener('resize', onResize);
       // ホイールズーム: ハンドツール中は素のホイールで、他ツールでは Ctrl+ホイールで
@@ -7520,8 +7914,8 @@
           si.src = strokesSrc;
         }
         recomposite();
-        // 枠のレイアウト確定後にフィット（=100%=全体表示）。以後ユーザーが自由に拡大可。
-        requestAnimationFrame(fitZoom);
+        // 開いたときは 100%＝手順一覧での見た目（仕様 20章）。以後ユーザーが自由に拡大縮小できる。
+        setZoom(100);
       };
       baseImg.src = baseSrc;
 
@@ -7593,7 +7987,7 @@
       function setupStroke(g, alpha) {
         g.strokeStyle = colorInput.value;
         g.fillStyle = colorInput.value;
-        g.lineWidth = Number(sizeInput.value);
+        g.lineWidth = curSize();
         g.lineCap = 'round';
         g.lineJoin = 'round';
         g.globalAlpha = alpha;
@@ -7602,6 +7996,9 @@
       // color（線）と fill（塗り）は null を取り得る＝線なし・塗りなし。
       const hasStroke = (o) => !!o.color && o.color !== 'none';
       const hasFill = (o) => !!o.fill && o.fill !== 'none';
+      // 図形ごとの換算率（キャンバス px ÷ プレビュー px。仕様 20章）。太さから決まる大きさ
+      // （矢印の先の最小・吹き出しの角丸など）に掛ける。o.u の無い既存の図形は 1＝従来どおり。
+      const objUnit = (o) => ieK(o && o.u);
       const textBoxPad = (o) => Math.round((Number(o.fs) || 16) * 0.3);
       function setupObjStroke(g, o) {
         g.strokeStyle = o.color || 'transparent';
@@ -7622,7 +8019,7 @@
         if (!hasStroke(o)) return; // 線なしの矢印は描かない
         const { x1, y1, x2, y2 } = o;
         const ang = Math.atan2(y2 - y1, x2 - x1);
-        const head = Math.max(18, o.size * 4);
+        const head = Math.max(18 * objUnit(o), o.size * 4);
         // 線の終点は三角の「底辺」まで伸ばして三角と密着させる。底辺の2角は頂点から
         // 距離 head・角度 ±π/7 にあり、その軸方向への投影＝ head*cos(π/7) が底辺の位置。
         // head をそのまま使うと底辺より奥で線が止まり隙間になるため、cos(π/7) を掛ける。
@@ -7743,7 +8140,7 @@
       function drawObjects(g) { objects.forEach((o) => drawObject(g, o)); }
       // ドラッグ中の始点・終点から図形オブジェクトを組み立てる（プレビューと確定で共用）。
       function shapeFromDrag(t, a, b, shift) {
-        const common = { color: lineColor(), fill: canFillShape(t) ? fillValue : null, size: Number(sizeInput.value), opacity: toolAlpha(t) };
+        const common = { color: lineColor(), fill: canFillShape(t) ? fillValue : null, size: curSize(), u: fsScale(), opacity: toolAlpha(t) };
         let bb = b;
         if (t === 'line' && shift) { // Shift で 45° 刻みにスナップ
           const d = Math.hypot(b.x - a.x, b.y - a.y);
@@ -7947,7 +8344,7 @@
       }
       // 消しゴムが触れたオブジェクトを丸ごと削除する（要件：元画像以外はすべて消せる）
       function eraseObjectsAt(p) {
-        const radius = Math.max(4, Number(sizeInput.value) * 2) / 2;
+        const radius = Math.max(4 * fsScale(), curSize() * 2) / 2; // 太さの2倍の径（プレビュー px 基準）
         const before = objects.length;
         objects = objects.filter((o) => {
           if (!o.hidden && objHit(o, p, radius)) { deselect(o.id); return false; }
@@ -7990,7 +8387,7 @@
         const o = {
           id: newObjId(), type: 'freeform', pts, closed: !!closed,
           color: lineColor(), fill: closed ? fillValue : null,
-          size: Number(sizeInput.value), opacity: toolAlpha('freeform'),
+          size: curSize(), u: fsScale(), opacity: toolAlpha('freeform'),
         };
         objects.push(o);
         setSelection([o.id]); // 描いた直後は選択状態（すぐ動かせる）
@@ -8014,7 +8411,7 @@
         if (ff.pts.length >= 2) {
           drawFreeformObj(g, {
             pts: ff.pts, closed: false, fill: null,
-            color: lineColor() || colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha('freeform'),
+            color: lineColor() || colorInput.value, size: curSize(), opacity: toolAlpha('freeform'),
           });
         }
         // カーソルまでの次の辺（点線プレビュー）
@@ -8022,7 +8419,7 @@
         if (ff.cursor) {
           g.globalAlpha = 0.7;
           g.strokeStyle = colorInput.value;
-          g.lineWidth = Math.max(1, Number(sizeInput.value) / 2);
+          g.lineWidth = Math.max(1, curSize() / 2);
           g.setLineDash([6 * s, 5 * s]);
           g.beginPath(); g.moveTo(last.x, last.y); g.lineTo(ff.cursor.x, ff.cursor.y); g.stroke();
           g.setLineDash([]);
@@ -8092,15 +8489,16 @@
       // o: callout オブジェクト（{x,y,text,fs,tip,color,size,opacity}）。
       function drawCalloutObj(g, o, withText) {
         const box = calloutBox(o.text, o.fs, o);
-        const r = Math.min(16, box.w / 2, box.h / 2);
-        const tW = Math.max(10, Math.round(o.fs * 0.6));
+        const u = objUnit(o);
+        const r = Math.min(16 * u, box.w / 2, box.h / 2);
+        const tW = Math.max(10 * u, Math.round(o.fs * 0.6));
         g.save();
         g.globalAlpha = o.opacity;
         calloutPath(g, o.x, o.y, box.w, box.h, r, o.tip, tW);
         // 塗りは不透明に置く。透け具合は透過率スライダー（globalAlpha=o.opacity）だけで
         // 決まり、透過0%のときは一切透けない（以前は固定で 0.92 を掛けており
         // 0% でも8%透けていた。ユーザー要望 2026-09-08）。既定の塗りは従来どおり白。
-        g.lineWidth = Math.max(2, o.size);
+        g.lineWidth = Math.max(2 * u, o.size);
         g.lineJoin = 'round';
         if (hasFill(o)) { g.fillStyle = o.fill; g.fill(); }
         if (hasStroke(o)) { g.strokeStyle = o.color; g.stroke(); }
@@ -8118,7 +8516,8 @@
         rw = Math.min(canvas.width - rx, Math.round(rw));
         rh = Math.min(canvas.height - ry, Math.round(rh));
         if (rw <= 0 || rh <= 0) return;
-        const block = Math.max(8, Number(sizeInput.value) * 2);
+        // ブロックの大きさも太さと同じくプレビュー px 基準（一覧で見たときの粗さをそろえる）
+        const block = Math.max(1, Math.round(Math.max(8 * fsScale(), curSize() * 2)));
         const data = g.getImageData(rx, ry, rw, rh).data;
         g.globalAlpha = 1;
         for (let by = 0; by < rh; by += block) {
@@ -8210,7 +8609,7 @@
             id: newObjId(), type: 'text', x: pos.x, y: pos.y, text,
             fs: fmt.fs, bold: fmt.bold, italic: fmt.italic,
             textColor: textCol, color: null, fill: fillValue, // 新規テキストの枠線は無し（後から線色で付けられる）
-            size: Number(sizeInput.value), opacity: toolAlpha('text'),
+            size: curSize(), u: fsScale(), opacity: toolAlpha('text'),
           };
           objects.push(obj);
           setSelection([obj.id]); // 確定直後も選択状態にして、書式変更を続けられるように
@@ -8265,7 +8664,7 @@
           done: false, dragTip: false, hoverTip: false,
           // 初期の尻尾先端＝本体の下・少し左（下向き）。以後ドラッグで自由に。
           tip: existing ? { x: existing.tip.x, y: existing.tip.y }
-                        : { x: p.x + Math.min(box0.w * 0.25, 40), y: p.y + box0.h + Math.round(fmt0.fs * 1.6) },
+                        : { x: p.x + Math.min(box0.w * 0.25, 40 * fsScale()), y: p.y + box0.h + Math.round(fmt0.fs * 1.6) },
           // 新規は尻尾をまだ触っていない間、本体の下に追従させる（折り返しや改行で本体が
           // 高くなっても尻尾が本体の中へ潜らない）。一度ドラッグしたら固定。
           tipAuto: !existing,
@@ -8279,13 +8678,14 @@
           const color = existing ? existing.color : lineColor();
           const fill = existing ? existing.fill : (fillValue || '#ffffff');
           const textCol = existing ? existing.textColor : textColorValue;
-          const size = existing ? existing.size : Number(sizeInput.value);
+          const size = existing ? existing.size : curSize();
+          const u = existing ? existing.u : fsScale();
           const opacity = existing ? existing.opacity : toolAlpha('callout');
           if (ac.tipAuto) {
             const b0 = calloutBox(ta.value, ac.fs, ac);
-            ac.tip = { x: ac.x + Math.min(b0.w * 0.25, 40), y: ac.y + b0.h + Math.round(ac.fs * 1.6) };
+            ac.tip = { x: ac.x + Math.min(b0.w * 0.25, 40 * fsScale()), y: ac.y + b0.h + Math.round(ac.fs * 1.6) };
           }
-          const preview = { x: ac.x, y: ac.y, text: ta.value, fs: ac.fs, bold: ac.bold, italic: ac.italic, tip: ac.tip, color, fill, textColor: textCol, size, opacity };
+          const preview = { x: ac.x, y: ac.y, text: ta.value, fs: ac.fs, bold: ac.bold, italic: ac.italic, tip: ac.tip, color, fill, textColor: textCol, size, u, opacity };
           recomposite();
           drawCalloutObj(ctx, preview, false);
           if (ac.dragTip || ac.hoverTip) {
@@ -8365,7 +8765,7 @@
           fs: ac.fs, bold: ac.bold, italic: ac.italic,
           tip: { x: ac.tip.x, y: ac.tip.y },
           color: lineColor(), fill: fillValue || '#ffffff', textColor: textColorValue,
-          size: Number(sizeInput.value), opacity: toolAlpha('callout'),
+          size: curSize(), u: fsScale(), opacity: toolAlpha('callout'),
         };
         objects.push(obj);
         setSelection([obj.id]); // 確定直後も選択状態にして、書式変更を続けられるように
@@ -8507,7 +8907,9 @@
         cropMode = false; cropRect = null; cropDrag = null;
         if (cropActions) cropActions.hidden = true;
         selectTool('select');
-        applyZoom();
+        // 切り出した画像が一覧で見える大きさを 100% として見せ直す。このあと入れる図形は
+        // 新しい換算率（fsScale）で入る（仕様 20章）。
+        setZoom(100);
         recomposite();
       }
       if (cropActions) {
@@ -8723,7 +9125,7 @@
             annoCtx.save();
             annoCtx.globalCompositeOperation = 'destination-out';
             annoCtx.globalAlpha = 1;
-            annoCtx.lineWidth = Math.max(4, Number(sizeInput.value) * 2);
+            annoCtx.lineWidth = Math.max(4 * fsScale(), curSize() * 2); // 太さの2倍（プレビュー px 基準）
             annoCtx.lineCap = 'round'; annoCtx.lineJoin = 'round';
             annoCtx.beginPath(); annoCtx.moveTo(p.x, p.y);
             annoCtx.lineTo(p.x + 0.01, p.y + 0.01); annoCtx.stroke(); // 点クリックでも痕を残す
@@ -8734,7 +9136,7 @@
             liveStroke = {
               pts: [p],
               color: colorInput.value,
-              width: Number(sizeInput.value) * (tool === 'marker' ? 3 : 1),
+              width: curSize() * (tool === 'marker' ? 3 : 1), // プレビュー px 基準の太さ（仕様 20章）
               alpha: toolAlpha(tool),
             };
             renderLiveStroke();
@@ -9039,7 +9441,7 @@
           'テキストボックスは「線色」で枠線を付けられます。文字の色は「文字色」で別に決めます。',
           '矢印・直線・×印は線だけの図形なので、塗りつぶしはありません。',
           '文字サイズ・太字・斜体は、テキストか吹き出しを使っているときだけ出ます。',
-          '文字サイズの数字は「手順の一覧で表示される大きさ（px）」です。大きなスクリーンショットでも、24 なら一覧でおよそ24pxの文字になります。',
+          '文字サイズと線の太さの数字は「手順の一覧で表示される大きさ（px）」です。大きなスクリーンショットでも、文字 24 なら一覧でおよそ24pxの文字、太さ 6 ならおよそ6pxの線になります。トリミングしたあとも、切り出した画像が一覧で見える大きさを基準に入ります。',
           '透過率はツールごとに覚えます（0%＝不透明）。',
         ]],
         ['取り消し', [
@@ -9049,7 +9451,7 @@
         ['トリミングと表示', [
           'トリミングは範囲を決めてから、もう一度「トリミング」ボタンを押すと適用されます（Office と同じ）。やめるときは「取消」か <kbd>Esc</kbd>、別のツールへの切り替えでも取り消せます。',
           'ハンドで画像を動かせます。ホイールで拡大縮小（ハンド以外のツールは <kbd>Ctrl</kbd>＋ホイール）。',
-          '表示倍率は編集中の見え方だけを変えるもので、保存される画像の仕上がりは変わりません。',
+          '表示倍率は編集中の見え方だけを変えるもので、保存される画像の仕上がりは変わりません。100% が手順の一覧で見える大きさです（開いたときとトリミングの後は 100%）。「フィット」で編集画面の枠に収まる大きさになります。',
         ]],
       ];
       function openImageEditorHelp() {
@@ -9271,7 +9673,27 @@
       if (!document.body.classList.contains('has-thumbs')) return;
       if (!app.contains(e.target)) return;
       const row = e.target.closest('.item');
-      if (row && row.dataset.item !== currentItemId) markCurrentThumb(row.dataset.item);
+      if (!row) return;
+      if (row.dataset.item !== currentItemId) markCurrentThumb(row.dataset.item);
+      // 本文の手順にフォーカスが入ったら、サイドバーの選択はその1件に戻す（複数選択 v1.0.8）
+      if (thumbSel.size !== 1 || !thumbSel.has(row.dataset.item)) setThumbSelection([row.dataset.item], row.dataset.item);
+    });
+
+    // ---- Ctrl+Z／Ctrl+Shift+Z／Ctrl+Y をアプリの元に戻す・やり直すにつなぐ（v1.0.8）----
+    // 入力欄・リッチ本文の中では文字の取り消しをブラウザに任せる。画像編集・モーダル・実行モードは
+    // それぞれの操作があるので何もしない（画像編集の onKey と同じ考え方）。
+    document.addEventListener('keydown', (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = String(e.key || '').toLowerCase();
+      const undo = k === 'z' && !e.shiftKey;
+      const redo = k === 'y' || (k === 'z' && e.shiftKey);
+      if (!undo && !redo) return;
+      if (document.documentElement.classList.contains('ie-open')) return;
+      if (document.querySelector('.modal-overlay, .player-overlay')) return;
+      const t = e.target;
+      if (t && t.closest && t.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+      e.preventDefault();
+      if (undo) store.undo(); else store.redo();
     });
 
     // ---- ツールバーのドロップダウン（実行／出力） ----
@@ -9435,12 +9857,25 @@
         case 'goto-item': {
           // 削除ボタン（.tsb-ops 内）を押したときは移動しない
           if (e.target.closest('[data-action="delete-item"]')) return;
+          // Ctrl／Shift 付きは選ぶだけ（本文へは移動しない。Delete などのキーが効くようサイドバーに
+          // フォーカスを置く）。仕様 docs/spec-thumbnail-multiselect.md
+          const ctrl = e.ctrlKey || e.metaKey;
+          if (ctrl || e.shiftKey) {
+            selectThumb(itemId, { ctrl, shift: e.shiftKey });
+            if (thumbsEl) thumbsEl.focus({ preventScroll: true });
+            return;
+          }
+          selectThumb(itemId, {}); // その1件を選ぶ（Shift の範囲の起点になる）
           const row = app.querySelector(`.item[data-item="${CSS.escape(itemId)}"]`);
           scrollToEditorTarget(row);
           markCurrentThumb(itemId);
           row?.querySelector('.item-text')?.focus();
           return;
         }
+        case 'thumbs-delete-selected':
+          return deleteThumbItems([...thumbSel]);
+        case 'thumbs-clear-selection':
+          return setThumbSelection([], null);
         case 'insert-section': { // セクションの間の「＋」／末尾の追加ゾーン（data-index の位置に挿入）
           if (!c) return;
           const at = Number(btn.dataset.index);
@@ -9468,6 +9903,9 @@
         case 'delete-section':
           return c && store.commit((s) => M.removeSection(M.findChecklist(s, c.id), sectionId));
         case 'delete-item':
+          // サイドバーのカードの ✕ は確認してから（1件でも。ユーザー決定 2026-09-29）。
+          // 本文の手順の削除ボタンは今までどおり確認なし。
+          if (btn.closest('#thumbs')) return deleteThumbItems([itemId]);
           return c && store.commit((s) => M.removeItem(M.findChecklist(s, c.id), sectionId, itemId));
         case 'reset':
           if (c && confirm('すべての項目を未完了に戻します。よろしいですか？'))
@@ -9675,15 +10113,22 @@
         normalizeObjColors, pointInPoly, marqueeRect, rectContainsBounds,
         // 線・矢印の始点スナップと文字サイズの表示px換算（仕様 16章）
         snapStartPoint, fsDispScale, APP_IMG_DISPLAY_W, IMG_MAX_EDGE,
+        // 表示倍率 100%＝一覧での見た目・線の太さのプレビューpx換算（仕様 20章）
+        ieZoomCssScale, ieFitZoomPercent, prevToCanvasPx, canvasToPrevPx,
         // 図形の回転（仕様 18章）
         canRotate, normalizeAngle, rotatePointAround, objRotationCenter,
         toLocalPoint, toWorldPoint, reanchorRotatedBox,
         // PDF出力の倍率・用紙・向き
         clampPdfScale, pdfPaperDims, pdfPageStyleCss, pdfOutSettings, setPdfOutSettings,
         paginateBreaks, parsePdfPageRange, pdfPageRangeString,
+        // 印刷の改ページ（入れ子・見出しのまとまり）と倍率の自動調整（v1.0.8）
+        renderPrintView, printBreakBlocks, autoPrintScale, printChecklist,
+        printRuler, printPageBreaks, measurePrintFitNeeds,
         // サムネイルサイドバー
         thumbStepModel, renderThumbSidebar, updateThumbSidebar, thumbsCollapsed, setThumbsCollapsed,
         clampThumbsWidth, thumbsWidth, setThumbsWidth,
+        // サムネイルの複数選択（v1.0.8）
+        nextThumbSelection,
         // 実行モード（3-R5）とガイド小窓（3-R6）
         playerSteps, playerStartIndex, formatPlayerTime, playerSummary, openPlayer,
         guideStepPayload,

@@ -29,6 +29,8 @@ const { initStorage } = require('./storage');
 const { initErrorLog } = require('./errorlog');
 const session = require('./session');
 const uia = require('./uia');
+const capture = require('./capture'); // クリック直前キャプチャの撮影プロセス（v1.0.8。docs/spec-preclick-capture.md）
+const { tickDiff } = require('./preclick-frames');
 const { normalizeUia, stepText, dblClickText, inputText, keyStepText, dragText } = require('./steptext');
 const { classifyKeydown } = require('./keys');
 const { planShot } = require('./zoomcrop');
@@ -341,6 +343,8 @@ function startCapture() {
   }
   // UIA 要素解決の子プロセスを起動（Windows のみ・失敗してもフォールバック文で録画継続）。
   uia.start();
+  // クリック直前キャプチャの撮影プロセスを起動（Windows のみ・失敗しても従来の撮影で録画継続）。
+  capture.start();
   try {
     uIOhook.start();
   } catch (err) {
@@ -389,6 +393,7 @@ function stopRecording() {
   if (wasRecording) {
     persistChain.then(() => {
       uia.stop();
+      capture.stop();
       const ended = session.endSession();
       const payload = ended && !ended.removed
         ? { dir: ended.dir, shots: ended.shots }
@@ -585,6 +590,9 @@ function stopPrecapture() {
 }
 async function pollPreFrame() {
   if (!recording || captureBusy) return; // クリック撮影中はスキップ（直列化）
+  // 撮影プロセス（v1.0.8）が動いている間は、そちらが 100ms ごとに撮っているので休む。
+  // 撮影プロセスが落ちたら、この従来の裏撮りが自然に再開する。
+  if (capture.isActive()) return;
   captureBusy = true;
   try {
     const shot = await captureShot(lastCursor.x, lastCursor.y);
@@ -686,6 +694,49 @@ async function captureShot(physX, physY) {
   }
 }
 
+// 撮影プロセスから受け取った1枚（BGRA）を、保存処理が使う形（PNG・ディスプレイ・画像の原点）にする。
+// origin は撮ったモニタの左上（物理 px）。画像内の座標はこれを引いて求める（v1.0.8）。
+function frameToShot(f, physX, physY) {
+  const data = Buffer.from(f.data.buffer, f.data.byteOffset, f.data.byteLength);
+  const raw = nativeImage.createFromBitmap(data, { width: f.width, height: f.height }).toPNG();
+  const disp = screen.getDisplayNearestPoint(toDip(physX, physY));
+  return { raw, disp, origin: { x: f.rect.x, y: f.rect.y } };
+}
+
+// 【撮影 v1.0.8】イベント時刻 tick（uiohook の time）より前に撮り終えた1枚（source: 'preclick'）。
+// 無ければ撮影プロセスでその場の1枚（'grab'）。撮影プロセスが使えなければ null（呼び出し側が従来の方法で撮る）。
+// 撮影プロセスのリングは約 0.5 秒ぶんしか持たないので、保存キューの順番を待たずイベントの瞬間に呼ぶ。
+async function frameBefore(tick, physX, physY) {
+  if (!capture.isActive()) return null;
+  try {
+    if (Number.isFinite(tick)) {
+      const f = await capture.pickBefore(tick, physX, physY);
+      if (f) return { ...frameToShot(f, physX, physY), source: 'preclick', ageMs: tickDiff(tick, f.end) };
+    }
+    const g = await capture.grab(physX, physY);
+    return g ? { ...frameToShot(g, physX, physY), source: 'grab', ageMs: null } : null;
+  } catch (err) {
+    // 受け取った1枚を PNG にできない等。呼び出し側が従来の撮影へ倒せるよう null を返す。
+    console.error('撮影プロセスの画像を使えませんでした（従来の撮影で続行します）:', err);
+    return null;
+  }
+}
+
+// 撮影プロセスでその場の1枚（ドラッグの終点など）。使えなければ従来の screenshot-desktop。
+async function grabNow(physX, physY) {
+  const g = await capture.grab(physX, physY);
+  if (g) return frameToShot(g, physX, physY);
+  const shot = await captureShot(physX, physY);
+  return { raw: shot.raw, disp: shot.disp };
+}
+
+// 画像の左上（物理 px）。撮影プロセスの1枚はモニタの矩形、従来の撮影は Electron の Display から求める。
+function shotOrigin(shot) {
+  if (shot && shot.origin) return shot.origin;
+  const d = shot.disp;
+  return { x: d.bounds.x * d.scaleFactor, y: d.bounds.y * d.scaleFactor };
+}
+
 // uiohook のボタン番号 → サイドカー用の名前（想定外の番号はそのまま数値で記録）。
 function buttonName(button) {
   if (button === BTN_LEFT) return 'left';
@@ -697,10 +748,11 @@ function buttonName(button) {
 // マーカーを合成し、セッションフォルダへ画像＋メタデータ JSON を併記で書き出して
 // （session.js / 2-R1）、ガジェットを更新する。
 async function persistShot(shot) {
-  const { raw, disp, physX, physY, button, clicks, source, uiaPromise } = shot;
+  const { raw, disp, physX, physY, button, clicks, source, ageMs, uiaPromise } = shot;
   // クリックの物理相対座標（撮影したモニタの左上原点）。
-  const relX = physX - disp.bounds.x * disp.scaleFactor;
-  const relY = physY - disp.bounds.y * disp.scaleFactor;
+  const origin = shotOrigin(shot);
+  const relX = physX - origin.x;
+  const relY = physY - origin.y;
 
   // mousedown で並行キックした UIA 解決と合流し、手順文を生成する（2-R2）。
   // uia.resolve はタイムアウト込みで必ず解決するため、ここで詰まることはない。
@@ -719,7 +771,7 @@ async function persistShot(shot) {
     uia: uiaInfo,
     click: { x: relX, y: relY },
     imageSize,
-    displayOrigin: { x: disp.bounds.x * disp.scaleFactor, y: disp.bounds.y * disp.scaleFactor },
+    displayOrigin: origin,
     scale: disp.scaleFactor,
   });
 
@@ -773,7 +825,7 @@ async function persistShot(shot) {
     display: { id: disp.id, boundsDip: disp.bounds, scaleFactor: disp.scaleFactor },
     marker,
     zoom,
-    capture: { source },
+    capture: { source, ageMs: ageMs == null ? null : ageMs },
     appChange: takeAppChange(uiaInfo),
   });
   notifyShotSaved(buf, fileName);
@@ -824,9 +876,12 @@ function enqueuePersist(capPromise, extra) {
 }
 
 // ── キーボード系ステップの保存（2-R2b ②③）──────────────────
-// 撮影: 事前キャプチャ（peek・消費しない）優先、無ければその場で撮影。
+// 撮影: イベントの瞬間に頼んだ撮影プロセスの1枚（framePromise。v1.0.8）優先。
+// 無ければ従来どおり事前キャプチャ（peek・消費しない）、それも無ければその場で撮影。
 // 失敗はステップごと諦める（録画は続行。console.error のみ）。
-async function obtainKeyFrame(physX, physY) {
+async function obtainKeyFrame(physX, physY, framePromise) {
+  const fr = framePromise ? await framePromise : null;
+  if (fr) return fr;
   const pre = peekFreshPreFrame(physX, physY);
   if (pre) return { raw: pre.raw, disp: pre.disp, source: 'precapture' };
   captureBusy = true;
@@ -843,7 +898,7 @@ async function obtainKeyFrame(physX, physY) {
 
 // 【保存】タイピングバーストの確定（②）。フォーカス要素の解決と合流し、確定時点の
 // 画面を保存する。要素矩形が採用できればクリックと同じ枠ハイライト＋拡大を付ける。
-async function persistInput(uiaPromise, enter) {
+async function persistInput(uiaPromise, enter, framePromise) {
   const uiaInfo = normalizeUia(uiaPromise ? await uiaPromise : null);
   const text = inputText(uiaInfo, { enter });
 
@@ -855,11 +910,12 @@ async function persistInput(uiaPromise, enter) {
     px = Math.round(uiaInfo.rect[0] + uiaInfo.rect[2] / 2);
     py = Math.round(uiaInfo.rect[1] + uiaInfo.rect[3] / 2);
   }
-  const frame = await obtainKeyFrame(px, py);
+  const frame = await obtainKeyFrame(px, py, framePromise);
   if (!frame) return;
   const { raw, disp } = frame;
-  const relX = px - disp.bounds.x * disp.scaleFactor;
-  const relY = py - disp.bounds.y * disp.scaleFactor;
+  const origin = shotOrigin(frame);
+  const relX = px - origin.x;
+  const relY = py - origin.y;
 
   let imageSize = null;
   try {
@@ -873,7 +929,7 @@ async function persistInput(uiaPromise, enter) {
         uia: uiaInfo,
         click: { x: relX, y: relY },
         imageSize,
-        displayOrigin: { x: disp.bounds.x * disp.scaleFactor, y: disp.bounds.y * disp.scaleFactor },
+        displayOrigin: origin,
         scale: disp.scaleFactor,
       })
     : { frame: null, zoom: null };
@@ -909,7 +965,7 @@ async function persistInput(uiaPromise, enter) {
     display: { id: disp.id, boundsDip: disp.bounds, scaleFactor: disp.scaleFactor },
     marker,
     zoom,
-    capture: { source: frame.source },
+    capture: { source: frame.source, ageMs: frame.ageMs == null ? null : frame.ageMs },
     appChange: takeAppChange(uiaInfo),
   });
   notifyShotSaved(buf, fileName);
@@ -918,9 +974,9 @@ async function persistInput(uiaPromise, enter) {
 // 【保存】キー操作ステップ（③: Enter 単独・ショートカット）。押下時点の画面
 //（＝効果が出る前）を保存する。マーカー・拡大なし。uia はアプリ切替検出と
 // デバッグ用にフォーカス要素を記録するだけで、文はコンボから決まる。
-async function persistKeyStep(combo, uiaPromise) {
+async function persistKeyStep(combo, uiaPromise, framePromise) {
   const uiaInfo = normalizeUia(uiaPromise ? await uiaPromise : null);
-  const frame = await obtainKeyFrame(lastCursor.x, lastCursor.y);
+  const frame = await obtainKeyFrame(lastCursor.x, lastCursor.y, framePromise);
   if (!frame) return;
   const { raw, disp } = frame;
   const { fileName } = session.recordShot(raw, {
@@ -929,7 +985,7 @@ async function persistKeyStep(combo, uiaPromise) {
     text: keyStepText(combo),
     uia: uiaInfo,
     display: { id: disp.id, boundsDip: disp.bounds, scaleFactor: disp.scaleFactor },
-    capture: { source: frame.source },
+    capture: { source: frame.source, ageMs: frame.ageMs == null ? null : frame.ageMs },
     appChange: takeAppChange(uiaInfo),
   });
   notifyShotSaved(raw, fileName);
@@ -938,7 +994,7 @@ async function persistKeyStep(combo, uiaPromise) {
 // 【保存】ドラッグステップ（④）。始点画像は mousedown 時の撮影（クリックと同じ経路）、
 // 終点画像は mouseup 時の撮影。両端に赤丸を焼き込み、文は両端の要素名から生成する。
 async function persistDrag(shot, end) {
-  const { raw, disp, physX, physY, source, uiaPromise } = shot;
+  const { raw, disp, physX, physY, source, ageMs, uiaPromise } = shot;
   const startUia = normalizeUia(uiaPromise ? await uiaPromise : null);
   const endUia = normalizeUia(end.uiaPromise ? await end.uiaPromise : null);
   const endShot = await end.capPromise; // { raw, disp } | null（撮影失敗）
@@ -955,8 +1011,9 @@ async function persistDrag(shot, end) {
   });
 
   // 始点（主画像）
-  const sRelX = physX - disp.bounds.x * disp.scaleFactor;
-  const sRelY = physY - disp.bounds.y * disp.scaleFactor;
+  const sOrigin = shotOrigin(shot);
+  const sRelX = physX - sOrigin.x;
+  const sRelY = physY - sOrigin.y;
   let marker = { drawn: false };
   let buf = raw;
   if (clickMarkerOn) {
@@ -970,8 +1027,9 @@ async function persistDrag(shot, end) {
   let endImagePoint = null;
   if (endShot) {
     const d2 = endShot.disp;
-    const eRelX = end.x - d2.bounds.x * d2.scaleFactor;
-    const eRelY = end.y - d2.bounds.y * d2.scaleFactor;
+    const eOrigin = shotOrigin(endShot);
+    const eRelX = end.x - eOrigin.x;
+    const eRelY = end.y - eOrigin.y;
     endImagePoint = { x: eRelX, y: eRelY };
     endPng = endShot.raw;
     if (clickMarkerOn) {
@@ -990,7 +1048,7 @@ async function persistDrag(shot, end) {
     imagePoint: { x: sRelX, y: sRelY },
     display: { id: disp.id, boundsDip: disp.bounds, scaleFactor: disp.scaleFactor },
     marker,
-    capture: { source },
+    capture: { source, ageMs: ageMs == null ? null : ageMs },
     drag: {
       from: { x: physX, y: physY },
       to: { x: end.x, y: end.y },
@@ -1005,26 +1063,30 @@ async function persistDrag(shot, end) {
 }
 
 // タイピングバーストを確定し、入力ステップとして保存キューへ積む（②）。
-// バーストが無ければ何もしない。enter = Enter キーでの確定か。
-function finalizeTyping({ enter = false } = {}) {
+// バーストが無ければ何もしない。enter = Enter キーでの確定か。tick = 確定のきっかけ
+//（クリック・Tab・Enter・ショートカット）のイベント時刻。その前に撮り終えた1枚を今すぐ頼む（v1.0.8）。
+function finalizeTyping({ enter = false, tick } = {}) {
   if (!typing) return;
   const t = typing;
   typing = null;
+  const framePromise = frameBefore(tick, lastCursor.x, lastCursor.y).catch(() => null);
   persistChain = persistChain
-    .then(() => persistInput(t.uiaPromise, enter))
+    .then(() => persistInput(t.uiaPromise, enter, framePromise))
     .catch((err) => {
       console.error('入力ステップの保存に失敗しました:', err);
     });
 }
 
 // キー操作ステップを保存キューへ積む（③）。同一コンボの連打は集約する。
-function recordKeyStep(combo) {
+function recordKeyStep(combo, tick) {
   const now = Date.now();
   if (combo === lastKeyStep.combo && now - lastKeyStep.t <= DEBOUNCE_MS) return;
   lastKeyStep = { combo, t: now };
   const uiaPromise = uia.resolveFocused();
+  // 押した瞬間より前に撮り終えた1枚を今すぐ頼む（保存キューの順番を待つとリングから消えるため）
+  const framePromise = frameBefore(tick, lastCursor.x, lastCursor.y).catch(() => null);
   persistChain = persistChain
-    .then(() => persistKeyStep(combo, uiaPromise))
+    .then(() => persistKeyStep(combo, uiaPromise, framePromise))
     .catch((err) => {
       console.error('キー操作ステップの保存に失敗しました:', err);
     });
@@ -1046,15 +1108,16 @@ function onKeyDown(e) {
     return;
   }
   if (c.type === 'edit') return; // バースト中の編集はそのまま継続（開始はしない）
-  if (c.type === 'tab') { finalizeTyping({}); return; } // フォーカス移動＝入力の区切り
+  // 画像はキーを押した瞬間（e.time）より前に撮り終えた1枚を使う（v1.0.8）
+  if (c.type === 'tab') { finalizeTyping({ tick: e.time }); return; } // フォーカス移動＝入力の区切り
   if (c.type === 'enter') {
-    if (typing) { finalizeTyping({ enter: true }); return; }
-    recordKeyStep('Enter');
+    if (typing) { finalizeTyping({ enter: true, tick: e.time }); return; }
+    recordKeyStep('Enter', e.time);
     return;
   }
   if (c.type === 'shortcut') {
-    finalizeTyping({}); // 入力中なら先に入力ステップを確定（順序: 入力 → キー操作）
-    recordKeyStep(c.combo);
+    finalizeTyping({ tick: e.time }); // 入力中なら先に入力ステップを確定（順序: 入力 → キー操作）
+    recordKeyStep(c.combo, e.time);
   }
 }
 
@@ -1093,9 +1156,9 @@ function maybeAmendDblClick(e) {
 // 撮影は押下(mousedown)の瞬間に開始し、離上(mouseup)で保存可否を確定する。
 function onMouseDown(e) {
   if (!recording) return;
-  // 入力中のタイピングバーストはクリックで区切る（2-R2b ②。事前キャプチャは
-  // peek（非消費）のため、この後のクリック撮影と同じフレームを共有できる）。
-  finalizeTyping({});
+  // 入力中のタイピングバーストはクリックで区切る（2-R2b ②）。入力の画像もクリックより前に
+  // 撮り終えた1枚にする（v1.0.8。撮影プロセスの1枚は使い切らないので、クリックと共有できる）。
+  finalizeTyping({ tick: e.time });
   pendingDown = { button: e.button, x: e.x, y: e.y };
   pendingCapture = null; // 直前に未消費の撮影があれば破棄（連続 down 等）
   // 撮影対象になり得るクリックだけ、押下の瞬間に「寸前の画面」を確保する。
@@ -1108,6 +1171,19 @@ function onMouseDown(e) {
   // メニュー等も、押下の瞬間に依頼することで消える前に解決できる。
   // 決して reject せず、失敗・タイムアウト・非対応環境は null（フォールバック文）。
   const uiaPromise = uia.resolve(e.x, e.y);
+  // 撮影プロセス（v1.0.8）が動いていれば、押下のイベント時刻より前に撮り終えた1枚を使う。
+  // 受け取れなければ従来のその場撮影（screenshot-desktop）へ倒す。
+  if (capture.isActive()) {
+    pendingCapture = frameBefore(e.time, e.x, e.y)
+      .then((fr) => fr || captureShot(e.x, e.y).then((shot) => ({ ...shot, source: 'ondemand', ageMs: null })))
+      .then((fr) => ({ ...fr, physX: e.x, physY: e.y, button: e.button, uiaPromise }))
+      .catch((err) => {
+        console.error('スクリーンショットの撮影に失敗しました:', err);
+        warnGadget('スクリーンショットを撮影できません。画面収録の許可や保存先を確認してください。');
+        return null;
+      });
+    return;
+  }
   const pre = takeFreshPreFrame(e.x, e.y);
   if (pre) {
     pendingCapture = Promise.resolve({
@@ -1155,7 +1231,8 @@ function onMouseUp(e) {
         capPromise: (async () => {
           captureBusy = true;
           try {
-            return await captureShot(e.x, e.y);
+            // 撮影プロセスがあればその場の1枚（速い）、無ければ従来の screenshot-desktop
+            return capture.isActive() ? await grabNow(e.x, e.y) : await captureShot(e.x, e.y);
           } catch (err) {
             console.error('ドラッグ終点の撮影に失敗しました:', err);
             return null;
@@ -1543,6 +1620,7 @@ app.on('before-quit', () => {
     /* noop */
   }
   uia.stop();
+  capture.stop();
   try {
     session.endSession();
   } catch (_) {
