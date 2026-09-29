@@ -7325,13 +7325,13 @@
               </span>
               <label class="ie-size ie-field" title="線の太さ">
                 <span class="ie-fieldname">線の太さ</span>
-                <span class="ie-fieldbody"><input type="range" min="1" max="40" value="6" /><input type="number" class="ie-num ie-size-num" min="1" max="40" step="1" value="6" aria-label="線の太さ（px）" /></span>
+                <span class="ie-fieldbody"><input type="range" min="1" max="40" value="2" /><input type="number" class="ie-num ie-size-num" min="1" max="40" step="1" value="2" aria-label="線の太さ（px）" /></span>
               </label>
               <span class="ie-textfmt ie-field" hidden>
                 <span class="ie-fieldname">文字の書式</span>
                 <span class="ie-fieldbody">
                   <span class="rb-sizebox" title="文字サイズ（px）">
-                    <input type="number" class="rb-size-in ie-font-size" min="8" max="200" step="1" value="24"
+                    <input type="number" class="rb-size-in ie-font-size" min="8" max="200" step="1" value="14"
                            aria-label="文字サイズ（px）" />
                     <button type="button" class="rb-size-dd ie-font-size-dd" tabindex="-1" title="サイズ一覧">▾</button>
                   </span>
@@ -7460,7 +7460,8 @@
       // 透過率と同じく、選択中の図形があればその太さを即時に変える（テキストの枠線・吹き出し・
       // 矩形などすべて。要望 2026-09-11: テキストの枠線の太さが作成時の値で固定だった）。
       // 選択が無いときに動かした値だけを「次に描く太さ」nextSize として覚える。
-      const DEFAULT_SIZE = 6;
+      // 既定の太さはプレビュー px（仕様 21章。v1.0.8 の単位変更で 6 のままだと一覧で太すぎたため 2 に）。
+      const DEFAULT_SIZE = 2;
       let nextSize = DEFAULT_SIZE;
       const sizeNum = overlay.querySelector('.ie-size-num');
       // スライダーと数値入力の両方から呼ぶ。1〜40 に丸めて両方の欄へ映し、
@@ -7647,7 +7648,8 @@
       const sizeToCanvas = (v) => prevToCanvasPx(v, fsScale());
       const sizeToPrev = (v) => canvasToPrevPx(v, fsScale());
       const curSize = () => sizeToCanvas(Number(sizeInput.value)); // 次に描く太さ（キャンバス px）
-      const textFmt = { fs: 24, bold: true, italic: false }; // 新規作成の既定書式（fs は表示px）
+      // 新規作成の既定書式（fs は表示px）。一覧の本文 16px より少し小さい 14（仕様 21章）。
+      const textFmt = { fs: 14, bold: true, italic: false };
       let fmtTarget = null; // その場編集中の入力欄が登録するフック { get(), set(changes) }
       const isTextObj = (o) => !!o && (o.type === 'text' || o.type === 'callout');
       function syncTextFmtUI() {
@@ -8490,7 +8492,8 @@
       function drawCalloutObj(g, o, withText) {
         const box = calloutBox(o.text, o.fs, o);
         const u = objUnit(o);
-        const r = Math.min(16 * u, box.w / 2, box.h / 2);
+        // 角丸の半径 10（プレビュー px）。16 では文字 14 の吹き出しの左右がほぼ半円になった（仕様 21章）。
+        const r = Math.min(10 * u, box.w / 2, box.h / 2);
         const tW = Math.max(10 * u, Math.round(o.fs * 0.6));
         g.save();
         g.globalAlpha = o.opacity;
@@ -9441,7 +9444,7 @@
           'テキストボックスは「線色」で枠線を付けられます。文字の色は「文字色」で別に決めます。',
           '矢印・直線・×印は線だけの図形なので、塗りつぶしはありません。',
           '文字サイズ・太字・斜体は、テキストか吹き出しを使っているときだけ出ます。',
-          '文字サイズと線の太さの数字は「手順の一覧で表示される大きさ（px）」です。大きなスクリーンショットでも、文字 24 なら一覧でおよそ24pxの文字、太さ 6 ならおよそ6pxの線になります。トリミングしたあとも、切り出した画像が一覧で見える大きさを基準に入ります。',
+          '文字サイズと線の太さの数字は「手順の一覧で表示される大きさ（px）」です。大きなスクリーンショットでも、文字 14 なら一覧でおよそ14pxの文字、太さ 2 ならおよそ2pxの線になります（新しく描くときの既定は文字 14・太さ 2）。トリミングしたあとも、切り出した画像が一覧で見える大きさを基準に入ります。',
           '透過率はツールごとに覚えます（0%＝不透明）。',
         ]],
         ['取り消し', [
