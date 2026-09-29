@@ -1202,8 +1202,48 @@
   }
   .tsb-card:hover { background: var(--surface-2); box-shadow: var(--shadow-item); }
   .tsb-card:hover .tsb-ops { display: flex; }
-  .tsb-card.is-current { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
-  .tsb-card.is-current .tsb-no { color: var(--primary); }
+  /* 複数選択（仕様 docs/spec-thumbnail-multiselect.md・モック screenshots/mock-thumbs-multiselect.png）。
+     選択＝枠と薄い地色（1件だけのときは従来の「編集中」の見た目と同じ）。編集中で選んでいない
+     カードは番号だけ青。Shift+クリックで文字が選択されないよう user-select を切る。 */
+  .tsb-card { user-select: none; }
+  .tsb-card.is-selected { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
+  .tsb-card.is-current .tsb-no, .tsb-card.is-selected .tsb-no { color: var(--primary); }
+  /* 2件以上：地色を少し濃くし、番号を青丸で塗って「まとめて操作する対象」と分かるようにする */
+  #thumbs.has-multi .tsb-card.is-selected { background: color-mix(in srgb, var(--primary) 16%, transparent); }
+  #thumbs.has-multi .tsb-card.is-selected .tsb-no {
+    align-self: start; margin-top: 1px; padding: 1px 0; border-radius: 999px;
+    background: var(--primary); color: var(--primary-text);
+  }
+  #thumbs:focus { outline: none; }
+  /* 選択バー（2件以上で見出しの下に出す） */
+  .tsb-selbar {
+    display: flex; align-items: center; gap: 4px;
+    padding: 6px 6px 6px 12px;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+    font-size: 0.76rem;
+  }
+  .tsb-selbar[hidden], #thumbs.is-collapsed .tsb-selbar { display: none; }
+  .tsb-selbar .cnt { flex: 1; min-width: 0; white-space: nowrap; font-weight: 700; color: var(--primary); }
+  .tsb-selbar button {
+    font: inherit; padding: 2px 8px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  }
+  .tsb-selbar button.del { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+  /* まとめてドラッグするときの絵（setDragImage に渡す。画面外に置いて撮らせる） */
+  .tsb-drag-ghost {
+    position: fixed; top: -1000px; left: -1000px; z-index: -1;
+    width: 132px; padding: 4px;
+    background: var(--surface); border: 1px solid var(--primary); border-radius: 8px;
+    box-shadow: 4px 4px 0 -1px var(--surface), 4px 4px 0 0 var(--border-strong),
+                8px 8px 0 -1px var(--surface), 8px 8px 0 0 var(--border-strong);
+  }
+  .tsb-drag-ghost img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: contain; border-radius: 4px; }
+  .tsb-drag-ghost .n {
+    position: absolute; top: -9px; right: -9px; min-width: 24px; height: 22px; padding: 0 7px;
+    border-radius: 11px; background: var(--primary); color: var(--primary-text);
+    font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  }
   .tsb-no {
     font-size: var(--tsb-no-fs); font-weight: 700; color: var(--muted);
     text-align: center; padding-top: 2px; font-variant-numeric: tabular-nums;
@@ -2028,6 +2068,29 @@
       to.items.splice(insertAt, 0, item);
       return touch(checklist);
     }
+    // 複数の手順をまとめて消す（フェーズをまたいでよい。サムネイルの複数選択 v1.0.8）
+    function removeItems(checklist, itemIds) {
+      const ids = new Set(itemIds || []);
+      checklist.sections.forEach((s) => { s.items = s.items.filter((x) => !ids.has(x.id)); });
+      return touch(checklist);
+    }
+    // 複数の手順を toSectionId の「表示上の位置」toIndex（動かす前の並びで、どの手順の前に
+    // 入れるか）へ、番号順（フェーズ順→手順順）に固めて動かす。toIndex より前にある動かす手順の
+    // 数だけ詰めて換算する（ドラッグの破線の位置にそのまま入る。v1.0.8）。
+    // moveItem は「取り除いた後の位置」を受け取る別の約束（↑↓ボタン用）なので混同しない。
+    function moveItems(checklist, itemIds, toSectionId, toIndex) {
+      const to = findSection(checklist, toSectionId);
+      if (!to) return checklist;
+      const ids = new Set(itemIds || []);
+      const moving = [];
+      checklist.sections.forEach((s) => s.items.forEach((x) => { if (ids.has(x.id)) moving.push(x); }));
+      if (!moving.length) return checklist;
+      const at = Math.max(0, Math.min(Number(toIndex) || 0, to.items.length));
+      const before = to.items.slice(0, at).filter((x) => ids.has(x.id)).length;
+      checklist.sections.forEach((s) => { s.items = s.items.filter((x) => !ids.has(x.id)); });
+      to.items.splice(Math.min(at - before, to.items.length), 0, ...moving);
+      return touch(checklist);
+    }
     function moveSection(checklist, sectionId, toIndex) {
       const idx = checklist.sections.findIndex((s) => s.id === sectionId);
       if (idx < 0) return checklist;
@@ -2085,8 +2148,8 @@
       findChecklist, progress, sumMinutes, addChecklist, mergeChecklistsInto,
       removeChecklist, duplicateChecklist,
       renameChecklist, addSection, renameSection, removeSection, addItem, addBlankItem,
-      setItemField, editItem, toggleItem, removeItem, resetChecklist, clearCompleted,
-      moveItem, moveSection, mergeItemUp, mergeItemInto, mergeTimeValue,
+      setItemField, editItem, toggleItem, removeItem, removeItems, resetChecklist, clearCompleted,
+      moveItem, moveItems, moveSection, mergeItemUp, mergeItemInto, mergeTimeValue,
       addItemImage, replaceItemImage, removeItemImage, copyItemImage,
     };
 
@@ -3261,6 +3324,11 @@
           <button class="icon" type="button" data-action="toggle-thumbs"
                   title="${collapsed ? 'サムネイルを開く' : 'サムネイルを閉じる'}">${collapsed ? '»' : '«'}</button>
         </div>
+        <div class="tsb-selbar" hidden>
+          <span class="cnt"></span>
+          <button type="button" class="del" data-action="thumbs-delete-selected" title="選んだ${todo ? '項目' : '手順'}を削除（Delete キーでも）">削除</button>
+          <button type="button" data-action="thumbs-clear-selection" title="選択を外す（Esc キーでも）">選択解除</button>
+        </div>
         <div class="tsb-scroll">${phases || `<p class="tsb-empty">${todo ? '項目' : '手順'}がありません</p>`}</div>`;
     }
     // <aside id="thumbs"> を #app の前に作る（buildStandaloneHtml の body 定義に
@@ -3275,6 +3343,7 @@
         thumbsEl.setAttribute('aria-label', 'サムネイル');
         document.body.insertBefore(thumbsEl, document.getElementById('app'));
       }
+      if (!thumbsEl.__keysWired) { thumbsEl.__keysWired = true; wireThumbsKeys(thumbsEl); }
       return thumbsEl;
     }
     // 表示状態と幅（--thumbs-w）を反映する。この変数だけがサイドバーの幅と、
@@ -3311,8 +3380,11 @@
         list: '.tsb-body',
         section: '.tsb-phase',
         handle: '.tsb-grip',
+        // 選択中のカード（2件以上）を掴んだら、選んだ手順をまとめて動かす
+        dragIds: (id) => (thumbSel.size >= 2 && thumbSel.has(id) ? thumbOrder().filter((x) => thumbSel.has(x)) : [id]),
       });
       markCurrentThumb(currentItemId);
+      markThumbSelection(); // 描き直したカードへ選択を付け直す（消えた手順は外れる）
     }
     // 本文で編集中の手順に対応するカードを強調する。再描画すると入力欄の
     // フォーカスが壊れるため、class の付け替えだけで追随させる。
@@ -3322,6 +3394,102 @@
       if (!thumbsEl) return;
       thumbsEl.querySelectorAll('.tsb-card').forEach((el) => {
         el.classList.toggle('is-current', !!itemId && el.dataset.item === itemId);
+      });
+    }
+
+    // ---- 複数選択（仕様 docs/spec-thumbnail-multiselect.md。v1.0.8）----
+    // 選択は手順 ID の Set と、Shift の範囲の起点。表示は class の付け替えだけで行う。
+    let thumbSel = new Set();
+    let thumbAnchor = null;
+    // -- 純関数（テスト対象。window.__test__ に公開） --
+    // order は表示順（番号順）の手順 ID。クリック＝その1件（起点）、Ctrl＝足す／外す（起点を移す）、
+    // Shift＝起点からの範囲（起点は変えない）、Ctrl+Shift＝範囲を足す。返り値の sel は表示順。
+    function nextThumbSelection(order, sel, anchor, target, { ctrl = false, shift = false } = {}) {
+      const list = Array.isArray(order) ? order : [];
+      const cur = new Set(sel || []);
+      const sorted = (set) => list.filter((id) => set.has(id));
+      if (!list.includes(target)) return { sel: sorted(cur), anchor: anchor || null };
+      const a = anchor && list.includes(anchor) ? anchor : null;
+      if (shift && a) {
+        const [i, j] = [list.indexOf(a), list.indexOf(target)].sort((x, y) => x - y);
+        const range = list.slice(i, j + 1);
+        const next = ctrl ? new Set([...cur, ...range]) : new Set(range);
+        return { sel: sorted(next), anchor: a };
+      }
+      if (ctrl) {
+        if (cur.has(target)) cur.delete(target); else cur.add(target);
+        return { sel: sorted(cur), anchor: target };
+      }
+      return { sel: [target], anchor: target };
+    }
+    const thumbOrder = () => (thumbsEl ? [...thumbsEl.querySelectorAll('.tsb-card')].map((el) => el.dataset.item) : []);
+    function setThumbSelection(ids, anchor) {
+      thumbSel = new Set(ids || []);
+      thumbAnchor = anchor === undefined ? thumbAnchor : anchor;
+      markThumbSelection();
+    }
+    // 選択を画面へ反映する（カードの class・2件以上の見た目・選択バー）。消えた手順は外す。
+    function markThumbSelection() {
+      if (!thumbsEl) return;
+      const order = thumbOrder();
+      thumbSel = new Set(order.filter((id) => thumbSel.has(id)));
+      if (thumbAnchor && !order.includes(thumbAnchor)) thumbAnchor = null;
+      thumbsEl.querySelectorAll('.tsb-card').forEach((el) => {
+        el.classList.toggle('is-selected', thumbSel.has(el.dataset.item));
+      });
+      const n = thumbSel.size;
+      thumbsEl.classList.toggle('has-multi', n >= 2);
+      const bar = thumbsEl.querySelector('.tsb-selbar');
+      if (bar) {
+        bar.hidden = n < 2;
+        const cnt = bar.querySelector('.cnt');
+        if (cnt) cnt.textContent = `${n}件選択中`;
+      }
+    }
+    function selectThumb(itemId, mods) {
+      const r = nextThumbSelection(thumbOrder(), [...thumbSel], thumbAnchor, itemId, mods);
+      setThumbSelection(r.sel, r.anchor);
+    }
+    // サイドバーからの削除（Delete キー・選択バー・カードの ✕）。1件でも確認を出し（ユーザー決定
+    // 2026-09-29）、1回の削除＝元に戻す1回にまとめる。消したあとは右下に通知する。
+    function deleteThumbItems(ids) {
+      const c = currentChecklist();
+      if (!c || !ids.length) return;
+      const model = thumbStepModel(c).flatMap((p) => p.items);
+      const targets = model.filter((it) => ids.includes(it.id));
+      if (!targets.length) return;
+      const noun = c.type === MODES.TODO ? '項目' : '手順';
+      const one = targets[0];
+      const text = one.text ? (one.text.length > 30 ? one.text.slice(0, 30) + '…' : one.text) : '（未入力）';
+      const msg = targets.length >= 2
+        ? `選択した ${targets.length} 件の${noun}を削除しますか？`
+        : `${noun} ${one.no}「${text}」を削除しますか？`;
+      if (!confirm(msg)) return;
+      const idList = targets.map((it) => it.id);
+      store.commit((s) => M.removeItems(M.findChecklist(s, c.id), idList));
+      setThumbSelection([], null);
+      showToast(`${targets.length}件の${noun}を削除しました（Ctrl+Z で元に戻せます）`);
+    }
+    // #thumbs のキー操作と空白クリック（ensureThumbsEl から1回だけ配線する）
+    function wireThumbsKeys(el) {
+      el.setAttribute('tabindex', '-1');
+      el.addEventListener('keydown', (e) => {
+        if (e.target.closest && e.target.closest('input, textarea, select')) return;
+        const ctrl = e.ctrlKey || e.metaKey;
+        if ((e.key === 'Delete' || e.key === 'Backspace') && thumbSel.size) {
+          e.preventDefault();
+          deleteThumbItems([...thumbSel]);
+        } else if (e.key === 'Escape' && thumbSel.size) {
+          setThumbSelection([], null);
+        } else if (ctrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'a') {
+          e.preventDefault();
+          const order = thumbOrder();
+          setThumbSelection(order, thumbAnchor || order[0] || null);
+        }
+      });
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.tsb-card, button, .tsb-resizer, .tsb-selbar')) return;
+        if (thumbSel.size) setThumbSelection([], null); // 空白クリックで選択を外す
       });
     }
 
@@ -4342,22 +4510,37 @@
         const kind = el.dataset.drag;
         if (kind === 'item') {
           const li = el.closest(SEL.item);
-          dragging = { kind, id: li.dataset.item, fromSection: li.dataset.section };
+          const id = li.dataset.item;
+          // opts.dragIds があれば、まとめて動かす手順の一覧をもらう（サムネイルの複数選択）
+          const ids = typeof SEL.dragIds === 'function' ? SEL.dragIds(id) : [id];
+          dragging = { kind, id, fromSection: li.dataset.section, ids: ids && ids.length ? ids : [id] };
         } else if (kind === 'section') {
           const sec = el.closest(SEL.section);
           dragging = { kind, id: sec.dataset.section, fromSection: null };
         }
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', dragging ? dragging.id : '');
-        requestAnimationFrame(() => el.closest(`${SEL.item}, ${SEL.section}`)?.classList.add('dragging'));
+        const many = dragging && dragging.ids && dragging.ids.length > 1;
+        if (many) setMultiDragImage(e, el.closest(SEL.item), dragging.ids.length);
+        requestAnimationFrame(() => {
+          if (!dragging) return;
+          if (many) {
+            dragging.ids.forEach((id) => container.querySelector(`${SEL.item}[data-item="${CSS.escape(id)}"]`)?.classList.add('dragging'));
+          } else {
+            el.closest(`${SEL.item}, ${SEL.section}`)?.classList.add('dragging');
+          }
+        });
       });
-      container.addEventListener('dragend', () => {
+      // ドラッグの後片づけ。ドロップで描き直すとドラッグ元の要素が消えて dragend が届かないため、
+      // drop の最後でも呼ぶ（残ったままだと、あとで別のものを落としたときに前の手順が動く）。
+      const endDrag = () => {
         container.querySelectorAll('.dragging, .drop-target')
           .forEach((n) => n.classList.remove('dragging', 'drop-target'));
         dragging = null;
         hideDragIndicator();
         disarm();
-      });
+      };
+      container.addEventListener('dragend', endDrag);
       // 挿入位置（どの行とどの行の間に入るか）を drop と同じ中点判定で求める。
       // dragover での表示と drop での確定が必ず一致するよう、判定を共通化する。
       function itemDropAt(e) {
@@ -4429,22 +4612,47 @@
         if (!dragging) return;
         e.preventDefault();
         hideDragIndicator();
-        if (dragging.kind === 'item') {
+        const d = dragging;
+        endDrag(); // 先に片づける（onMove の描き直しで dragend が届かなくなるため）
+        if (d.kind === 'item') {
           const at = itemDropAt(e);
           if (!at) return;
+          // toIndex は「動かす前の並び」での挿入位置（破線の位置）。換算は M.moveItems が行う。
           onMove({
             kind: 'item',
-            itemId: dragging.id,
-            fromSection: dragging.fromSection,
+            itemId: d.id,
+            itemIds: d.ids || [d.id],
+            fromSection: d.fromSection,
             toSection: at.toSection,
             toIndex: at.toIndex,
           });
-        } else if (dragging.kind === 'section') {
+        } else if (d.kind === 'section') {
           const at = sectionDropAt(e);
-          if (!at || at.id === dragging.id) return;
-          onMove({ kind: 'section', sectionId: dragging.id, toIndex: at.toIndex });
+          if (!at || at.id === d.id) return;
+          onMove({ kind: 'section', sectionId: d.id, toIndex: at.toIndex });
         }
       });
+    }
+    // まとめてドラッグするときの絵：最初の1枚の縮小画像に「N件」の札（モック承認済み）。
+    // setDragImage は描画済みの要素を撮るので、画面外に置いて渡し、次の描画で片づける。
+    function setMultiDragImage(e, cardEl, count) {
+      if (!e.dataTransfer || typeof e.dataTransfer.setDragImage !== 'function') return;
+      const ghost = document.createElement('div');
+      ghost.className = 'tsb-drag-ghost';
+      const img = cardEl && cardEl.querySelector('img');
+      if (img) {
+        const pic = document.createElement('img');
+        pic.src = img.src;
+        pic.alt = '';
+        ghost.appendChild(pic);
+      }
+      const badge = document.createElement('span');
+      badge.className = 'n';
+      badge.textContent = `${count}件`;
+      ghost.appendChild(badge);
+      document.body.appendChild(ghost);
+      e.dataTransfer.setDragImage(ghost, 16, 16);
+      setTimeout(() => ghost.remove(), 0);
     }
 
     // 手順間の画像コピー（サムネイルを別の手順へD&D）。並べ替え用DnDや外部ファイル
@@ -5640,9 +5848,16 @@
       const c = currentChecklist();
       if (!c) return;
       if (move.kind === 'item') {
+        // toIndex はドラッグの破線の位置（動かす前の並び）。M.moveItems がその約束で動かす。
+        // 並びが変わらないドロップはコミットしない（元に戻す履歴を汚さない）。
+        const ids = move.itemIds && move.itemIds.length ? move.itemIds : [move.itemId];
+        const orderKey = (cl) => cl.sections.map((s) => s.id + ':' + s.items.map((i) => i.id).join(',')).join('|');
+        const trial = JSON.parse(JSON.stringify({ sections: c.sections.map((s) => ({ id: s.id, items: s.items.map((i) => ({ id: i.id })) })) }));
+        M.moveItems(trial, ids, move.toSection, move.toIndex);
+        if (orderKey(trial) === orderKey(c)) return;
         store.commit((s) => {
           const cc = M.findChecklist(s, c.id);
-          M.moveItem(cc, move.fromSection, move.itemId, move.toSection, move.toIndex);
+          M.moveItems(cc, ids, move.toSection, move.toIndex);
         });
       } else if (move.kind === 'section') {
         store.commit((s) => {
@@ -9458,7 +9673,27 @@
       if (!document.body.classList.contains('has-thumbs')) return;
       if (!app.contains(e.target)) return;
       const row = e.target.closest('.item');
-      if (row && row.dataset.item !== currentItemId) markCurrentThumb(row.dataset.item);
+      if (!row) return;
+      if (row.dataset.item !== currentItemId) markCurrentThumb(row.dataset.item);
+      // 本文の手順にフォーカスが入ったら、サイドバーの選択はその1件に戻す（複数選択 v1.0.8）
+      if (thumbSel.size !== 1 || !thumbSel.has(row.dataset.item)) setThumbSelection([row.dataset.item], row.dataset.item);
+    });
+
+    // ---- Ctrl+Z／Ctrl+Shift+Z／Ctrl+Y をアプリの元に戻す・やり直すにつなぐ（v1.0.8）----
+    // 入力欄・リッチ本文の中では文字の取り消しをブラウザに任せる。画像編集・モーダル・実行モードは
+    // それぞれの操作があるので何もしない（画像編集の onKey と同じ考え方）。
+    document.addEventListener('keydown', (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = String(e.key || '').toLowerCase();
+      const undo = k === 'z' && !e.shiftKey;
+      const redo = k === 'y' || (k === 'z' && e.shiftKey);
+      if (!undo && !redo) return;
+      if (document.documentElement.classList.contains('ie-open')) return;
+      if (document.querySelector('.modal-overlay, .player-overlay')) return;
+      const t = e.target;
+      if (t && t.closest && t.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+      e.preventDefault();
+      if (undo) store.undo(); else store.redo();
     });
 
     // ---- ツールバーのドロップダウン（実行／出力） ----
@@ -9622,12 +9857,25 @@
         case 'goto-item': {
           // 削除ボタン（.tsb-ops 内）を押したときは移動しない
           if (e.target.closest('[data-action="delete-item"]')) return;
+          // Ctrl／Shift 付きは選ぶだけ（本文へは移動しない。Delete などのキーが効くようサイドバーに
+          // フォーカスを置く）。仕様 docs/spec-thumbnail-multiselect.md
+          const ctrl = e.ctrlKey || e.metaKey;
+          if (ctrl || e.shiftKey) {
+            selectThumb(itemId, { ctrl, shift: e.shiftKey });
+            if (thumbsEl) thumbsEl.focus({ preventScroll: true });
+            return;
+          }
+          selectThumb(itemId, {}); // その1件を選ぶ（Shift の範囲の起点になる）
           const row = app.querySelector(`.item[data-item="${CSS.escape(itemId)}"]`);
           scrollToEditorTarget(row);
           markCurrentThumb(itemId);
           row?.querySelector('.item-text')?.focus();
           return;
         }
+        case 'thumbs-delete-selected':
+          return deleteThumbItems([...thumbSel]);
+        case 'thumbs-clear-selection':
+          return setThumbSelection([], null);
         case 'insert-section': { // セクションの間の「＋」／末尾の追加ゾーン（data-index の位置に挿入）
           if (!c) return;
           const at = Number(btn.dataset.index);
@@ -9655,6 +9903,9 @@
         case 'delete-section':
           return c && store.commit((s) => M.removeSection(M.findChecklist(s, c.id), sectionId));
         case 'delete-item':
+          // サイドバーのカードの ✕ は確認してから（1件でも。ユーザー決定 2026-09-29）。
+          // 本文の手順の削除ボタンは今までどおり確認なし。
+          if (btn.closest('#thumbs')) return deleteThumbItems([itemId]);
           return c && store.commit((s) => M.removeItem(M.findChecklist(s, c.id), sectionId, itemId));
         case 'reset':
           if (c && confirm('すべての項目を未完了に戻します。よろしいですか？'))
@@ -9876,6 +10127,8 @@
         // サムネイルサイドバー
         thumbStepModel, renderThumbSidebar, updateThumbSidebar, thumbsCollapsed, setThumbsCollapsed,
         clampThumbsWidth, thumbsWidth, setThumbsWidth,
+        // サムネイルの複数選択（v1.0.8）
+        nextThumbSelection,
         // 実行モード（3-R5）とガイド小窓（3-R6）
         playerSteps, playerStartIndex, formatPlayerTime, playerSummary, openPlayer,
         guideStepPayload,
