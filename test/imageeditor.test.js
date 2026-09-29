@@ -426,3 +426,51 @@ test('imageeditor — 多角形・吹き出しの回転', async (t) => {
     assert.equal(T.snapStartPoint(objs, { x: 2, y: 2 }, 11), null, '回転前の位置にはもう無い');
   });
 });
+
+// 仕様 20章：大きさの基準を「手順一覧などのプレビューでの見た目」にそろえる（v1.0.8）
+test('imageeditor — 表示倍率 100%＝一覧での見た目・線の太さのプレビューpx換算', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+  const k = (w, h) => T.fsDispScale(w, h, T.IMG_MAX_EDGE, T.APP_IMG_DISPLAY_W);
+  const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
+
+  await t.test('100% のときキャンバスは一覧で見える幅で表示される', () => {
+    near(1920 * T.ieZoomCssScale(100, k(1920, 1080)), 848, '1920×1080 は本文幅 848px');
+    near(3000 * T.ieZoomCssScale(100, k(3000, 2000)), 848, '3000×2000（サムネ 1600 に縮む）も 848px');
+    near(600 * T.ieZoomCssScale(100, k(600, 400)), 600, '小さい画像は原寸（拡大しない）');
+    near(1920 * T.ieZoomCssScale(200, k(1920, 1080)), 1696, '200% は倍');
+  });
+
+  await t.test('トリミングの後も、100% は切り出した画像が一覧で見える幅', () => {
+    near(960 * T.ieZoomCssScale(100, k(960, 540)), 848, '960 幅に切ると 848px（一覧でも本文幅いっぱい）');
+    near(700 * T.ieZoomCssScale(100, k(700, 400)), 700, '本文幅より小さく切ると原寸');
+  });
+
+  await t.test('フィットは枠に収まる倍率（小さい画像は原寸まで）', () => {
+    // 1920×1080 を 1380×800 の枠へ → 幅で決まり 1380/1920、倍率では ×k
+    assert.equal(T.ieFitZoomPercent(1920, 1080, 1380, 800, k(1920, 1080)), Math.floor(1380 / 1920 * (1920 / 848) * 100));
+    assert.equal(T.ieFitZoomPercent(400, 300, 1380, 800, k(400, 300)), 100, '小さい画像は拡大しない＝100%');
+    assert.equal(T.ieFitZoomPercent(1920, 1080, 50, 50, k(1920, 1080)), 10, '枠がとても小さいときは下限 10%');
+    assert.equal(T.ieFitZoomPercent(0, 0, 1380, 800, 1), 100, '読み込み前は 100%');
+  });
+
+  await t.test('fsDispScale — 一覧の高さの上限（70vh）で縮む縦長画像も、一覧の見た目を基準にする', () => {
+    // 900×1600 は幅では 848 に収まるが、高さ 700px（70vh）の上限で幅 393.75px に縮む
+    near(T.fsDispScale(900, 1600, 1600, 848, 700), 900 / 393.75, '縦長は高さの上限で決まる');
+    near(T.fsDispScale(1920, 1080, 1600, 782, 700), 1920 / 782, '横長は欄の幅（手順の字下げで 782px など）で決まる');
+    near(T.fsDispScale(1920, 1080, 1600, 848), 1920 / 848, 'maxH を省けば従来どおり');
+  });
+
+  await t.test('線の太さ：プレビュー px ⇔ キャンバス px（行って戻ると元の値）', () => {
+    const kk = k(1920, 1080);
+    near(T.prevToCanvasPx(6, kk), Math.round(6 * kk * 100) / 100, '6px は 1920 幅で約 13.58');
+    for (const kv of [1, 1.132, 1.5, kk, 3.54]) {
+      for (let v = 1; v <= 40; v++) {
+        assert.equal(Math.round(T.canvasToPrevPx(T.prevToCanvasPx(v, kv), kv)), v, `k=${kv} v=${v}`);
+      }
+    }
+    near(T.prevToCanvasPx(6, 1), 6, '小さい画像は同じ値');
+    near(T.prevToCanvasPx(6, NaN), 6, '換算率が壊れていたら 1 とみなす');
+  });
+});

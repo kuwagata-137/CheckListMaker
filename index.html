@@ -737,7 +737,8 @@
   .ie-opacity input[type="range"] { width: 90px; vertical-align: middle; }
   .ie-canvas-wrap {
     /* ウインドウ固定のもと、ここが残り高さを埋めて内部スクロールする。
-       100% では画像全体がちょうど収まり（fitScale）、スクロール不要。 */
+       100% は手順一覧で見える大きさ（仕様 20章）。枠より大きいときはスクロールし、
+       「フィット」で枠に収まる大きさにできる。 */
     position: relative; /* テキスト入力オーバーレイの絶対配置基準 */
     flex: 1 1 auto;
     min-height: 0;
@@ -6866,12 +6867,37 @@
     // 文字サイズの「表示px → キャンバス（原寸）px」換算率（仕様 16章）。
     // 保存時にサムネへ縮む率（長辺 maxEdge）と、本文幅 dispW に収まるよう縮む率を掛けた
     // 「アプリで見える大きさ / キャンバス上の大きさ」の逆数。原寸のほうが小さい画像は 1（拡大はしない）。
-    function fsDispScale(w, h, maxEdge, dispW) {
+    // maxH（省略可）は一覧の画像の高さの上限（.item-images.is-large .thumb の max-height: 70vh を px で）。
+    // v1.0.8（仕様 20章）から、画像編集は dispW に一覧の欄の実測幅、maxH に 70vh を渡す。
+    function fsDispScale(w, h, maxEdge, dispW, maxH) {
       w = Number(w) || 0; h = Number(h) || 0;
       if (w <= 0 || h <= 0) return 1;
       const thumbW = w * Math.min(1, maxEdge / Math.max(w, h)); // サムネの実幅
-      const shownW = Math.min(thumbW, dispW);                   // 本文で見える幅
+      let shownW = Math.min(thumbW, dispW);                     // 本文で見える幅
+      if (Number(maxH) > 0) shownW = Math.min(shownW, maxH * w / h); // 縦長は高さの上限で縮む
       return Math.max(1, w / shownW);
+    }
+    // ---- 大きさの基準＝手順一覧などのプレビューでの見た目（仕様 20章。v1.0.8）----
+    // k は fsDispScale の換算率（キャンバス px ÷ 一覧で見える px）。壊れた値は 1 とみなす。
+    const ieK = (k) => (Number(k) > 0 ? Number(k) : 1);
+    // 表示倍率 pct（%）のときの「CSS px ÷ キャンバス px」。100% ＝ 一覧での見た目。
+    function ieZoomCssScale(pct, k) {
+      return (Number(pct) || 100) / 100 / ieK(k);
+    }
+    // 編集画面の枠（availW × availH）に収まる表示倍率（%・整数・10〜400）。
+    // 小さい画像は原寸より拡大しない（以前の fitScale と同じ上限）。
+    function ieFitZoomPercent(w, h, availW, availH, k) {
+      w = Number(w) || 0; h = Number(h) || 0;
+      if (w <= 0 || h <= 0) return 100;
+      const fit = Math.min(availW / w, availH / h, 1); // CSS px ÷ キャンバス px
+      return Math.max(10, Math.min(400, Math.floor(fit * ieK(k) * 100)));
+    }
+    // 線の太さなどの換算。UI はプレビュー px、図形の値はキャンバス px（小数第2位まで）で持つ。
+    function prevToCanvasPx(v, k) {
+      return Math.round((Number(v) || 0) * ieK(k) * 100) / 100;
+    }
+    function canvasToPrevPx(v, k) {
+      return (Number(v) || 0) / ieK(k);
     }
     // 旧データ（色は color 1つだけ）を、線 color / 塗り fill / 文字 textColor の3つへ移す。
     //  - text は color が文字色だった。textColor へ移し、枠線は無し（color = null）にする。
@@ -7113,12 +7139,12 @@
                   </span>°
                 </span>
               </span>
-              <span class="ie-zoom ie-field" title="編集中の表示倍率（拡大縮小しても保存される画像の仕上がりは変わりません）">
+              <span class="ie-zoom ie-field" title="編集中の表示倍率（100%＝手順一覧で見える大きさ。拡大縮小しても保存される画像の仕上がりは変わりません）">
                 <span class="ie-fieldname">表示倍率</span>
                 <span class="ie-fieldbody">
                   <input type="range" class="ie-zoom-range" min="10" max="400" step="5" value="100" aria-label="表示倍率" />
                   <input type="number" class="ie-zoom-num" min="10" max="400" step="5" value="100" aria-label="表示倍率（％）" />%
-                  <button type="button" class="ie-zoom-fit" title="画面に収まる倍率に合わせる">フィット</button>
+                  <button type="button" class="ie-zoom-fit" title="編集画面の枠に収まる大きさで表示する">フィット</button>
                 </span>
               </span>
               <span class="ie-toolitem"><button class="ie-tool ie-undo" title="元に戻す (Ctrl+Z)"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4 9.5h11a5 5 0 0 1 0 10h-5"/><path d="M4 9.5 8 5.5"/><path d="m4 9.5 4 4"/></svg></button><span class="ie-toolname">元に戻す</span></span>
@@ -7227,6 +7253,8 @@
       // 「次に描く太さ」nextSize は選択の有無によらず常に更新する。描いた直後の図形は
       // 自動選択されるため、そこで調整した太さが次の図形へ引き継がれず「配置するたびに
       // リセットされる」ように見えていた（要望 2026-09-14。色・透過率と同じ扱いに揃える）。
+      // 欄の値はプレビュー px（手順一覧で見える太さ。仕様 20章）。図形の o.size はキャンバス px
+      // なので sizeToCanvas で換算し、太さから決まる大きさ（矢印の先など）用に換算率 o.u も入れる。
       function applySizeValue(raw) {
         const v = Math.max(1, Math.min(40, Math.round(Number(raw) || 1)));
         sizeInput.value = v;
@@ -7234,7 +7262,8 @@
         nextSize = v;
         const sels = selectedObjs();
         if (sels.length) {
-          sels.forEach((o) => { o.size = v; });
+          const cv = sizeToCanvas(v), k = fsScale();
+          sels.forEach((o) => { o.size = cv; o.u = k; });
           recomposite();
         }
         return v;
@@ -7246,10 +7275,11 @@
         sizeNum.value = applySizeValue(sizeNum.value);
       });
       // 選択中があればその太さ（複数なら先頭）、無ければ「次に描く太さ」を両方の欄に映す。
+      // 図形の太さはキャンバス px なので、プレビュー px（1〜40）へ換算して映す。
       function syncSizeUI() {
         const sel = selectedObj();
         let v = null;
-        if (sel && Number.isFinite(sel.size)) v = sel.size;
+        if (sel && Number.isFinite(sel.size)) v = Math.max(1, Math.min(40, Math.round(sizeToPrev(sel.size))));
         else if (!selectedIds.length) v = nextSize;
         if (v === null) return;
         sizeInput.value = v;
@@ -7387,9 +7417,21 @@
       // そのまま fs にすると本文一覧では小さく見える。UI（入力欄・一覧・A˄A˅）と
       // textFmt は表示px、オブジェクトの o.fs はキャンバスpx で持ち、applyTextFmt と
       // syncTextFmtUI の2か所だけで換算する。
-      const fsScale = () => fsDispScale(canvas.width, canvas.height, IMG_MAX_EDGE, APP_IMG_DISPLAY_W);
+      // 基準の幅は、一覧でこの手順の画像が表示されている欄の実測幅（手順は字下げされるため
+      // 本文幅 848px より狭い。枠線 1px×2 を除く）。高さは一覧と同じく画面の 70% まで（仕様 20章）。
+      // 欄が見つからないとき（描き直しの途中など）は本文幅の既定値。
+      const listImgAvailW = () => {
+        const box = document.querySelector(`.item-images[data-item="${CSS.escape(itemId)}"]`);
+        const w = box ? box.clientWidth - 2 : 0;
+        return w > 0 ? w : APP_IMG_DISPLAY_W;
+      };
+      const fsScale = () => fsDispScale(canvas.width, canvas.height, IMG_MAX_EDGE, listImgAvailW(), window.innerHeight * 0.7);
       const fsToCanvas = (v) => Math.max(1, Math.round((Number(v) || 16) * fsScale()));
       const fsToDisp = (v) => Math.max(1, Math.round((Number(v) || 16) / fsScale()));
+      // 線の太さも同じ基準（仕様 20章）。UI の値（プレビュー px）⇔ 図形の値（キャンバス px）。
+      const sizeToCanvas = (v) => prevToCanvasPx(v, fsScale());
+      const sizeToPrev = (v) => canvasToPrevPx(v, fsScale());
+      const curSize = () => sizeToCanvas(Number(sizeInput.value)); // 次に描く太さ（キャンバス px）
       const textFmt = { fs: 24, bold: true, italic: false }; // 新規作成の既定書式（fs は表示px）
       let fmtTarget = null; // その場編集中の入力欄が登録するフック { get(), set(changes) }
       const isTextObj = (o) => !!o && (o.type === 'text' || o.type === 'callout');
@@ -7481,20 +7523,12 @@
       const zoomFit = overlay.querySelector('.ie-zoom-fit');
       const ZOOM_MIN = 10, ZOOM_MAX = 400;
       let zoom = 100;
-      // 100% ＝ ウインドウ（キャンバス枠）にちょうど収まる倍率（フィット）と定義する。
-      // これにより 100% では画像全体が見えてスクロール不要。100% を超えたときだけ
-      // 内部スクロールが出る。ウインドウ自体の大きさはズームで変わらない（CSSで固定）。
-      function fitScale() {
-        const availW = Math.max(20, canvasWrap.clientWidth - 24);
-        const availH = Math.max(20, canvasWrap.clientHeight - 24);
-        if (!canvas.width || !canvas.height) return 1;
-        // 小さい画像を拡大しすぎないよう上限は等倍（1.0）。大きい画像は枠に合わせて縮小。
-        return Math.min(availW / canvas.width, availH / canvas.height, 1);
-      }
+      // 100% ＝ 手順一覧での見た目（仕様 20章。換算率は文字サイズと同じ fsScale）。
+      // 以前は「編集画面の枠に収まる大きさ」を 100% にしていたため、一覧の見た目と違い、
+      // 線の太さなどの基準もずれていた。ウインドウ自体の大きさはズームで変わらない（CSSで固定）。
       function applyZoom() {
         canvas.style.maxWidth = 'none';
-        const scale = fitScale() * (zoom / 100);
-        canvas.style.width = (canvas.width * scale) + 'px';
+        canvas.style.width = (canvas.width * ieZoomCssScale(zoom, fsScale())) + 'px';
         canvas.style.height = 'auto';
       }
       function setZoom(p) {
@@ -7503,12 +7537,17 @@
         zoomNum.value = zoom;
         applyZoom();
       }
-      // 「フィット」＝全体表示＝100%。
-      function fitZoom() { setZoom(100); }
+      // 「フィット」＝編集画面の枠に収まる大きさ（そのときの % を表示する）。
+      // 小さい画像は原寸より拡大しない。
+      function fitZoom() {
+        const availW = Math.max(20, canvasWrap.clientWidth - 24);
+        const availH = Math.max(20, canvasWrap.clientHeight - 24);
+        setZoom(ieFitZoomPercent(canvas.width, canvas.height, availW, availH, fsScale()));
+      }
       zoomRange.addEventListener('input', () => setZoom(zoomRange.value));
       zoomNum.addEventListener('change', () => setZoom(zoomNum.value));
       zoomFit.addEventListener('click', fitZoom);
-      // ウインドウのリサイズでフィット基準が変わるため、開いている間は追従させる。
+      // 100% は一覧での見た目なのでウインドウの大きさには依らないが、念のため引き直す。
       const onResize = () => applyZoom();
       window.addEventListener('resize', onResize);
       // ホイールズーム: ハンドツール中は素のホイールで、他ツールでは Ctrl+ホイールで
@@ -7660,8 +7699,8 @@
           si.src = strokesSrc;
         }
         recomposite();
-        // 枠のレイアウト確定後にフィット（=100%=全体表示）。以後ユーザーが自由に拡大可。
-        requestAnimationFrame(fitZoom);
+        // 開いたときは 100%＝手順一覧での見た目（仕様 20章）。以後ユーザーが自由に拡大縮小できる。
+        setZoom(100);
       };
       baseImg.src = baseSrc;
 
@@ -7733,7 +7772,7 @@
       function setupStroke(g, alpha) {
         g.strokeStyle = colorInput.value;
         g.fillStyle = colorInput.value;
-        g.lineWidth = Number(sizeInput.value);
+        g.lineWidth = curSize();
         g.lineCap = 'round';
         g.lineJoin = 'round';
         g.globalAlpha = alpha;
@@ -7742,6 +7781,9 @@
       // color（線）と fill（塗り）は null を取り得る＝線なし・塗りなし。
       const hasStroke = (o) => !!o.color && o.color !== 'none';
       const hasFill = (o) => !!o.fill && o.fill !== 'none';
+      // 図形ごとの換算率（キャンバス px ÷ プレビュー px。仕様 20章）。太さから決まる大きさ
+      // （矢印の先の最小・吹き出しの角丸など）に掛ける。o.u の無い既存の図形は 1＝従来どおり。
+      const objUnit = (o) => ieK(o && o.u);
       const textBoxPad = (o) => Math.round((Number(o.fs) || 16) * 0.3);
       function setupObjStroke(g, o) {
         g.strokeStyle = o.color || 'transparent';
@@ -7762,7 +7804,7 @@
         if (!hasStroke(o)) return; // 線なしの矢印は描かない
         const { x1, y1, x2, y2 } = o;
         const ang = Math.atan2(y2 - y1, x2 - x1);
-        const head = Math.max(18, o.size * 4);
+        const head = Math.max(18 * objUnit(o), o.size * 4);
         // 線の終点は三角の「底辺」まで伸ばして三角と密着させる。底辺の2角は頂点から
         // 距離 head・角度 ±π/7 にあり、その軸方向への投影＝ head*cos(π/7) が底辺の位置。
         // head をそのまま使うと底辺より奥で線が止まり隙間になるため、cos(π/7) を掛ける。
@@ -7883,7 +7925,7 @@
       function drawObjects(g) { objects.forEach((o) => drawObject(g, o)); }
       // ドラッグ中の始点・終点から図形オブジェクトを組み立てる（プレビューと確定で共用）。
       function shapeFromDrag(t, a, b, shift) {
-        const common = { color: lineColor(), fill: canFillShape(t) ? fillValue : null, size: Number(sizeInput.value), opacity: toolAlpha(t) };
+        const common = { color: lineColor(), fill: canFillShape(t) ? fillValue : null, size: curSize(), u: fsScale(), opacity: toolAlpha(t) };
         let bb = b;
         if (t === 'line' && shift) { // Shift で 45° 刻みにスナップ
           const d = Math.hypot(b.x - a.x, b.y - a.y);
@@ -8087,7 +8129,7 @@
       }
       // 消しゴムが触れたオブジェクトを丸ごと削除する（要件：元画像以外はすべて消せる）
       function eraseObjectsAt(p) {
-        const radius = Math.max(4, Number(sizeInput.value) * 2) / 2;
+        const radius = Math.max(4 * fsScale(), curSize() * 2) / 2; // 太さの2倍の径（プレビュー px 基準）
         const before = objects.length;
         objects = objects.filter((o) => {
           if (!o.hidden && objHit(o, p, radius)) { deselect(o.id); return false; }
@@ -8130,7 +8172,7 @@
         const o = {
           id: newObjId(), type: 'freeform', pts, closed: !!closed,
           color: lineColor(), fill: closed ? fillValue : null,
-          size: Number(sizeInput.value), opacity: toolAlpha('freeform'),
+          size: curSize(), u: fsScale(), opacity: toolAlpha('freeform'),
         };
         objects.push(o);
         setSelection([o.id]); // 描いた直後は選択状態（すぐ動かせる）
@@ -8154,7 +8196,7 @@
         if (ff.pts.length >= 2) {
           drawFreeformObj(g, {
             pts: ff.pts, closed: false, fill: null,
-            color: lineColor() || colorInput.value, size: Number(sizeInput.value), opacity: toolAlpha('freeform'),
+            color: lineColor() || colorInput.value, size: curSize(), opacity: toolAlpha('freeform'),
           });
         }
         // カーソルまでの次の辺（点線プレビュー）
@@ -8162,7 +8204,7 @@
         if (ff.cursor) {
           g.globalAlpha = 0.7;
           g.strokeStyle = colorInput.value;
-          g.lineWidth = Math.max(1, Number(sizeInput.value) / 2);
+          g.lineWidth = Math.max(1, curSize() / 2);
           g.setLineDash([6 * s, 5 * s]);
           g.beginPath(); g.moveTo(last.x, last.y); g.lineTo(ff.cursor.x, ff.cursor.y); g.stroke();
           g.setLineDash([]);
@@ -8232,15 +8274,16 @@
       // o: callout オブジェクト（{x,y,text,fs,tip,color,size,opacity}）。
       function drawCalloutObj(g, o, withText) {
         const box = calloutBox(o.text, o.fs, o);
-        const r = Math.min(16, box.w / 2, box.h / 2);
-        const tW = Math.max(10, Math.round(o.fs * 0.6));
+        const u = objUnit(o);
+        const r = Math.min(16 * u, box.w / 2, box.h / 2);
+        const tW = Math.max(10 * u, Math.round(o.fs * 0.6));
         g.save();
         g.globalAlpha = o.opacity;
         calloutPath(g, o.x, o.y, box.w, box.h, r, o.tip, tW);
         // 塗りは不透明に置く。透け具合は透過率スライダー（globalAlpha=o.opacity）だけで
         // 決まり、透過0%のときは一切透けない（以前は固定で 0.92 を掛けており
         // 0% でも8%透けていた。ユーザー要望 2026-09-08）。既定の塗りは従来どおり白。
-        g.lineWidth = Math.max(2, o.size);
+        g.lineWidth = Math.max(2 * u, o.size);
         g.lineJoin = 'round';
         if (hasFill(o)) { g.fillStyle = o.fill; g.fill(); }
         if (hasStroke(o)) { g.strokeStyle = o.color; g.stroke(); }
@@ -8258,7 +8301,8 @@
         rw = Math.min(canvas.width - rx, Math.round(rw));
         rh = Math.min(canvas.height - ry, Math.round(rh));
         if (rw <= 0 || rh <= 0) return;
-        const block = Math.max(8, Number(sizeInput.value) * 2);
+        // ブロックの大きさも太さと同じくプレビュー px 基準（一覧で見たときの粗さをそろえる）
+        const block = Math.max(1, Math.round(Math.max(8 * fsScale(), curSize() * 2)));
         const data = g.getImageData(rx, ry, rw, rh).data;
         g.globalAlpha = 1;
         for (let by = 0; by < rh; by += block) {
@@ -8350,7 +8394,7 @@
             id: newObjId(), type: 'text', x: pos.x, y: pos.y, text,
             fs: fmt.fs, bold: fmt.bold, italic: fmt.italic,
             textColor: textCol, color: null, fill: fillValue, // 新規テキストの枠線は無し（後から線色で付けられる）
-            size: Number(sizeInput.value), opacity: toolAlpha('text'),
+            size: curSize(), u: fsScale(), opacity: toolAlpha('text'),
           };
           objects.push(obj);
           setSelection([obj.id]); // 確定直後も選択状態にして、書式変更を続けられるように
@@ -8405,7 +8449,7 @@
           done: false, dragTip: false, hoverTip: false,
           // 初期の尻尾先端＝本体の下・少し左（下向き）。以後ドラッグで自由に。
           tip: existing ? { x: existing.tip.x, y: existing.tip.y }
-                        : { x: p.x + Math.min(box0.w * 0.25, 40), y: p.y + box0.h + Math.round(fmt0.fs * 1.6) },
+                        : { x: p.x + Math.min(box0.w * 0.25, 40 * fsScale()), y: p.y + box0.h + Math.round(fmt0.fs * 1.6) },
           // 新規は尻尾をまだ触っていない間、本体の下に追従させる（折り返しや改行で本体が
           // 高くなっても尻尾が本体の中へ潜らない）。一度ドラッグしたら固定。
           tipAuto: !existing,
@@ -8419,13 +8463,14 @@
           const color = existing ? existing.color : lineColor();
           const fill = existing ? existing.fill : (fillValue || '#ffffff');
           const textCol = existing ? existing.textColor : textColorValue;
-          const size = existing ? existing.size : Number(sizeInput.value);
+          const size = existing ? existing.size : curSize();
+          const u = existing ? existing.u : fsScale();
           const opacity = existing ? existing.opacity : toolAlpha('callout');
           if (ac.tipAuto) {
             const b0 = calloutBox(ta.value, ac.fs, ac);
-            ac.tip = { x: ac.x + Math.min(b0.w * 0.25, 40), y: ac.y + b0.h + Math.round(ac.fs * 1.6) };
+            ac.tip = { x: ac.x + Math.min(b0.w * 0.25, 40 * fsScale()), y: ac.y + b0.h + Math.round(ac.fs * 1.6) };
           }
-          const preview = { x: ac.x, y: ac.y, text: ta.value, fs: ac.fs, bold: ac.bold, italic: ac.italic, tip: ac.tip, color, fill, textColor: textCol, size, opacity };
+          const preview = { x: ac.x, y: ac.y, text: ta.value, fs: ac.fs, bold: ac.bold, italic: ac.italic, tip: ac.tip, color, fill, textColor: textCol, size, u, opacity };
           recomposite();
           drawCalloutObj(ctx, preview, false);
           if (ac.dragTip || ac.hoverTip) {
@@ -8505,7 +8550,7 @@
           fs: ac.fs, bold: ac.bold, italic: ac.italic,
           tip: { x: ac.tip.x, y: ac.tip.y },
           color: lineColor(), fill: fillValue || '#ffffff', textColor: textColorValue,
-          size: Number(sizeInput.value), opacity: toolAlpha('callout'),
+          size: curSize(), u: fsScale(), opacity: toolAlpha('callout'),
         };
         objects.push(obj);
         setSelection([obj.id]); // 確定直後も選択状態にして、書式変更を続けられるように
@@ -8647,7 +8692,9 @@
         cropMode = false; cropRect = null; cropDrag = null;
         if (cropActions) cropActions.hidden = true;
         selectTool('select');
-        applyZoom();
+        // 切り出した画像が一覧で見える大きさを 100% として見せ直す。このあと入れる図形は
+        // 新しい換算率（fsScale）で入る（仕様 20章）。
+        setZoom(100);
         recomposite();
       }
       if (cropActions) {
@@ -8863,7 +8910,7 @@
             annoCtx.save();
             annoCtx.globalCompositeOperation = 'destination-out';
             annoCtx.globalAlpha = 1;
-            annoCtx.lineWidth = Math.max(4, Number(sizeInput.value) * 2);
+            annoCtx.lineWidth = Math.max(4 * fsScale(), curSize() * 2); // 太さの2倍（プレビュー px 基準）
             annoCtx.lineCap = 'round'; annoCtx.lineJoin = 'round';
             annoCtx.beginPath(); annoCtx.moveTo(p.x, p.y);
             annoCtx.lineTo(p.x + 0.01, p.y + 0.01); annoCtx.stroke(); // 点クリックでも痕を残す
@@ -8874,7 +8921,7 @@
             liveStroke = {
               pts: [p],
               color: colorInput.value,
-              width: Number(sizeInput.value) * (tool === 'marker' ? 3 : 1),
+              width: curSize() * (tool === 'marker' ? 3 : 1), // プレビュー px 基準の太さ（仕様 20章）
               alpha: toolAlpha(tool),
             };
             renderLiveStroke();
@@ -9179,7 +9226,7 @@
           'テキストボックスは「線色」で枠線を付けられます。文字の色は「文字色」で別に決めます。',
           '矢印・直線・×印は線だけの図形なので、塗りつぶしはありません。',
           '文字サイズ・太字・斜体は、テキストか吹き出しを使っているときだけ出ます。',
-          '文字サイズの数字は「手順の一覧で表示される大きさ（px）」です。大きなスクリーンショットでも、24 なら一覧でおよそ24pxの文字になります。',
+          '文字サイズと線の太さの数字は「手順の一覧で表示される大きさ（px）」です。大きなスクリーンショットでも、文字 24 なら一覧でおよそ24pxの文字、太さ 6 ならおよそ6pxの線になります。トリミングしたあとも、切り出した画像が一覧で見える大きさを基準に入ります。',
           '透過率はツールごとに覚えます（0%＝不透明）。',
         ]],
         ['取り消し', [
@@ -9189,7 +9236,7 @@
         ['トリミングと表示', [
           'トリミングは範囲を決めてから、もう一度「トリミング」ボタンを押すと適用されます（Office と同じ）。やめるときは「取消」か <kbd>Esc</kbd>、別のツールへの切り替えでも取り消せます。',
           'ハンドで画像を動かせます。ホイールで拡大縮小（ハンド以外のツールは <kbd>Ctrl</kbd>＋ホイール）。',
-          '表示倍率は編集中の見え方だけを変えるもので、保存される画像の仕上がりは変わりません。',
+          '表示倍率は編集中の見え方だけを変えるもので、保存される画像の仕上がりは変わりません。100% が手順の一覧で見える大きさです（開いたときとトリミングの後は 100%）。「フィット」で編集画面の枠に収まる大きさになります。',
         ]],
       ];
       function openImageEditorHelp() {
@@ -9815,6 +9862,8 @@
         normalizeObjColors, pointInPoly, marqueeRect, rectContainsBounds,
         // 線・矢印の始点スナップと文字サイズの表示px換算（仕様 16章）
         snapStartPoint, fsDispScale, APP_IMG_DISPLAY_W, IMG_MAX_EDGE,
+        // 表示倍率 100%＝一覧での見た目・線の太さのプレビューpx換算（仕様 20章）
+        ieZoomCssScale, ieFitZoomPercent, prevToCanvasPx, canvasToPrevPx,
         // 図形の回転（仕様 18章）
         canRotate, normalizeAngle, rotatePointAround, objRotationCenter,
         toLocalPoint, toWorldPoint, reanchorRotatedBox,
