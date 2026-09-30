@@ -39,12 +39,12 @@ test('pdfout — 倍率・用紙・向き', async (t) => {
     assert.ok(!/margin/.test(css), 'margin は基本CSSに任せて上書きしない');
   });
 
-  // 倍率は #print-root の zoom で掛ける（印刷・PDF 共通。v1.0.8）。画像の幅は親基準の % なので
-  // zoom だけでは縮まず、同じ倍率を --print-img-scale としても降ろす（仕様の「制約（既知）」参照）。
-  await t.test('pdfPageStyleCss — 倍率を zoom と --print-img-scale として出す', () => {
-    assert.ok(T.pdfPageStyleCss('A4', 'portrait', 0.7).includes('#print-root { zoom: 0.7; --print-img-scale: 0.7; }'));
+  // 倍率は #print-root の zoom で掛ける（印刷・PDF 共通。v1.0.8）。v1.0.9 から画像の大きさは
+  // ページを組むときに px で決めるので、zoom だけで文字と一緒に縮む（--print-img-scale は廃止）。
+  await t.test('pdfPageStyleCss — 倍率を zoom として出す', () => {
+    assert.ok(T.pdfPageStyleCss('A4', 'portrait', 0.7).includes('#print-root { zoom: 0.7; }'));
     for (const bad of [undefined, null, 0, -1, NaN, 'あ']) {
-      assert.ok(T.pdfPageStyleCss('A4', 'portrait', bad).includes('#print-root { zoom: 1; --print-img-scale: 1; }'),
+      assert.ok(T.pdfPageStyleCss('A4', 'portrait', bad).includes('#print-root { zoom: 1; }'),
         `不正な倍率(${String(bad)})は等倍に倒す`);
     }
   });
@@ -156,7 +156,7 @@ test('pdfout — ページ範囲（純関数）', async (t) => {
   });
 });
 
-// ---- v1.0.8：改ページの入れ子・フェーズ見出しのまとまり・倍率の自動調整・印刷への倍率 ----
+// ---- v1.0.8：改ページの入れ子（目次の改ページで使う） ----
 // 仕様は docs/spec-pdf-output-scale.md の「v1.0.8 の追加・変更」参照。
 
 test('pdfout — 改ページ位置（入れ子の塊。実測の規則）', async (t) => {
@@ -211,136 +211,321 @@ test('pdfout — 改ページ位置（入れ子の塊。実測の規則）', asy
   });
 });
 
-// 印刷ビュー（renderPrintView）を DOM に入れ、各要素の位置は data-top / data-bottom で与える
-const printDom = (T, doc, checklist, pos) => {
-  const root = doc.createElement('div');
-  root.innerHTML = T.renderPrintView(checklist);
-  doc.body.appendChild(root);
-  pos(root);
-  const boxOf = (el) => ({ top: Number(el.dataset.top), bottom: Number(el.dataset.bottom) });
-  return { root, boxOf };
-};
-const setBox = (el, top, bottom) => { el.dataset.top = String(top); el.dataset.bottom = String(bottom); };
-const printChecklistFixture = () => ({
-  id: 'p1', title: '印刷試験', type: 'template', createdAt: 1, updatedAt: 1,
-  sections: [
-    { id: 'a', title: '準備', items: [
-      { id: 'a1', text: '手順1', done: false, note: '', time: '', body: '', images: [PX_PNG, PX_PNG] },
-      { id: 'a2', text: '手順2', done: false, note: '', time: '', body: '', images: [] },
-    ] },
-    { id: 'b', title: '', items: [
-      { id: 'b1', text: '手順3', done: false, note: '', time: '', body: '', images: [PX_PNG] },
-    ] },
-    { id: 'c', title: '見出しだけ', items: [] },
-  ],
-});
+// ---- v1.0.9：手順の配置（縦○段×横○列・上半分／下半分・余白の均等） ----
+// 仕様は docs/spec-pdf-output-scale.md の「手順の配置（v1.0.9）」参照。
 
-test('pdfout — 改ページの塊を印刷ビューから組む（printBreakBlocks）', async (t) => {
+// 目次（表紙の直後）は今までどおり Chromium の改ページに任せ、プレビューの紙の分け方だけ計算する
+test('pdfout — 目次の改ページの塊（printBreakBlocks）', async (t) => {
   const app = bootApp();
   t.after(() => app.close());
   const T = await app.api();
 
-  const { root, boxOf } = printDom(T, app.document, printChecklistFixture(), (r) => {
-    const titles = r.querySelectorAll('.print-section-title');
-    const steps = r.querySelectorAll('.print-step');
-    const imgs = r.querySelectorAll('.print-img');
-    setBox(titles[0], 0, 40);      // 準備
-    setBox(steps[0], 54, 700);     // 手順1（画像2枚）
-    setBox(imgs[0], 100, 380);
-    setBox(imgs[1], 396, 680);
-    setBox(steps[1], 728, 800);    // 手順2（画像なし）
-    setBox(steps[2], 850, 1200);   // 手順3（見出しなしのフェーズ）
-    setBox(imgs[2], 900, 1180);
-    setBox(titles[1], 1250, 1290); // 見出しだけのフェーズ
-  });
+  const root = app.document.createElement('div');
+  root.innerHTML = '<div class="print-toc"><ul class="print-toc-list">' +
+    '<li class="print-toc-sec" data-top="40" data-bottom="300"></li>' +
+    '<li class="print-toc-sec" data-top="310" data-bottom="620"></li>' +
+    '<li class="print-toc-sec" data-top="630" data-bottom="900"></li></ul></div>';
+  app.document.body.appendChild(root);
+  const boxOf = (el) => ({ top: Number(el.dataset.top), bottom: Number(el.dataset.bottom) });
   const blocks = plain(T.printBreakBlocks(root, boxOf));
 
-  await t.test('フェーズの最初の手順は、見出しの上端から始まる1つの塊になる', () => {
-    assert.equal(blocks[0].top, 0, '見出し（0）から');
-    assert.equal(blocks[0].bottom, 700, '最初の手順の下端（700）まで');
+  await t.test('目次のフェーズが1つずつ塊になる', () => {
+    assert.deepEqual(blocks.map((b) => [b.top, b.bottom]), [[40, 300], [310, 620], [630, 900]]);
   });
-  await t.test('手順カードの中の画像は kids（トップレベルには出ない）', () => {
-    assert.deepEqual(blocks[0].kids.map((k) => k.top), [100, 396]);
-    assert.equal(blocks.filter((b) => b.top === 100 || b.top === 396).length, 0);
-  });
-  await t.test('見出しの無いフェーズの手順はそのまま。見出しだけのフェーズは見出しを1つの塊にする', () => {
-    assert.deepEqual(blocks.map((b) => [b.top, b.bottom]), [[0, 700], [728, 800], [850, 1200], [1250, 1290]]);
-    assert.deepEqual(blocks[2].kids.map((k) => k.top), [900]);
-  });
-  await t.test('見出しがページ先頭なら送らず、最初の手順の中（画像の境目）で切る（見出しは手順の先頭と同じページ）', () => {
-    // 1ページ 500。見出し(0)＋手順1(〜700) は 500 をまたぐが、ページ先頭から始まるので送れない
-    // → 中の画像の境目（396）で切る。
-    assert.deepEqual(plain(T.paginateBreaks(blocks, 500, 1290, 0)), [396, 850]);
-  });
-  await t.test('見出しがページの途中なら、見出しごと次ページへ送る', () => {
-    const shifted = [{ top: 0, bottom: 300 }, ...blocks.map((b) => ({ ...b, top: b.top + 320, bottom: b.bottom + 320,
-      kids: (b.kids || []).map((k) => ({ top: k.top + 320, bottom: k.bottom + 320 })) }))];
-    // 見出し(320)＋手順1(〜1020) が 500 をまたぐ → 見出しの上端 320 で改ページ
-    assert.equal(plain(T.paginateBreaks(shifted, 500, 1610, 0))[0], 320);
+  await t.test('ページの終わりをまたぐフェーズは、次のページへ送る', () => {
+    // 1ページ 500：500 をまたぐ 310〜620 を送る → 2ページ目は 310〜810。810 をまたぐ 630〜900 を送る
+    assert.deepEqual(plain(T.paginateBreaks(blocks, 500, 900, 0)), [310, 630]);
   });
 });
 
-test('pdfout — 倍率の自動調整（autoPrintScale）', async (t) => {
+test('pdfout — 手順の配置の設定（clampPrintGrid・setPrintGrid）', async (t) => {
   const app = bootApp();
   t.after(() => app.close());
   const T = await app.api();
-  const PAGE = 1000; // 1ページの本文の高さ（物理 px）
 
-  await t.test('100% で収まるなら 100%', () => {
-    assert.equal(T.autoPrintScale(() => [800, 600], PAGE), 100);
+  await t.test('縦は 2・4・6 と自動（空欄）だけ。奇数は1つ上の偶数、6 を超えたら 6', () => {
+    const rows = (v) => T.clampPrintGrid({ rows: v }).rows;
+    assert.deepEqual([2, 4, 6].map(rows), [2, 4, 6]);
+    assert.deepEqual([1, 3, 5].map(rows), [2, 4, 6], '縦に 1・3・5 を入れても 2・4・6 にそろう');
+    assert.equal(rows(8), 6);
+    assert.equal(rows('4'), 4, '画面の選択肢は文字列');
+    for (const bad of ['', null, undefined, 0, -2, 'あ', NaN]) assert.equal(rows(bad), '', `${String(bad)} は自動`);
   });
-  await t.test('収まる最大の倍率を 5% 刻みで選ぶ（1300px → 75%）', () => {
-    assert.equal(T.autoPrintScale(() => [1300], PAGE), 75);
+  await t.test('横は 1〜4 と自動（空欄）だけ', () => {
+    const cols = (v) => T.clampPrintGrid({ cols: v }).cols;
+    assert.deepEqual([1, 2, 3, 4].map(cols), [1, 2, 3, 4]);
+    assert.equal(cols(7), 4);
+    assert.equal(cols(1.7), 1);
+    for (const bad of ['', null, 0, 'x']) assert.equal(cols(bad), '', `${String(bad)} は自動`);
   });
-  await t.test('倍率で高さが変わっても（実際の組版を測る想定）収まる最大を選ぶ', () => {
-    // 75%: (1200+150)×0.75=1012 > 1000 ✕ / 70%: (1200+140)×0.7=938 ○
-    assert.equal(T.autoPrintScale((p) => [1200 + 2 * p], PAGE), 70);
+  await t.test('既定は縦も横も自動。保存は Undo 履歴に積まず、廃止した「1列／2列」は消す', () => {
+    assert.deepEqual(plain(T.printGridSettings()), { rows: '', cols: '' });
+    T.store.state.settings.printImgLayout = '1col'; // v1.0.8 までの設定が残っている文書
+    const before = T.store.canUndo();
+    T.setPrintGrid({ rows: '4' });
+    assert.deepEqual(plain(T.printGridSettings()), { rows: 4, cols: '' });
+    T.setPrintGrid({ cols: '2' });
+    assert.deepEqual(plain(T.printGridSettings()), { rows: 4, cols: 2 }, '片方だけ変えても、もう片方は残る');
+    assert.equal(T.store.canUndo(), before, '配置の設定は Undo 履歴に積まない');
+    assert.equal('printImgLayout' in T.store.state.settings, false);
+    T.setPrintGrid({ rows: '' });
+    assert.deepEqual(plain(T.printGridSettings()), { rows: '', cols: 2 });
   });
-  await t.test('30% でも収まらない項目は計算から外す（全体を 30% に引きずらない）', () => {
-    assert.equal(T.autoPrintScale(() => [1300, 5000], PAGE), 75);
-    assert.equal(T.autoPrintScale(() => [5000], PAGE), 100, '全部外れたら変えない');
-    assert.equal(T.autoPrintScale(() => [], PAGE), 100, '画像が無ければ 100%');
+});
+
+test('pdfout — 余白の配り方（balancedGaps）', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+  const gaps = (...a) => plain(T.balancedGaps(...a));
+
+  await t.test('間隔は最大 72 で頭打ちにし、余りは上と下に半分ずつ（下にだけためない）', () => {
+    const { g, top } = gaps([100, 100], 1000, 28, 72);
+    assert.equal(g, 72);
+    assert.equal(top, 364);
+    assert.equal(1000 - (top + 100 + g + 100), top, '下の余り＝上の余り');
   });
-  await t.test('下限は 30%', () => {
-    assert.equal(T.autoPrintScale(() => [3300], PAGE), 30); // 30%: 990 ○ / 35%: 1155 ✕
+  await t.test('余りが少なければ最小 28 で並べ、残りを上と下に分ける', () => {
+    assert.deepEqual(gaps([300, 300, 300], 1000, 28, 72), { g: 28, top: 22 });
   });
-  await t.test('二分探索の答えは総当たりと同じ', () => {
-    // 総当たり：30% でも収まらない項目を外したうえで、100% から順に試す
-    const brute = (fn) => {
-      const fit = (p, h) => h * p / 100 <= PAGE + 0.5;
-      const keep = fn(30).map((h, i) => (fit(30, h) ? i : -1)).filter((i) => i >= 0);
-      for (let p = 100; p >= 30; p -= 5) if (keep.every((i) => fit(p, fn(p)[i]))) return p;
-      return 30;
-    };
-    for (let k = 0; k < 40; k++) {
-      const a = 900 + k * 97, b = (k % 7) * 3;
-      const fn = (p) => [a + b * p, 400 + k * 10];
-      assert.equal(T.autoPrintScale(fn, PAGE), brute(fn), `k=${k}`);
-    }
+  await t.test('入りきらなければ間隔を詰める（0 まで）', () => {
+    assert.deepEqual(gaps([500, 520], 1000, 28, 72), { g: 0, top: 0 });
+  });
+  await t.test('1つだけなら、その範囲の真ん中（手順1つなら半分の中央）', () => {
+    assert.equal(gaps([200], 1000, 28, 72).top, 400);
+  });
+  await t.test('上限なし（マスの段）：段が余っても、使った段を範囲の中で均等に置く', () => {
+    // 3段分の範囲（300×3＋16×2＝932）に2段 → 上・あいだ・下が同じ
+    const { g, top } = gaps([300, 300], 932, 16, Infinity);
+    assert.ok(Math.abs(g - top) < 1e-9);
+    assert.ok(Math.abs(932 - (top + 600 + g) - top) < 1e-9);
+  });
+  await t.test('空・壊れた入力でも落ちない', () => {
+    assert.deepEqual(gaps([], 1000, 28, 72), { g: 0, top: 0 });
+    assert.deepEqual(gaps(null, 1000, 28, 72), { g: 0, top: 0 });
+  });
+});
+
+test('pdfout — 上半分・下半分への割り当て（planPrintHalves）', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+  // 半分は [フェーズの番号, 見出しがあるか, 段の数]。使わない半分は [-1, false, 0]
+  const shape = (pages) => plain(pages).map((p) => p.halves.map((h) => [h.sec, h.title, h.rows.length]));
+  const slotFits = (k) => (rows) => rows.length < k;
+  const area = () => 500;
+
+  await t.test('段を指定したとき：1つの半分に入る段の数で区切り、続きの側には見出しを出さない', () => {
+    const secs = [
+      { title: true, rows: ['1', '2', '3'] },
+      { title: true, rows: ['4'] },
+      { title: true, rows: ['5'] },
+    ];
+    assert.deepEqual(shape(T.planPrintHalves(secs, slotFits(2), area)), [
+      [[0, true, 2], [0, false, 1]], // 1ページ目：上半分に見出し＋2段、下半分は続き（見出しなし）
+      [[1, true, 1], [2, true, 1]], // 2ページ目：フェーズは上半分・下半分の先頭から
+    ]);
+  });
+  await t.test('フェーズの手順が1つだけなら上半分に1つ。次のフェーズは下半分から', () => {
+    const secs = [{ title: true, rows: ['1'] }, { title: true, rows: ['2', '3'] }];
+    assert.deepEqual(shape(T.planPrintHalves(secs, () => true, area)), [[[0, true, 1], [1, true, 2]]]);
+  });
+  await t.test('最後のフェーズが上半分で終わったら、下半分は空けたまま', () => {
+    const secs = [{ title: true, rows: ['1'] }];
+    assert.deepEqual(shape(T.planPrintHalves(secs, () => true, area)), [[[0, true, 1], [-1, false, 0]]]);
+  });
+  await t.test('流し込み：半分に入る限り入れ、入らない段は次の半分へ（段と段の間は最小 28）', () => {
+    const fits = (rows, row, areaH) => T.flowRowFits(rows.map((r) => r.h), row.h, areaH, 28);
+    const secs = [{ title: true, rows: [{ h: 200 }, { h: 200 }, { h: 200 }, { h: 200 }] }];
+    // 500 の半分：200＋28＋200＝428 は入る。もう1段（428＋28＋200＝656）は入らない
+    assert.deepEqual(shape(T.planPrintHalves(secs, fits, area)), [[[0, true, 2], [0, false, 2]]]);
+  });
+  await t.test('空の半分には、半分より高い段でも必ず入れる（描くときに縮める）', () => {
+    const fits = (rows, row, areaH) => T.flowRowFits(rows.map((r) => r.h), row.h, areaH, 28);
+    const secs = [{ title: true, rows: [{ h: 900 }, { h: 900 }] }];
+    assert.deepEqual(shape(T.planPrintHalves(secs, fits, area)), [[[0, true, 1], [0, false, 1]]]);
+  });
+  await t.test('見出しだけのフェーズも半分を1つ使い、次のフェーズは次の半分から', () => {
+    const secs = [{ title: true, rows: [] }, { title: true, rows: ['1'] }];
+    assert.deepEqual(shape(T.planPrintHalves(secs, () => true, area)), [[[0, true, 0], [1, true, 1]]]);
+  });
+  await t.test('手順に使える高さは、見出しの有無ごとに聞く', () => {
+    const calls = [];
+    const areaOf = (pi, hi, half) => { calls.push([pi, hi, half.title]); return 500; };
+    T.planPrintHalves([{ title: true, rows: ['1', '2', '3', '4'] }], slotFits(2), areaOf);
+    assert.deepEqual(calls, [[0, 0, true], [0, 0, true], [0, 1, false]]);
   });
   await t.test('壊れた入力でも落ちない', () => {
-    assert.equal(T.autoPrintScale(() => [1300], 0), 100);
-    assert.equal(T.autoPrintScale(null, PAGE), 100);
-    assert.equal(T.autoPrintScale(() => null, PAGE), 100);
+    assert.deepEqual(plain(T.planPrintHalves(null, () => true, area)), []);
   });
 });
 
-test('pdfout — フェーズ見出しの改ページ指定と、印刷ボタンへの倍率', async (t) => {
+test('pdfout — 画像の大きさ（fitFlowCardImages・fitImagesInBox）', async (t) => {
   const app = bootApp();
   t.after(() => app.close());
   const T = await app.api();
 
-  await t.test('フェーズ見出しに break-after: avoid（最初の項目と別ページにしない）', () => {
-    const css = [...app.document.querySelectorAll('style')].map((s) => s.textContent).join('\n');
-    const rule = (css.match(/\.print-section-title\s*\{[^}]*\}/) || [''])[0];
-    assert.ok(/break-after:\s*avoid/.test(rule), `.print-section-title の規則: ${rule.replace(/\s+/g, ' ')}`);
+  await t.test('流し込み：上限が無ければ画像は手順の中の幅いっぱい（縦に積む）', () => {
+    const r = plain(T.fitFlowCardImages(60, 500, [0.5, 0.75], null, 10));
+    assert.deepEqual(r.sizes, [[500, 250], [500, 375]]);
+    assert.equal(r.h, 60 + 10 + 250 + 375);
+    assert.equal(r.over, false);
   });
-  await t.test('印刷ボタンも、PDF と同じ倍率を #print-root の zoom で掛ける', () => {
-    T.setPdfOutSettings({ scale: 70, paper: 'A4', orient: 'landscape' });
-    T.printChecklist(printChecklistFixture());
-    const css = app.document.getElementById('print-page-style').textContent;
-    assert.ok(css.includes('#print-root { zoom: 0.7; --print-img-scale: 0.7; }'), css);
-    assert.ok(css.includes('@page { size: 297mm 210mm; }'), '用紙・向きも効く');
-    assert.ok(app.document.querySelector('#print-root .print-section-title'), '印刷ビューが入っている');
+  await t.test('流し込み：半分より高い手順は、画像を縦横比のまま縮めて収める', () => {
+    const r = plain(T.fitFlowCardImages(60, 500, [0.5, 0.75], 400, 10));
+    assert.ok(r.h <= 400, `高さ ${r.h}`);
+    assert.ok(r.h > 395, '縮めすぎない');
+    r.sizes.forEach(([w, h], i) => assert.ok(Math.abs(h / w - [0.5, 0.75][i]) < 0.02, '縦横比を保つ'));
+    assert.equal(r.over, false);
   });
+  await t.test('流し込み：文だけで入りきらない手順は「はみ出し」', () => {
+    assert.equal(T.fitFlowCardImages(500, 0, [], 400, 10).over, true);
+    assert.equal(T.fitFlowCardImages(300, 0, [], 400, 10).h, 300, '画像の無い手順の高さは文の高さ');
+  });
+  await t.test('マス：横に広い欄では横に並べ、縦に高い欄では縦に積む（画像が大きく出るほう）', () => {
+    const wide = [[1600, 900], [1600, 900]];
+    assert.equal(T.fitImagesInBox(600, 200, wide, 10).dir, 'row');
+    assert.equal(T.fitImagesInBox(300, 600, wide, 10).dir, 'column');
+  });
+  await t.test('マス：画像は縦横比を保ち、欄からはみ出さない', () => {
+    for (const [W, H] of [[600, 200], [300, 600], [480, 480]]) {
+      const dims = [[1280, 900], [1000, 1000], [1200, 1414]];
+      const { dir, sizes } = plain(T.fitImagesInBox(W, H, dims, 10));
+      const sumW = sizes.reduce((a, [w]) => a + w, 0) + (dir === 'row' ? 20 : 0);
+      const sumH = sizes.reduce((a, [, h]) => a + h, 0) + (dir === 'column' ? 20 : 0);
+      if (dir === 'row') assert.ok(sumW <= W && sizes.every(([, h]) => h <= H), `${W}×${H}`);
+      else assert.ok(sumH <= H && sizes.every(([w]) => w <= W), `${W}×${H}`);
+      sizes.forEach(([w, h], i) => assert.ok(Math.abs(h / w - dims[i][1] / dims[i][0]) < 0.02));
+    }
+  });
+  await t.test('マス：欄が残っていなければ大きさ 0', () => {
+    assert.deepEqual(plain(T.fitImagesInBox(300, -5, [[4, 3]], 10)).sizes, [[0, 0]]);
+  });
+});
+
+test('pdfout — 段の中の横の位置（gridRowCells・autoRowWidths・packRowsByWidth）', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+
+  await t.test('横 C 列：幅を C 等分する', () => {
+    assert.deepEqual(plain(T.gridRowCells(2, 2, 1000, 16)), [{ x: 0, w: 492 }, { x: 508, w: 492 }]);
+  });
+  await t.test('横 C 列：手順が C 個に足りない段は横の中央（2×2 の1つだけの段）', () => {
+    assert.deepEqual(plain(T.gridRowCells(1, 2, 1000, 16)), [{ x: 254, w: 492 }]);
+  });
+  await t.test('横が自動：段の中で横の間隔を均等にし、余りは左右に分ける', () => {
+    const cells = plain(T.autoRowWidths([300, 300], 1000, 16, 72));
+    assert.deepEqual(cells, [{ x: 164, w: 300 }, { x: 536, w: 300 }]);
+    assert.equal(1000 - (cells[1].x + cells[1].w), cells[0].x, '右の余り＝左の余り');
+  });
+  await t.test('横が自動：幅が足りなければ比で縮めて収める', () => {
+    const cells = plain(T.autoRowWidths([700, 700], 1000, 16, 72));
+    assert.ok(Math.abs(cells[1].x + cells[1].w - 1000) < 1e-9);
+    assert.ok(Math.abs(cells[0].w - cells[1].w) < 1e-9);
+  });
+  await t.test('横が自動：1段に入る限り並べる', () => {
+    assert.deepEqual(plain(T.packRowsByWidth([400, 400, 400, 900, 100], 1000, 16)), [[0, 1], [2], [3], [4]]);
+  });
+});
+
+// 印刷の試験文書。フェーズ「準備」に手順5つ、「作業」「確認」に手順1つずつ
+const layoutFixture = (type = 'template', extra = {}) => {
+  const item = (id, text, images = [PX_PNG]) => ({ id, text, done: false, note: '', time: '', body: '', images });
+  return {
+    id: 'p1', title: '印刷試験', type, createdAt: 1, updatedAt: 1,
+    sections: [
+      { id: 'a', title: '準備', items: ['1', '2', '3', '4', '5'].map((n) => item('a' + n, '手順' + n)) },
+      { id: 'b', title: '作業', items: [item('b1', '手順6', [])] },
+      { id: 'c', title: '確認', items: [item('c1', '手順7')] },
+    ],
+    ...extra,
+  };
+};
+// 組んだページを DOM にして、半分ごとの中身を数える。jsdom では高さが 0 なので、段を指定した配置で並びを見る
+const readPages = (doc, layout) => Array.from(layout.pages, (html) => {
+  const box = doc.createElement('div');
+  box.innerHTML = html;
+  const page = box.firstElementChild;
+  const H = layout.H;
+  const halfOf = (el) => (Number(el.dataset.reg.split(',')[0]) < H / 2 ? 0 : 1);
+  const halves = [[], []];
+  page.querySelectorAll('.pl-abs').forEach((el) => {
+    if (el.querySelector('.print-doc-title')) return;
+    const title = el.querySelector('.print-section-title');
+    const step = el.querySelector('.print-step-text, .print-todo .print-text');
+    halves[halfOf(el)].push(title ? `【${title.textContent}】` : step.textContent);
+  });
+  return { page, halves, hasDocTitle: !!page.querySelector('.print-doc-title') };
+});
+
+test('pdfout — ページの組み立て（composePrintPages）', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+  const opts = (grid) => ({ paper: 'A4', orient: 'portrait', scale: 100, grid });
+
+  await t.test('縦2×横2：左上・右上・左下・右下。続きは見出しなし。フェーズは上半分か下半分の先頭から', async () => {
+    const layout = await T.composePrintPages(layoutFixture(), opts({ rows: 2, cols: 2 }));
+    const pages = readPages(app.document, layout);
+    assert.deepEqual(pages.map((p) => p.halves), [
+      [['【準備】', '手順1', '手順2'], ['手順3', '手順4']],
+      [['手順5'], ['【作業】', '手順6']],
+      [['【確認】', '手順7'], []],
+    ]);
+    assert.equal(pages[0].hasDocTitle, true, '1ページ目の上に文書の表題');
+    assert.equal(pages[1].hasDocTitle, false);
+  });
+  await t.test('縦2×横2：手順が1つだけの段は横の中央', async () => {
+    const layout = await T.composePrintPages(layoutFixture(), opts({ rows: 2, cols: 2 }));
+    const card = readPages(app.document, layout)[1].page.querySelector('.pl-cell');
+    const left = parseFloat(card.style.left);
+    const w = parseFloat(card.style.width);
+    assert.ok(Math.abs(left + w / 2 - layout.W / 2) < 0.02, `中央 ${left + w / 2} / ${layout.W / 2}`);
+  });
+  await t.test('縦4×横2（ToDo 型）：1つの半分に2段', async () => {
+    const layout = await T.composePrintPages(layoutFixture('todo'), opts({ rows: 4, cols: 2 }));
+    const pages = readPages(app.document, layout);
+    assert.deepEqual(pages[0].halves, [['【準備】', '手順1', '手順2', '手順3', '手順4'], ['手順5']]);
+    assert.ok(pages[0].page.querySelector('.pl-cell > .print-todo'), 'ToDo の項目も手順の箱に入る');
+  });
+  await t.test('縦が自動：手順の画像に大きさ（px）を書き、1ページの高さの .print-page に入れる', async () => {
+    const layout = await T.composePrintPages(layoutFixture(), opts({ rows: '', cols: '' }));
+    const { page } = readPages(app.document, layout)[0];
+    assert.ok(page.classList.contains('print-page'));
+    assert.equal(parseFloat(page.style.height), Number(layout.H.toFixed(2)));
+    const img = page.querySelector('.pl-flow .print-img');
+    assert.match(img.getAttribute('style'), /width:\d+px;height:\d+px/);
+    // A4縦・100% の本文の高さ（297−30mm）より、端数の余裕のぶんだけ低い
+    assert.ok(layout.H < 267 * 96 / 25.4 && layout.H > 267 * 96 / 25.4 - 6);
+  });
+  await t.test('倍率を下げると、本文の内部座標の1ページは広くなる（zoom で縮めて印刷するため）', async () => {
+    const a = await T.composePrintPages(layoutFixture(), opts({ rows: 2, cols: 2 }));
+    const b = await T.composePrintPages(layoutFixture(), { ...opts({ rows: 2, cols: 2 }), scale: 50 });
+    assert.ok(Math.abs(b.W - a.W * 2) < 0.01);
+  });
+  await t.test('表紙と目次があれば、プレビューの紙は表紙・目次・手順のページの順', async () => {
+    const c = layoutFixture('template', { coverPage: { enabled: true, includeToc: true } });
+    const layout = await T.composePrintPages(c, opts({ rows: 2, cols: 2 }));
+    assert.ok(layout.coverHtml.includes('print-cover'));
+    assert.equal(layout.tocSegments.length, 1);
+    assert.equal(readPages(app.document, layout)[0].hasDocTitle, false, '表紙があれば文書の表題は出さない');
+    const sheets = T.previewSheetsHtml(layout, opts({ rows: 2, cols: 2 }));
+    assert.equal(sheets.count, 1 + 1 + layout.pages.length);
+    assert.match(sheets.html, /pp-sheet pp-sheet-cover/);
+  });
+});
+
+test('pdfout — 印刷ボタン：ページを組んでから、PDF と同じ倍率を #print-root の zoom で掛ける', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+
+  T.setPdfOutSettings({ scale: 70, paper: 'A4', orient: 'landscape' });
+  await T.printChecklist(layoutFixture());
+  const css = app.document.getElementById('print-page-style').textContent;
+  assert.ok(css.includes('#print-root { zoom: 0.7; }'), css);
+  assert.ok(css.includes('@page { size: 297mm 210mm; }'), '用紙・向きも効く');
+  assert.ok(app.document.querySelector('#print-root .print-page .print-section-title'), '組んだページが入っている');
+  assert.equal(app.document.querySelector('.print-measure'), null, '高さを測る箱は片付ける');
 });
