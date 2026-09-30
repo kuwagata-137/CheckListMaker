@@ -1278,8 +1278,9 @@
      編集用の <input> は印刷でテキストが折り返せず欠けてしまうため、
      印刷専用のテキスト表現（span/li）で描き直す。 */
   #print-root { display: none; }
-  /* 印刷/PDF は Word 出力と同じ「手順カード」様式に揃える（游ゴシック・アクセント色）。 */
-  #print-root, .print-preview-page {
+  /* 印刷/PDF は Word 出力と同じ「手順カード」様式に揃える（游ゴシック・アクセント色）。
+     .print-measure はページを組むときに高さを測る画面外の箱（composePrintPages）。 */
+  #print-root, .pp-sheet, .print-measure {
     font-family: "游ゴシック体","游ゴシック","Yu Gothic",YuGothic,"Hiragino Kaku Gothic ProN","Noto Sans JP","Meiryo",sans-serif;
   }
   .print-doc { --print-accent: #3B6EA5; color: #1c2126; font-size: 10.5pt; line-height: 1.7; }
@@ -1291,27 +1292,18 @@
   }
 
   /* セクション見出し（アクセント色・太字＋下にアクセント細線） */
-  .print-section + .print-section { margin-top: 22px; }
   .print-section-title {
     display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
     font-size: 13pt; font-weight: 800; color: var(--print-accent);
     border-bottom: 2px solid var(--print-accent); padding-bottom: 5px; margin: 0 0 14px;
-    /* フェーズ見出しの直後では改ページしない（最初の項目と別ページにしない。v1.0.8）。
-       見出し＋最初の項目を avoid の枠で包む案は、最初の項目が1ページより大きいと見出しだけの
-       ページができた（Electron 31 で実測）ため採らない。仕様は docs/spec-pdf-output-scale.md */
-    break-after: avoid;
   }
   .print-sec-mins { font-weight: 400; font-size: 10.5pt; color: #808080; white-space: nowrap; }
 
-  /* 手順カード（薄塗り＋左アクセント帯＋番号バッジ。手順どうしの間隔は広め） */
+  /* 手順カード（薄塗り＋左アクセント帯＋番号バッジ） */
   .print-step {
     background: #F3F6FA; border: 1px solid #E2E8F1; border-left: 5px solid var(--print-accent);
-    border-radius: 3px; padding: 10px 14px; margin-bottom: 28px;
-    /* カードごと次ページへ送る。中身（.print-step-keep）だけを avoid にしていた頃は、
-       薄塗りの枠の上辺と padding だけが前ページに取り残されて切れて見えた。 */
-    break-inside: avoid;
+    border-radius: 3px; padding: 10px 14px;
   }
-  .print-step-keep { break-inside: avoid; } /* 手順と最初の画像を同ページに保つ */
   .print-step-head { display: flex; align-items: baseline; gap: 8px; }
   .print-badge {
     flex: 0 0 auto; background: var(--print-accent); color: #fff; font-weight: 700;
@@ -1325,26 +1317,42 @@
   .print-body ul, .print-body ol { margin: 3px 0 5px 1.3em; padding: 0; }
   .print-note { margin: 8px 0 0 2.4em; color: #4c525a; font-size: 10pt; word-break: break-word; }
   .print-note-lbl { color: #808080; }
-  .print-imgs { margin: 10px 0 0 2.4em; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; }
-  .print-step .print-imgs + .print-imgs { margin-top: 16px; }
-
-  /* 画像はすべて同じ幅に揃える（拡大画像も引き伸ばして統一） */
-  .print-img { object-fit: contain; border: 1px solid #c9ccd2; border-radius: 2px; break-inside: avoid; }
-  /* 出力倍率（zoom / printToPDF の scale）は「レイアウト幅を 1/倍率 に広げてから倍率で
-     描く」意味論なので、親基準の % 幅は広がった親と相殺されて縮まない。文字や余白のような
-     絶対単位だけが縮み、画像だけ取り残されていた。--print-img-scale を掛けて追従させる
-     （max-height は mm＝絶対単位なので二重には掛からない）。 */
-  .print-cols-1 .print-img { width: calc(100% * var(--print-img-scale, 1)); height: auto; max-height: 210mm; }
-  .print-cols-2 .print-img { width: calc(48% * var(--print-img-scale, 1)); height: auto; max-height: 140mm; }
-  /* 方針A: 2col でも写真が1枚だけなら全幅で見せる（2枚以上は48%で左右に並ぶ）。 */
-  .print-cols-2 .print-imgs .print-img:only-child { width: calc(100% * var(--print-img-scale, 1)); max-height: 210mm; }
+  /* 画像の欄。画像の大きさは、ページを組むときに px で決めて <img> に書く（composePrintPages） */
+  .print-imgs { margin: 10px 0 0 2.4em; display: flex; flex-direction: column; gap: 10px; }
+  .print-img-row { display: flex; gap: 10px; justify-content: center; }
+  .print-img { display: block; object-fit: contain; border: 1px solid #c9ccd2; border-radius: 2px; }
 
   /* ToDo 型はチェックが本質なので □/☑ 欄を残す（テンプレート手順書では出さない） */
-  .print-todo { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; padding: 4px 0; break-inside: avoid; }
+  .print-todo { padding: 4px 0; }
+  .print-todo-head { display: flex; align-items: baseline; gap: 6px; }
   .print-todo .print-box { font-size: 1.05rem; line-height: 1; }
   .print-todo .print-text { flex: 1; min-width: 0; word-break: break-word; }
   .print-todo.done .print-text { color: #666; } /* 画面と同じく取り消し線は付けない */
-  .print-todo .print-imgs { flex-basis: 100%; margin: 6px 0 4px 1.6em; }
+  .print-todo .print-imgs { margin: 6px 0 4px 1.6em; }
+
+  /* ---- 印刷のページ（v1.0.9。仕様は docs/spec-pdf-output-scale.md の「手順の配置」） ----
+     手順は JS（composePrintPages）が1ページずつ組み、.print-page の中に位置を決めて置く
+     （.pl-abs）。.print-page の高さは1ページの本文の高さより数 px 低くしてあり（端数で次の
+     ページへはみ出して白紙ができないように）、2枚目からは前で改ページする。 */
+  .print-page { position: relative; overflow: hidden; }
+  .print-page + .print-page { break-before: page; }
+  .pl-abs { position: absolute; display: flex; flex-direction: column; }
+  .pl-abs > .print-step, .pl-abs > .print-todo { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+  /* 縦が自動・縦1：画像は手順の幅いっぱいに縦に積む。縮めたときは手順の中の中央 */
+  .pl-flow .print-imgs { align-items: center; }
+  /* 縦 2〜6 段（マス）：手順の箱はマスいっぱい。画像は残りの欄の中央に収める */
+  .pl-cell > .print-step, .pl-cell > .print-todo { display: flex; flex-direction: column; }
+  .pl-cell .print-imgs { flex: 1 1 auto; min-height: 0; margin-left: 0; justify-content: center; align-items: center; }
+  .pl-cell > .print-todo { border: 1px solid #E2E8F1; border-radius: 3px; padding: 8px 10px; background: #FAFBFD; }
+  /* 文が長くて手順の箱に入りきらない手順（はみ出した部分は印刷されない）。プレビューだけに印を出す */
+  @media screen {
+    .pl-over { outline: 3px solid #d92d20; outline-offset: -1px; }
+    .pl-over::after {
+      content: 'はみ出し'; position: absolute; right: 4px; bottom: 4px;
+      background: #d92d20; color: #fff; font-size: 9pt; font-weight: 700; line-height: 1.4;
+      padding: 1px 6px; border-radius: 3px;
+    }
+  }
 
   /* ---- 目次ページ（表紙の「目次を含める」ON のとき、表紙の直後に出す。行間つめ） ---- */
   .print-toc-title {
@@ -1370,31 +1378,20 @@
   }
   .print-preview-bar .pp-label { color: var(--muted); font-size: 0.9rem; }
   .print-preview-bar .pp-spacer { flex: 1; }
-  /* PDF出力の倍率・用紙・向き（仕様は docs/spec-pdf-output-scale.md） */
+  /* 手順の配置（縦○段×横○列）と、PDF出力の倍率・用紙・向き（仕様は docs/spec-pdf-output-scale.md） */
   .print-preview-bar.pp-out { margin-top: -4px; row-gap: 6px; }
-  .pp-out .pp-row { display: inline-flex; align-items: center; gap: 6px; margin-right: 14px; }
+  .print-preview-bar .pp-row { display: inline-flex; align-items: center; gap: 6px; margin-right: 14px; }
   .pp-out .pp-scale, .pp-out .pp-from, .pp-out .pp-to {
     width: 64px; font: inherit; text-align: right; padding: 4px 6px;
     border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
   }
-  .pp-out .pp-unit { color: var(--muted); font-size: 0.9rem; }
-  .pp-out select {
+  .print-preview-bar .pp-unit { color: var(--muted); font-size: 0.9rem; }
+  .print-preview-bar select {
     font: inherit; font-size: 0.9rem; padding: 4px 6px;
     border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
   }
   .pp-out .pp-hint { color: var(--muted); font-size: 0.75rem; flex-basis: 100%; }
-  .pp-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-  .pp-seg button {
-    font: inherit;
-    font-size: 0.9rem;
-    padding: 6px 12px;
-    border: none;
-    background: var(--surface);
-    color: var(--text);
-    cursor: pointer;
-  }
-  .pp-seg button + button { border-left: 1px solid var(--border); }
-  .pp-seg button.active { background: var(--primary); color: #fff; }
+  .pp-out .pp-hint.pp-over-hint { color: #b42318; }
   .print-preview-body {
     background: #6b7076;
     padding: 18px;
@@ -1402,34 +1399,24 @@
     overflow: auto;
     max-height: min(68vh, 900px);
   }
-  /* 紙面は常に用紙の実寸で組み、入りきらない用紙は transform で縮小して見せる。
-     max-width:100% で潰すと padding は 15mm/25mm のまま本文幅だけ狭まり、
-     折り返し位置＝行数が実出力とずれて改ページ線が当てにならなくなるため。 */
+  /* 紙はページごとに1枚ずつ、用紙の実寸で縦に並べる（v1.0.9）。入りきらない用紙は
+     transform で縮小して見せる（transform は折り返しを変えないので、実出力と同じ組版のまま）。 */
   .print-preview-stage { position: relative; margin: 0 auto; }
-  .print-preview-page {
-    position: relative; /* 改ページ線（.pp-break）の基準 */
-    transform-origin: top left;
-    background: #fff;
-    color: #000;
-    width: 210mm;
-    padding: 15mm 25mm;
+  .pp-sheets { display: flex; flex-direction: column; gap: 22px; width: max-content; transform-origin: top left; }
+  .pp-sheet {
+    position: relative; overflow: hidden;
+    background: #fff; color: #000;
+    padding: 15mm 25mm; /* 印刷の @page の余白と同じ */
     box-shadow: 0 3px 14px rgba(0, 0, 0, 0.45);
   }
-  /* 改ページ線。break-inside:avoid の塊（手順カード・図・表）は丸ごと次ページへ送られるので、
-     その送りも含めて実際の位置に引く（計算は paginateBreaks）。 */
-  .pp-break { position: absolute; left: 0; right: 0; border-top: 1px dashed #b3272d; pointer-events: none; }
-  .pp-break span {
-    position: absolute; right: 3px; top: 2px;
-    font-size: 11px; line-height: 1.2; color: #b3272d;
-    background: rgba(255, 255, 255, 0.88); padding: 1px 5px; border-radius: 3px;
+  /* 表紙は余白0の専用ページ（印刷の @page coverpage と同じ） */
+  .pp-sheet.pp-sheet-cover { padding: 0; }
+  .pp-sheet-no {
+    position: absolute; right: 10px; bottom: 6px;
+    font-size: 11px; line-height: 1.2; color: #8a9099;
   }
-  /* 印刷プレビュー内の表紙は、実際の印刷（@page coverpage=余白0の専用ページ）と同じく
-     ページの余白（上下15mm・左右25mm）を打ち消して全面(210mm=794px)で表示する。これを
-     しないと A4 幅と等寸の表紙がプレビュー面からはみ出す（印刷/PDF 実出力は既に余白0で正しい）。 */
-  .print-preview-page .print-cover {
-    margin: -15mm -25mm 0;
-    overflow: hidden;
-  }
+  /* 目次が2ページ以上になるとき、1枚の紙にはそのページの分だけを見せる */
+  .pp-clip { position: relative; overflow: hidden; }
 
   /* =========================================================================
      表紙（カバーページ） — テンプレート型の任意の先頭ページ
@@ -1609,6 +1596,8 @@
     .modal-overlay { display: none !important; }
     .player-overlay { display: none !important; }
     #print-root { display: block !important; }
+    /* ページを組むときの測定用の箱（プレビューの組み直しと印刷が重なっても紙面に出さない） */
+    .print-measure { display: none !important; }
     body { background: #fff; color: #000; }
     /* size を明示するのは printToPDF(preferCSSPageSize) に @page を尊重させ、
        表紙(coverpage=余白0)と本文を1ページの A4 に正しく収めるため。
@@ -2539,7 +2528,7 @@
     // 変換・保存する。素のブラウザでは window.docxAPI が無いためボタン自体を出さない
     // （下の renderEditor 参照）。
     //
-    // 印刷ビュー(renderPrintView)を流用しない理由: html-to-docx は「<li> の中の
+    // 印刷ビュー（v1.0.9 からは printDocParts の部品）を流用しない理由: html-to-docx は「<li> の中の
     // ブロック要素(div等)に入った <img>」を無視するため、<li><div class="print-imgs">
     // 構造だと画像が全て消える（<li> 内の表も同リスク）。そこで docx 用には
     // ul/li を使わず、見出し・段落・表・画像を全てトップレベルに並べたHTMLを組む。
@@ -4364,67 +4353,33 @@
       });
     }
 
-    // 印刷（ブラウザの印刷→PDF保存を想定）用の読み取り専用ビューを組み立てる。
+    // 印刷（印刷・PDF 保存・印刷プレビュー）用の読み取り専用の部品を組み立てる。
     // 入力欄は印刷でテキストが折り返せないため、span/li のプレーンな表現で描く。
-    function renderPrintView(checklist) {
+    // ページへの並べ方は composePrintPages（v1.0.9）が決める。ここでは部品の HTML だけを返す：
+    //   { isTemplate, accent, coverHtml, tocHtml, titleHtml,
+    //     sections: [{ titleHtml, items: [{ it, no, srcs }] }] }
+    // no はテンプレート型の手順番号（ToDo 型は 0）、srcs は手順の画像。
+    function printDocParts(checklist) {
       const isTemplate = checklist.type === MODES.TEMPLATE;
       // アクセント色（表紙の差し色に連動。無ければ既定色）。style 属性に入れるため厳格に検証。
       const accentRaw = (checklist.coverPage && checklist.coverPage.accent) || '';
       const accent = /^#[0-9a-fA-F]{3,8}$/.test(accentRaw) ? accentRaw : '#3B6EA5';
       let stepNo = 0;
-      const imgTag = (src) => `<img class="print-img" src="${src}" alt="" />`;
-      const sections = checklist.sections
-        .map((s) => {
-          const itemsHtml = s.items
-            .map((it) => {
-              const imgs = Array.isArray(it.images) ? it.images : [];
-              if (isTemplate) {
-                stepNo += 1;
-                const time = it.time
-                  ? `<span class="print-step-time">⏱${escapeHtml(String(it.time))}分</span>`
-                  : '';
-                const bodyClean = sanitizeBodyHtml(it.body || '');
-                const bodyHtml = bodyClean ? `<div class="print-body">${bodyClean}</div>` : '';
-                const note = it.note
-                  ? `<div class="print-note"><span class="print-note-lbl">（メモ）</span>${escapeHtml(it.note)}</div>`
-                  : '';
-                // 方針A: 手順内の写真は1つの箱にまとめ、2枚以上は左右に並べる
-                //（1枚なら :only-child で全幅）。手順と写真が改ページで離れないよう、
-                // 箱ごと keep ブロックに入れて分断を防ぐ（手順単位で1ページに保つ）。
-                const imgsHtml = imgs.length
-                  ? `<div class="print-imgs">${imgs.map(imgTag).join('')}</div>`
-                  : '';
-                return `<div class="print-step">
-                  <div class="print-step-keep">
-                    <div class="print-step-head">
-                      <span class="print-badge">${stepNo}</span>
-                      <span class="print-step-text">${escapeHtml(it.text)}</span>
-                      ${time}
-                    </div>
-                    ${bodyHtml}${note}${imgsHtml}
-                  </div>
-                </div>`;
-              }
-              // ToDo 型: チェック欄（□/☑）を残す
-              const box = it.done ? '☑' : '☐';
-              const imgsHtml = imgs.length ? `<div class="print-imgs">${imgs.map(imgTag).join('')}</div>` : '';
-              return `<div class="print-todo ${it.done ? 'done' : ''}">
-                <span class="print-box">${box}</span>
-                <span class="print-text">${escapeHtml(it.text)}</span>
-                ${imgsHtml}
-              </div>`;
-            })
-            .join('');
-          const mins = isTemplate ? sumMinutes(s.items) : 0;
-          const secMeta = mins ? `<span class="print-sec-mins">⏱${mins}分</span>` : '';
-          const titleText = escapeHtml(s.title);
-          const titleHtml =
-            titleText || secMeta
-              ? `<div class="print-section-title"><span>${titleText}</span>${secMeta}</div>`
-              : '';
-          return `<section class="print-section">${titleHtml}<div class="print-items">${itemsHtml}</div></section>`;
-        })
-        .join('');
+      const sections = checklist.sections.map((s) => {
+        const items = s.items.map((it) => ({
+          it,
+          no: isTemplate ? ++stepNo : 0,
+          srcs: Array.isArray(it.images) ? it.images.filter((src) => typeof src === 'string' && src) : [],
+        }));
+        const mins = isTemplate ? sumMinutes(s.items) : 0;
+        const secMeta = mins ? `<span class="print-sec-mins">⏱${mins}分</span>` : '';
+        const titleText = escapeHtml(s.title);
+        const titleHtml =
+          titleText || secMeta
+            ? `<div class="print-section-title"><span>${titleText}</span>${secMeta}</div>`
+            : '';
+        return { titleHtml, items };
+      });
       const coverOn = isTemplate && checklist.coverPage && checklist.coverPage.enabled;
       const coverHtml = coverOn
         ? `<div class="print-cover">${renderCoverHtml(checklist.coverPage, checklist.title)}</div>`
@@ -4453,7 +4408,42 @@
       }
       // 表紙が無いときだけ、中央の表題を出す（Word 同様。種別・進捗・出力日は載せない）。
       const titleHtml = coverOn ? '' : `<div class="print-doc-title">${escapeHtml(checklist.title)}</div>`;
-      return `<div class="print-doc" style="--print-accent:${accent}">${coverHtml}${tocHtml}${titleHtml}${sections}</div>`;
+      return { isTemplate, accent, coverHtml, tocHtml, titleHtml, sections };
+    }
+    // 手順（テンプレート型）／項目（ToDo 型）1つ分の印刷用 HTML。imgsHtml は画像の欄
+    // （<div class="print-imgs">…</div>。画像の無い手順や、高さを測るときは空文字／空の欄）。
+    function printItemHtml(item, isTemplate, imgsHtml) {
+      const { it, no } = item;
+      if (isTemplate) {
+        const time = it.time
+          ? `<span class="print-step-time">⏱${escapeHtml(String(it.time))}分</span>`
+          : '';
+        const bodyClean = sanitizeBodyHtml(it.body || '');
+        const bodyHtml = bodyClean ? `<div class="print-body">${bodyClean}</div>` : '';
+        const note = it.note
+          ? `<div class="print-note"><span class="print-note-lbl">（メモ）</span>${escapeHtml(it.note)}</div>`
+          : '';
+        return `<div class="print-step"><div class="print-step-head"><span class="print-badge">${no}</span>` +
+          `<span class="print-step-text">${escapeHtml(it.text)}</span>${time}</div>${bodyHtml}${note}${imgsHtml}</div>`;
+      }
+      // ToDo 型: チェック欄（□/☑）を残す
+      const box = it.done ? '☑' : '☐';
+      return `<div class="print-todo${it.done ? ' done' : ''}"><div class="print-todo-head">` +
+        `<span class="print-box">${box}</span><span class="print-text">${escapeHtml(it.text)}</span></div>${imgsHtml}</div>`;
+    }
+    // 画像の欄。sizes は画像ごとの [幅, 高さ]（本文の内部座標の px）、k は1段に並べる枚数（段は中央そろえ）。
+    function printImgsHtml(srcs, sizes, k = 1) {
+      if (!srcs.length) return '';
+      const per = Math.max(1, Math.floor(k) || 1);
+      let rows = '';
+      for (let i = 0; i < srcs.length; i += per) {
+        const imgs = srcs.slice(i, i + per).map((src, j) => {
+          const [w, h] = sizes[i + j] || [0, 0];
+          return `<img class="print-img" src="${escapeHtml(src)}" style="width:${w}px;height:${h}px" alt="" />`;
+        }).join('');
+        rows += `<div class="print-img-row">${imgs}</div>`;
+      }
+      return `<div class="print-imgs">${rows}</div>`;
     }
 
     // =========================================================================
@@ -5949,22 +5939,6 @@
       return true;
     }
 
-    // ---- 印刷ビューの画像レイアウト（'1col'=全幅1枚ずつ / '2col'=横2枚） ----
-    // プレビュー画面で選択し、設定として記憶する（undo履歴には積まない）。
-    function printImgLayout() {
-      const s = store.state.settings;
-      return (s && s.printImgLayout) === '1col' ? '1col' : '2col';
-    }
-    function setPrintImgLayout(v) {
-      commitInPlace((s) => {
-        s.settings = s.settings || {};
-        s.settings.printImgLayout = v === '1col' ? '1col' : '2col';
-      }, { history: false });
-    }
-    function printColsClass() {
-      return printImgLayout() === '1col' ? 'print-cols-1' : 'print-cols-2';
-    }
-
     // ---- PDF出力の倍率・用紙・向き（仕様は docs/spec-pdf-output-scale.md）----
     // 倍率のクランプ（30〜200%・既定100）。数値でなければ既定に倒す。
     function clampPdfScale(v) {
@@ -5983,7 +5957,7 @@
       return orient === 'landscape' ? { w: h, h: w } : { w, h };
     }
     // PDF のページ範囲（「ページ N 〜 M」。空欄＝最初／最後）。戻り値は 1 始まりの { from, to }。
-    // from > to は入れ替え、total（プレビューの改ページ線が数えた総ページ数）が分かれば
+    // from > to は入れ替え、total（プレビューが組んだ総ページ数）が分かれば
     // その範囲にクランプする。total が不明（null）で to が空欄なら to も null（＝最後まで）。
     function parsePdfPageRange(fromStr, toStr, total) {
       const num = (v) => {
@@ -6008,17 +5982,20 @@
       if (wholeStart && wholeEnd) return null;
       return to == null ? `${from}-` : `${from}-${to}`;
     }
-    // 実出力で「途中では切らない」と決めてある塊。CSS の break-inside: avoid と対で持つ。
-    // 入れ子になるもの（手順カードの中の画像・表）は、外側の塊の kids として持つ。
-    const PRINT_ATOM_SEL = '.print-step, .print-todo, .print-toc-sec, .print-body table, .print-img';
     const PX_PER_MM = 96 / 25.4; // CSS の 1mm は常に 96/25.4 px
-    // 印刷の本文の上下余白（@page の margin 15mm×2）。1ページの本文の高さ＝用紙の高さ − これ
+    // 印刷の本文の余白（@page の margin 上下 15mm×2・左右 25mm×2）。1ページの本文＝用紙 − これ
     const PRINT_PAGE_MARGIN_V_MM = 30;
+    const PRINT_PAGE_MARGIN_H_MM = 50;
+
+    // ---- 目次の改ページ ----
+    // 手順のページは composePrintPages が1ページずつ組むが、目次（表紙の直後）は今までどおり
+    // Chromium の改ページに任せる。プレビューで目次を1ページずつの紙に分けるために、改ページ位置を
+    // 計算する（規則は v1.0.8 に Electron 31 の printToPDF で実測したもの。仕様
+    // docs/spec-pdf-output-scale.md）。途中では切らない塊は目次のフェーズ（.print-toc-sec）。
+    const PRINT_ATOM_SEL = '.print-toc-sec';
     // -- 純関数（テスト対象。window.__test__ に公開） --
     // 改ページ位置を求める。blocks は「途中では切らない塊」の { top, bottom, kids }（上端の昇順）。
-    // 規則は Electron 31（Chromium 126）の printToPDF の実測に合わせる（v1.0.8。仕様
-    // docs/spec-pdf-output-scale.md）。送り先に塊の枠の上端を使うことで、ページ境界で
-    // 捨てられる上マージンも自然に合う。
+    // 送り先に塊の枠の上端を使うことで、ページ境界で捨てられる上マージンも自然に合う。
     function paginateBreaks(blocks, contentH, total, start) {
       const out = [];
       if (!(Number(contentH) > 1)) return out;
@@ -6034,18 +6011,13 @@
       }
       return out;
     }
-    // 塊と塊のあいだが余白（margin・gap）だけとみなせる幅。印刷ビューの余白は最大でも
-    // 手順カードの下マージン 28px なので、それより少し広くとる。
+    // 塊と塊のあいだが余白（margin・gap）だけとみなせる幅。
     const PRINT_BLOCK_GAP_MAX = 40;
-    // 画面のプレビューと印刷の組版には ±1〜2px の差が出ることがある（画像2列で、ページの終わりを
-    // 2px 超える塊が実際には収まった例がある一方、逆の例もある）。許容幅を足しても外れは減らなかった
-    // ため足さない（試験文書で −3〜+3px を比べ、0px が最少。仕様 docs/spec-pdf-output-scale.md）。
     // ページ [top, end) の終わりでの改ページ位置。end をまたぐ塊がページの途中から始まって
     // いれば、その塊ごと次ページへ送る（1ページに収まらない塊でも送られる）。ページの先頭から
     // 始まる塊は送れないので、中の塊（kids）で同じことを調べ、無ければ end で切る。
     // end が塊と塊のあいだの余白に落ちたときは、次のページは次の塊の上端から始まる
-    // （ページ境界の余白は切り捨てられる）。こうしないと、その塊が次のページの途中から
-    // 始まったと数えられ、1ページに収まらない塊なら空のページを1枚余計に数えてしまう。
+    // （ページ境界の余白は切り捨てられる）。
     function pageBreakAt(blocks, top, end) {
       const hit = blocks.find((b) => b.top < end && b.bottom > end);
       if (!hit) {
@@ -6056,10 +6028,8 @@
       if (hit.top > top + 0.5) return hit.top; // 位置は必ず前へ進む
       return pageBreakAt(hit.kids || [], top, end);
     }
-    // 印刷ビュー（root の中）から、paginateBreaks に渡す塊の木を組む。boxOf(el) は本文の
-    // 内部座標の { top, bottom }。フェーズ見出しは CSS の break-after: avoid と対で、最初の
-    // 項目と1つの塊にする（上端＝見出しの上端・kids＝最初の項目の中の塊）。見出しだけの
-    // フェーズは見出しを1つの塊にする（1行なので途中では切れない）。
+    // root の中の「途中では切らない塊」（PRINT_ATOM_SEL）から、paginateBreaks に渡す塊の木を組む。
+    // boxOf(el) は本文の内部座標の { top, bottom }。入れ子の塊は外側の塊の kids にする。
     function printBreakBlocks(root, boxOf) {
       const atoms = Array.from(root.querySelectorAll(PRINT_ATOM_SEL));
       const nodeOf = new Map(atoms.map((el) => [el, { ...boxOf(el), kids: [] }]));
@@ -6069,14 +6039,6 @@
         while (p && p !== root && !nodeOf.has(p)) p = p.parentElement;
         (p && nodeOf.has(p) ? nodeOf.get(p).kids : roots).push(nodeOf.get(el));
       }
-      root.querySelectorAll('.print-section').forEach((sec) => {
-        const title = sec.querySelector(':scope > .print-section-title');
-        if (!title) return;
-        const first = sec.querySelector(':scope > .print-items > .print-step, :scope > .print-items > .print-todo');
-        const t = boxOf(title);
-        if (first && nodeOf.has(first)) nodeOf.get(first).top = t.top;
-        else roots.push({ top: t.top, bottom: t.bottom, kids: [] });
-      });
       const sortTree = (list) => {
         list.sort((a, b) => a.top - b.top);
         list.forEach((n) => sortTree(n.kids));
@@ -6084,35 +6046,8 @@
       };
       return sortTree(roots);
     }
-    // 用紙に合わせた倍率（%）を選ぶ（v1.0.8）。needsAt(pct) は倍率 pct で組んだときの
-    // 「1ページに収めたい高さ」（本文の内部座標 px）の配列。倍率 pct では内部座標の1ページが
-    // pageH ÷ (pct/100) になるので、h × pct/100 ≤ pageH なら収まる。下限でも収まらない項目は
-    // 外す（全体を下限へ引きずらない）。倍率を下げるほど収まりやすいので刻みを二分探索する。
-    function autoPrintScale(needsAt, pageH, { min = 30, max = 100, step = 5 } = {}) {
-      const H = Number(pageH);
-      if (!(H > 0) || typeof needsAt !== 'function') return max;
-      const fitsAt = (pct, h) => Number(h) * pct / 100 <= H + 0.5;
-      const base = needsAt(min) || [];
-      const idx = base.map((h, i) => (fitsAt(min, h) ? i : -1)).filter((i) => i >= 0);
-      if (!idx.length) return max;
-      const ok = (pct) => {
-        const n = needsAt(pct) || [];
-        return idx.every((i) => fitsAt(pct, n[i]));
-      };
-      const cands = [];
-      for (let p = max; p >= min; p -= step) cands.push(p);
-      if (ok(cands[0])) return cands[0];
-      let lo = 0; // 収まらない
-      let hi = cands.length - 1; // 収まる（下限は idx の作り方から必ず収まる）
-      while (hi - lo > 1) {
-        const mid = (lo + hi) >> 1;
-        if (ok(cands[mid])) hi = mid;
-        else lo = mid;
-      }
-      return cands[hi];
-    }
-    // -- DOM を測る道具（プレビューの紙面 .pp-zoom の中で使う） --
-    // 本文の内部座標（zoom が掛かる前の px）で要素の上端・下端を測る。zoom の中の
+    // -- DOM を測る道具 --
+    // 本文の内部座標（zoom が掛かる前の px）で要素の位置・大きさを測る。zoom の中の
     // getBoundingClientRect の座標系は Chromium の版で違う（M128 で標準化。Electron 31 は
     // 旧挙動）ため、既知の高さ 100px の物差しを先頭に差して unit を実測して割る。
     function printRuler(zoomWrap) {
@@ -6121,81 +6056,452 @@
       zoomWrap.insertBefore(ruler, zoomWrap.firstChild);
       const rr = ruler.getBoundingClientRect();
       const unit = rr.height / 100 || 1;
-      const origin = rr.top; // 本文の先頭（紙の上余白 15mm の直下）
+      const origin = rr.top; // 本文の先頭
       return {
         boxOf: (el) => {
           const r = el.getBoundingClientRect();
           return { top: (r.top - origin) / unit, bottom: (r.bottom - origin) / unit };
         },
+        sizeOf: (el) => {
+          const r = el.getBoundingClientRect();
+          return { w: r.width / unit, h: r.height / unit };
+        },
         remove: () => ruler.remove(),
       };
     }
-    // プレビューの紙面の改ページ位置（本文の内部座標）。contentH は内部座標の1ページ分。
-    // 表紙・目次は break-after:page で1ページを丸ごと使うため、その下端を起点に取り直す。
-    function printPageBreaks(zoomWrap, contentH) {
-      const m = printRuler(zoomWrap);
-      const endMark = document.createElement('div');
-      endMark.style.cssText = 'height:0;margin:0;padding:0;border:0;';
-      zoomWrap.appendChild(endMark);
-      try {
-        const total = m.boxOf(endMark).top; // 本文の終わり（紙の下余白は含まれない）
-        const blocks = printBreakBlocks(zoomWrap, m.boxOf);
-        const out = [];
-        let y = 0;
-        const cover = zoomWrap.querySelector('.print-cover');
-        if (cover) { y = m.boxOf(cover).bottom; out.push(y); } // 表紙は余白0の専用ページ
-        const toc = zoomWrap.querySelector('.print-toc');
-        if (toc) {
-          const end = m.boxOf(toc).bottom;
-          out.push(...paginateBreaks(blocks, contentH, end, y)); // 目次が2ページ以上のとき
-          y = end;
-          out.push(y);
-        }
-        out.push(...paginateBreaks(blocks, contentH, total, y));
-        return out;
-      } finally {
-        m.remove();
-        endMark.remove();
-      }
+
+    // ---- 手順の配置（v1.0.9。仕様は docs/spec-pdf-output-scale.md の「手順の配置」） ----
+    // 理念：ページ割に対して余白をバランスよく配置する（真ん中に寄せるのではない。下に余白をためない）。
+    // 「縦○段×横○列」は state.settings.printGrid = { rows: '' | 1〜6, cols: '' | 1〜4 }（'' は自動）。
+    //   縦 2〜6 段 … ページを縦に R 個の区切りに等分し、1つの区切りに1段。手順の箱はマスいっぱい
+    //   縦 1 段 … ページを分けない。1ページに1段で、手順は中身の高さのまま上詰め（箱をページいっぱいに伸ばさない）
+    //   縦が自動 … ページを上半分・下半分の2つの区切りに分け、区切りに入るだけの段を入れて間隔をそろえる
+    // 区切りはページの中心から決める（1ページ目は最初の区切りだけ文書の表題の下から）。
+    // 縦の割りは強制（フェーズは区切りの先頭から。続きの区切りには見出しを出さない）。横の割りは強制しない：
+    // どの段も、手順の箱で本文の左右いっぱいを使う（横 C 列は段の手順の数で等分、横が自動は画像の幅の比で分ける）。
+    const PL_GAP_MIN = 28; // 流し込みの段と段の間隔（最小）
+    const PL_GAP_MAX = 72; // 同（最大。超える余りは区切りの上と下に分ける）
+    const PL_CELL_GAP = 16; // 手順の箱と箱の横の間隔
+    const PL_DIV_GAP = 16; // 区切りと区切りのあいだ
+    const PL_IMG_GAP = 10; // 手順の中の画像どうしの間隔（CSS の .print-imgs の gap と同じ）
+    const PL_AUTO_MIN_W = 250; // 横が自動のときの手順の幅の最小
+    const PL_AUTO_IMG_MIN = 40; // 横が自動のとき、文が長い手順でも画像の欄に残す高さ
+    const PL_CELL_IMG_MIN = 8; // 画像の欄がこれより低くしか残らなければ「はみ出し」
+    // 1ページの高さから引く余裕（物理 px）。端数で .print-page が次のページへはみ出すと白紙ができる
+    const PL_PAGE_SAFE_PX = 4;
+    // 読めない画像（や img.decode の無い環境）の縦横比
+    const PRINT_IMG_FALLBACK_DIMS = [4, 3];
+
+    // -- 純関数（テスト対象。window.__test__ に公開） --
+    // 設定の値をそろえる。縦は 1〜6、横は 1〜4（上限を超えれば上限）、それ以外は ''（自動）。
+    function clampPrintGrid(v) {
+      const o = v && typeof v === 'object' ? v : {};
+      const num = (x) => (x == null || String(x).trim() === '' ? NaN : Math.floor(Number(x)));
+      const r = num(o.rows);
+      const c = num(o.cols);
+      return {
+        rows: Number.isFinite(r) && r >= 1 ? Math.min(6, r) : '',
+        cols: Number.isFinite(c) && c >= 1 ? Math.min(4, c) : '',
+      };
     }
-    // 倍率 pct で組んだ紙面の「1ページに収めたい高さ」（autoPrintScale の needsAt）。
-    // 画像1枚ずつの高さと、手順カードの上端（フェーズの最初の手順は見出しの上端）から
-    // 最初の画像の行の下端まで（画像が1行だけならカードの下端まで）。画像の無い手順は数えない。
-    function measurePrintFitNeeds(zoomWrap, pct) {
-      const s = pct / 100;
-      zoomWrap.style.zoom = String(s);
-      zoomWrap.style.setProperty('--print-img-scale', String(s));
-      const m = printRuler(zoomWrap);
-      try {
-        const needs = [];
-        zoomWrap.querySelectorAll('.print-step, .print-todo').forEach((card) => {
-          const boxes = Array.from(card.querySelectorAll('.print-img')).map(m.boxOf);
-          if (!boxes.length) return;
-          boxes.forEach((b) => needs.push(b.bottom - b.top));
-          const rowTop = Math.min(...boxes.map((b) => b.top));
-          const firstRow = boxes.filter((b) => b.top < rowTop + 1);
-          const c = m.boxOf(card);
-          const sec = card.closest('.print-section');
-          const title = sec && sec.querySelector(':scope > .print-section-title');
-          const isFirst = !!title && sec.querySelector(':scope > .print-items > .print-step, :scope > .print-items > .print-todo') === card;
-          const top = isFirst ? m.boxOf(title).top : c.top;
-          const bottom = firstRow.length === boxes.length ? c.bottom : Math.max(...firstRow.map((b) => b.bottom));
-          needs.push(bottom - top);
+    // 高さ（または幅）hs の要素を、長さ avail の範囲に均等な間隔で並べる。間隔は gMin〜gMax で、
+    // gMax で頭打ちになった余りは前後（上下・左右）に半分ずつ分ける。入りきらなければ間隔を詰める。
+    // 戻り値 { g: 要素と要素の間隔, top: 最初の要素の前の余り }
+    function balancedGaps(hs, avail, gMin, gMax) {
+      const list = Array.isArray(hs) ? hs.map((h) => Math.max(0, Number(h) || 0)) : [];
+      const A = Math.max(0, Number(avail) || 0);
+      const n = list.length;
+      if (!n) return { g: 0, top: 0 };
+      const sum = list.reduce((a, b) => a + b, 0);
+      let g = Math.min(gMax, Math.max(gMin, (A - sum) / (n + 1)));
+      if (n > 1 && sum + (n - 1) * g > A) g = Math.max(0, (A - sum) / (n - 1));
+      return { g, top: Math.max(0, (A - sum - (n - 1) * g) / 2) };
+    }
+    // 1ページの本文 [top0, bottom] を、縦に n 個の区切りに等分する（あいだは gap）。戻り値 [{ top, bot }…]
+    function pageDivisions(top0, bottom, n, gap) {
+      const h = Math.max(0, (bottom - top0 - gap * (n - 1)) / n);
+      return Array.from({ length: n }, (_, i) => ({ top: top0 + i * (h + gap), bot: top0 + i * (h + gap) + h }));
+    }
+    // フェーズと段を、ページの区切り（1ページに n 個）へ割り当てる。
+    //   sections … [{ title: 見出しがあるか, rows: [段…] }]
+    //   fits(rows, row, areaH) … 区切りにもう入っている段 rows に、段 row を足せるか
+    //   areaOf(pi, di, div) … pi ページ目の di 番目の区切りで、手順に使える高さ
+    //   firstDiv … 1ページ目で手順を入れ始める区切り（最初の区切りが文書の表題でほぼ埋まるときは 1）
+    // フェーズは区切りの先頭から始める（今の区切りに何か入っていれば次の区切りへ）。空の区切りには
+    // 段を必ず1つ入れる。入りきらない段は次の区切りへ送り、続きの側には見出しを出さない。
+    // 戻り値 [{ divs: [区切り…] }]。区切りは { sec: フェーズの番号（-1＝使わない）, title, rows }
+    function planPrintDivisions(sections, n, fits, areaOf, firstDiv = 0) {
+      const N = Math.max(1, Math.floor(Number(n)) || 1);
+      const pages = [];
+      let pi = -1;
+      let di = N - 1;
+      const advance = () => {
+        if (di < N - 1) { di += 1; return; }
+        pages.push({ divs: Array.from({ length: N }, () => ({ sec: -1, title: false, rows: [] })) });
+        pi += 1;
+        di = pi === 0 ? Math.min(N - 1, Math.max(0, Math.floor(firstDiv) || 0)) : 0;
+      };
+      const cur = () => pages[pi].divs[di];
+      (Array.isArray(sections) ? sections : []).forEach((s, si) => {
+        if (pi < 0 || cur().sec >= 0) advance();
+        Object.assign(cur(), { sec: si, title: !!s.title });
+        (s.rows || []).forEach((row) => {
+          if (cur().rows.length && !fits(cur().rows, row, areaOf(pi, di, cur()))) {
+            advance();
+            cur().sec = si; // 続き（見出しなし）
+          }
+          cur().rows.push(row);
         });
-        return needs;
+      });
+      return pages;
+    }
+    // 流し込み：区切りにもう入っている段（高さ hs）に、高さ h の段を足せるか（段と段の間は最小 gMin）。
+    function flowRowFits(hs, h, areaH, gMin) {
+      const used = hs.reduce((a, x) => a + Math.min(x, areaH), 0) + gMin * Math.max(0, hs.length - 1);
+      return used + gMin + h <= areaH + 0.5;
+    }
+    // 画像を幅 W × 高さ H の欄に、縦横比を保って収める。1段に k 枚（k＝1〜枚数）を並べる形をすべて試し、
+    // 画像の面積の合計がいちばん大きくなる形を選ぶ（4枚なら 2枚×2段 など）。dims は画像の元の [幅, 高さ]。
+    // 戻り値 { k: 1段の枚数, sizes: [[幅, 高さ]…] }
+    function fitImagesInBox(W, H, dims, gap) {
+      const n = dims.length;
+      let best = null;
+      for (let k = 1; k <= n; k++) {
+        const rows = Math.ceil(n / k);
+        const cw = (W - gap * (k - 1)) / k;
+        const ch = (H - gap * (rows - 1)) / rows;
+        if (!(cw > 0) || !(ch > 0)) continue;
+        const sizes = dims.map(([iw, ih]) => {
+          const f = Math.min(cw / iw, ch / ih);
+          return [Math.floor(iw * f), Math.floor(ih * f)];
+        });
+        const area = sizes.reduce((a, [w, h]) => a + w * h, 0);
+        if (!best || area > best.area) best = { k, sizes, area };
+      }
+      return best ? { k: best.k, sizes: best.sizes } : { k: 1, sizes: dims.map(() => [0, 0]) };
+    }
+    // 流し込み（縦が自動・縦1）の手順の画像。画像は手順の中の幅 innerW いっぱいに縦に積む。手順の高さが
+    // maxH（null＝上限なし）を超えるときは、画像の欄（maxH − base）に fitImagesInBox で収める（縮めた画像は
+    // 手順の中の中央）。base は画像の欄が空のとき（欄の上下の余白だけ）の手順の高さ。
+    // 戻り値 { k, sizes, h: 手順の高さ, over: 画像を収める欄が残らない（文だけで入りきらない） }
+    function fitFlowCardImages(base, innerW, dims, maxH, gap) {
+      const n = dims.length;
+      if (!n) return { k: 1, sizes: [], h: base, over: maxH != null && base > maxH + 0.5 };
+      const nat = dims.map(([iw, ih]) => [Math.floor(innerW), Math.floor((innerW * ih) / iw)]);
+      const natH = base + nat.reduce((a, [, h]) => a + h, 0) + gap * (n - 1);
+      if (maxH == null || natH <= maxH + 0.5) return { k: 1, sizes: nat, h: natH, over: false };
+      const fit = fitImagesInBox(innerW, maxH - base, dims, gap);
+      return { k: fit.k, sizes: fit.sizes, h: maxH, over: maxH - base < PL_CELL_IMG_MIN };
+    }
+    // 段の中の手順 n 個の左端と幅。横の割りは強制しないので、段の手順の数で本文の幅いっぱいを等分する
+    // （横2列の段に手順が1つなら、その手順の箱は左右いっぱい）。
+    function rowCells(n, W, gap) {
+      const w = (W - gap * (n - 1)) / n;
+      return Array.from({ length: n }, (_, j) => ({ x: j * (w + gap), w }));
+    }
+    // 横が自動の段で、手順の左端と幅。ws は手順の幅の目安（段の高さに合わせた画像の幅）。その比で
+    // 本文の幅いっぱいを分ける。
+    function fillRowWidths(ws, W, gap) {
+      const n = ws.length;
+      const list = ws.map((w) => Math.max(1, Number(w) || 0));
+      const k = (W - gap * (n - 1)) / list.reduce((a, b) => a + b, 0);
+      let x = 0;
+      return list.map((w) => {
+        const cell = { x, w: w * k };
+        x += w * k + gap;
+        return cell;
+      });
+    }
+    // 横が自動の段の組み方：幅 ws の手順を、幅 W の段に入る限り並べる。戻り値は段ごとの手順の番号。
+    function packRowsByWidth(ws, W, gap) {
+      const rows = [];
+      let cur = [];
+      let used = 0;
+      ws.forEach((w0, i) => {
+        const w = Math.min(W, w0);
+        if (cur.length && used + gap + w > W + 0.5) { rows.push(cur); cur = []; used = 0; }
+        used = cur.length ? used + gap + w : w;
+        cur.push(i);
+      });
+      if (cur.length) rows.push(cur);
+      return rows;
+    }
+    function printGridSettings() {
+      return clampPrintGrid((store.state.settings || {}).printGrid);
+    }
+    // 手順の配置を保存する（用紙・倍率と同じく Undo 履歴に積まない）。v1.0.8 までの
+    // 「画像の配置 1列／2列」（printImgLayout）は廃止したので消す。
+    function setPrintGrid(patch) {
+      commitInPlace((s) => {
+        s.settings = s.settings || {};
+        s.settings.printGrid = clampPrintGrid({ ...clampPrintGrid(s.settings.printGrid), ...patch });
+        delete s.settings.printImgLayout;
+      }, { history: false });
+    }
+
+    // -- ページを組む（DOM で高さを測る） --
+    // 画像の元の大きさ。Map(src → [幅, 高さ])。
+    function loadPrintImageDims(srcs) {
+      const uniq = Array.from(new Set(srcs));
+      const one = (src) => new Promise((resolve) => {
+        const img = new Image();
+        if (typeof img.decode !== 'function') { resolve(PRINT_IMG_FALLBACK_DIMS); return; }
+        img.src = src;
+        img.decode()
+          .then(() => resolve(img.naturalWidth > 0 && img.naturalHeight > 0
+            ? [img.naturalWidth, img.naturalHeight] : PRINT_IMG_FALLBACK_DIMS))
+          .catch(() => resolve(PRINT_IMG_FALLBACK_DIMS));
+      });
+      return Promise.all(uniq.map(one)).then((list) => new Map(uniq.map((src, i) => [src, list[i]])));
+    }
+    // 高さを測る画面外の箱。印刷と同じ倍率の zoom を掛け、本文の内部座標（zoom の前の px）で測る。
+    function createPrintMeasurer(scale, accent) {
+      const box = document.createElement('div');
+      box.className = 'print-doc print-measure';
+      box.setAttribute('aria-hidden', 'true');
+      box.style.cssText = `position:absolute;left:-40000px;top:0;visibility:hidden;pointer-events:none;zoom:${scale};--print-accent:${accent}`;
+      const page = document.createElement('div');
+      page.className = 'print-page';
+      box.appendChild(page);
+      document.body.appendChild(box);
+      const ruler = printRuler(box);
+      return {
+        // html を幅 w の置き場（.pl-abs.<cls>）に入れ、置き場の要素を返す（次に put するまで有効）
+        put(html, w, cls) {
+          page.innerHTML = `<div class="pl-abs${cls ? ' ' + cls : ''}" style="left:0;top:0;width:${w}px">${html}</div>`;
+          return page.firstElementChild;
+        },
+        size: (el) => ruler.sizeOf(el),
+        box: (el) => ruler.boxOf(el),
+        remove: () => box.remove(),
+      };
+    }
+    // 手順1つを幅 w の置き場（cls）で測る。
+    //   base … 画像の欄が無いときの高さ／baseImg … 画像の欄が空のとき（欄の上下の余白だけ）の高さ
+    //   innerW … 画像の欄の幅
+    function measurePrintItem(meas, item, isTemplate, w, cls) {
+      const base = meas.size(meas.put(printItemHtml(item, isTemplate, ''), w, cls)).h;
+      if (!item.srcs.length) return { base, baseImg: base, innerW: 0 };
+      const el = meas.put(printItemHtml(item, isTemplate, '<div class="print-imgs"></div>'), w, cls);
+      return { base, baseImg: meas.size(el).h, innerW: meas.size(el.querySelector('.print-imgs')).w };
+    }
+    // ページの中に置く要素。reg は入るべき範囲 [上, 下, 左, 右]（本文の内部座標。検証で使う）。
+    function plPlace(x, y, w, h, html, reg, cls, over) {
+      const f = (v) => Number(v).toFixed(2);
+      const box = `left:${f(x)}px;top:${f(y)}px;width:${f(w)}px${h != null ? `;height:${f(h)}px` : ''}`;
+      return `<div class="pl-abs ${cls}${over ? ' pl-over' : ''}" data-reg="${reg.map(f).join(',')}" style="${box}">${html}</div>`;
+    }
+    const splitEvery = (list, n) =>
+      Array.from({ length: Math.ceil(list.length / n) }, (_, i) => list.slice(i * n, i * n + n));
+    const imgDimsOf = (item, dims) => item.srcs.map((src) => dims.get(src));
+    // 縦が自動（流し込み）。横 C 列（段の手順の数で幅を等分）の段を、区切りに入るだけ入れて間隔をそろえる。
+    function makeFlowLayout(env, C) {
+      const { W, meas, isTemplate, dims } = env;
+      const cards = new Map(); // 手順 → Map(幅 → 測った値)
+      const cardOf = (item, w) => {
+        const byW = cards.get(item) || new Map();
+        cards.set(item, byW);
+        const key = w.toFixed(2);
+        if (!byW.has(key)) byW.set(key, measurePrintItem(meas, item, isTemplate, w, 'pl-flow'));
+        return byW.get(key);
+      };
+      // 幅 w の手順の画像の大きさと高さ（maxH を超えれば画像を縮める）
+      const fitOf = (item, w, maxH) => {
+        const c = cardOf(item, w);
+        return fitFlowCardImages(c.baseImg, c.innerW, imgDimsOf(item, dims), maxH, PL_IMG_GAP);
+      };
+      // 幅 w・高さ h に置いた手順
+      const placeCard = (item, x, y, w, h, reg) => {
+        const fit = fitOf(item, w, h);
+        const card = printItemHtml(item, isTemplate, printImgsHtml(item.srcs, fit.sizes, fit.k));
+        return plPlace(x, y, w, h, card, reg, 'pl-flow', fit.over);
+      };
+      return {
+        fitOf,
+        placeCard,
+        rowsOf: (sec) => splitEvery(sec.items, C).map((items) => {
+          const w = rowCells(items.length, W, PL_CELL_GAP)[0].w;
+          return { items, h: Math.max(...items.map((it) => fitOf(it, w, null).h)) };
+        }),
+        fits: (rows, row, areaH) => flowRowFits(rows.map((r) => r.h), row.h, areaH, PL_GAP_MIN),
+        render(rows, y0, bot, reg) {
+          const areaH = bot - y0;
+          const hs = rows.map((r) => Math.min(r.h, areaH)); // 区切りより高い段は、画像を縮めて区切りに収める
+          const { g, top } = balancedGaps(hs, areaH, PL_GAP_MIN, PL_GAP_MAX);
+          let y = y0 + top;
+          let html = '';
+          rows.forEach((r, i) => {
+            if (i) y += g;
+            rowCells(r.items.length, W, PL_CELL_GAP).forEach((cell, j) => {
+              html += placeCard(r.items[j], cell.x, y, cell.w, hs[i], reg);
+            });
+            y += hs[i];
+          });
+          return html;
+        },
+      };
+    }
+    // 縦 1 段（ページを分けない）。1ページに1段で、手順は中身の高さのまま上詰め（手順の箱をページいっぱいに
+    // 伸ばさない）。画像は幅いっぱいで、ページに入りきらない手順だけ画像を縮める。
+    function makeTopLayout(env, C) {
+      const flow = makeFlowLayout(env, C);
+      return {
+        rowsOf: (sec) => splitEvery(sec.items, C).map((items) => ({ items })),
+        fits: () => false, // 1ページに1段
+        render(rows, y0, bot, reg) {
+          const r = rows[0];
+          const cells = rowCells(r.items.length, env.W, PL_CELL_GAP);
+          const h = Math.min(bot - y0, Math.max(...r.items.map((it, j) => flow.fitOf(it, cells[j].w, null).h)));
+          return cells.map((cell, j) => flow.placeCard(r.items[j], cell.x, y0, cell.w, h, reg)).join('');
+        },
+      };
+    }
+    // 縦 R 段（2〜6）。1つの区切りに1段で、手順の箱は区切りの残りの高さいっぱい（マスいっぱい）。
+    // 横 C 列（段の手順の数で幅を等分）、C＝'' なら横が自動（画像の幅の比で幅を分ける）。
+    function makeGridLayout(env, R, C) {
+      const { W, H, meas, isTemplate, dims } = env;
+      const gap = PL_CELL_GAP;
+      // 幅 w・高さ h のマスに入れた手順。画像は見出し行・本文の下に残った欄に収める
+      const cellOf = (item, w, h) => {
+        const m = measurePrintItem(meas, item, isTemplate, w, 'pl-cell');
+        if (!item.srcs.length) return { html: printItemHtml(item, isTemplate, ''), over: m.base > h + 0.5 };
+        const boxH = h - m.baseImg;
+        const fit = fitImagesInBox(m.innerW, boxH, imgDimsOf(item, dims), PL_IMG_GAP);
+        return { html: printItemHtml(item, isTemplate, printImgsHtml(item.srcs, fit.sizes, fit.k)), over: boxH < PL_CELL_IMG_MIN };
+      };
+      // 横が自動：高さ h の段に入れたときの手順の幅の目安（画像を横に並べた幅。画像が無ければ最小の幅）。
+      // どちらも、文（見出し行・本文・メモ）が入りきらなければ、入るまで幅を広げる（画像の欄は
+      // PL_AUTO_IMG_MIN 以上残す）
+      const widths = new Map();
+      const naturalW = (item, h) => {
+        const key = `${h.toFixed(1)}`;
+        const memo = widths.get(item) || new Map();
+        widths.set(item, memo);
+        if (memo.has(key)) return memo.get(key);
+        let w = PL_AUTO_MIN_W;
+        if (item.srcs.length) {
+          for (let pass = 0; pass < 2; pass++) { // 幅で見出し行の折り返しが変わるので、1回だけ測り直す
+            const m = measurePrintItem(meas, item, isTemplate, w, 'pl-cell');
+            const imgH = Math.max(PL_AUTO_IMG_MIN, h - m.baseImg);
+            const imgsW = imgDimsOf(item, dims).reduce((a, [iw, ih]) => a + (iw / ih) * imgH, 0) +
+              PL_IMG_GAP * (item.srcs.length - 1);
+            w = Math.min(W, Math.max(PL_AUTO_MIN_W, imgsW + (w - m.innerW)));
+          }
+        }
+        const textH = (width) => (item.srcs.length
+          ? measurePrintItem(meas, item, isTemplate, width, 'pl-cell').baseImg + PL_AUTO_IMG_MIN
+          : meas.size(meas.put(printItemHtml(item, isTemplate, ''), width, 'pl-cell')).h);
+        while (w < W && textH(w) > h + 0.5) w = Math.min(W, w + 50);
+        memo.set(key, w);
+        return w;
+      };
+      return {
+        rowsOf(sec) {
+          if (C) return splitEvery(sec.items, C).map((items) => ({ items }));
+          // 区切りの高さの見込み（見出しのある区切り）で幅の目安を決め、1段に入る限り並べる
+          const d = pageDivisions(0, H, R, PL_DIV_GAP)[0];
+          const estH = Math.max(40, d.bot - d.top - (sec.titleH || 0));
+          return packRowsByWidth(sec.items.map((it) => naturalW(it, estH)), W, gap)
+            .map((idx) => ({ items: idx.map((i) => sec.items[i]) }));
+        },
+        fits: () => false, // 1つの区切りに1段
+        render(rows, y0, bot, reg) {
+          const h = Math.max(0, bot - y0);
+          const r = rows[0];
+          const cells = C ? rowCells(r.items.length, W, gap) : fillRowWidths(r.items.map((it) => naturalW(it, h)), W, gap);
+          return cells.map((cell, j) => {
+            const c = cellOf(r.items[j], cell.w, h);
+            return plPlace(cell.x, y0, cell.w, h, c.html, reg, 'pl-cell', c.over);
+          }).join('');
+        },
+      };
+    }
+    // 目次のページの切れ目（目次の上端からの内部座標 px）。[[始まり, 終わり]…]
+    function measureTocSegments(meas, tocHtml, W, pageH) {
+      const toc = meas.put(tocHtml, W, '').firstElementChild;
+      const t = meas.box(toc);
+      const cuts = [t.top, ...paginateBreaks(printBreakBlocks(toc, meas.box), pageH, t.bottom, t.top), t.bottom];
+      return cuts.slice(1).map((b, i) => [cuts[i] - t.top, b - t.top]);
+    }
+    // 印刷・PDF・印刷プレビューのページを組む。opts は { paper, orient, scale, grid }。
+    // 戻り値 { accent, coverHtml, tocHtml, tocSegments, pages: [ページの HTML…], W, H }
+    // （W・H は1ページの本文の幅・高さ。本文の内部座標＝倍率の zoom を掛ける前の px）
+    async function composePrintPages(checklist, opts) {
+      const parts = printDocParts(checklist);
+      const s = clampPdfScale(opts.scale) / 100;
+      const d = pdfPaperDims(opts.paper, opts.orient);
+      const W = ((d.w - PRINT_PAGE_MARGIN_H_MM) * PX_PER_MM - 1) / s;
+      const H = ((d.h - PRINT_PAGE_MARGIN_V_MM) * PX_PER_MM - PL_PAGE_SAFE_PX) / s;
+      const grid = clampPrintGrid(opts.grid);
+      const dims = await loadPrintImageDims(parts.sections.flatMap((sec) => sec.items.flatMap((item) => item.srcs)));
+      const meas = createPrintMeasurer(s, parts.accent);
+      try {
+        const env = { W, H, meas, dims, isTemplate: parts.isTemplate };
+        const heightOf = (html) => meas.size(meas.put(html, W, 'pl-title')).h;
+        const tH = parts.titleHtml ? heightOf(parts.titleHtml) : 0;
+        const secs = parts.sections
+          .filter((sec) => sec.titleHtml || sec.items.length)
+          .map((sec) => ({ ...sec, titleH: sec.titleHtml ? heightOf(sec.titleHtml) : 0 }));
+        // ページ割：縦 R 段なら R 個、縦が自動なら上半分・下半分の2個の区切り
+        const nDiv = grid.rows || 2;
+        const layout = grid.rows === 1 ? makeTopLayout(env, grid.cols || 1)
+          : grid.rows ? makeGridLayout(env, grid.rows, grid.cols) : makeFlowLayout(env, grid.cols || 1);
+        // 区切りの範囲 [top, bot]。区切りはページの中心から決め、1ページ目の最初の区切りだけ文書の表題の下から
+        const divRect = (pi, di) => {
+          const d = pageDivisions(0, H, nDiv, PL_DIV_GAP)[di];
+          return pi === 0 && di === 0 ? { top: tH, bot: d.bot } : d;
+        };
+        // 文書の表題で1ページ目の最初の区切りが半分より埋まるときは、その区切りは表題だけにし、手順は次の区切りから
+        const d0 = pageDivisions(0, H, nDiv, PL_DIV_GAP)[0];
+        const firstDiv = nDiv > 1 && d0.bot - tH < (d0.bot - d0.top) / 2 ? 1 : 0;
+        const plan = planPrintDivisions(
+          secs.map((sec) => ({ title: !!sec.titleHtml, rows: layout.rowsOf(sec) })),
+          nDiv,
+          layout.fits,
+          (pi, di, div) => {
+            const r = divRect(pi, di);
+            return r.bot - r.top - (div.title ? secs[div.sec].titleH : 0);
+          },
+          firstDiv
+        );
+        if (!plan.length && parts.titleHtml) plan.push({ divs: [] }); // 手順が無くても表題のページは出す
+        const pages = plan.map((pg, pi) => {
+          let html = pi === 0 && parts.titleHtml ? plPlace(0, 0, W, null, parts.titleHtml, [0, tH, 0, W], 'pl-title') : '';
+          pg.divs.forEach((div, di) => {
+            if (div.sec < 0) return; // 使わない区切り（文書の終わり）は空けたまま
+            const { top, bot } = divRect(pi, di);
+            const reg = [top, bot, 0, W];
+            let y = top;
+            if (div.title) {
+              html += plPlace(0, y, W, null, secs[div.sec].titleHtml, reg, 'pl-title');
+              y += secs[div.sec].titleH;
+            }
+            if (div.rows.length) html += layout.render(div.rows, y, bot, reg);
+          });
+          return `<div class="print-page" style="height:${H.toFixed(2)}px">${html}</div>`;
+        });
+        // 目次は Chromium の改ページに任せるので、1ページの本文の高さは余裕を引かない値で数える
+        const tocPageH = ((d.h - PRINT_PAGE_MARGIN_V_MM) * PX_PER_MM) / s;
+        const tocSegments = parts.tocHtml ? measureTocSegments(meas, parts.tocHtml, W, tocPageH) : [];
+        return { accent: parts.accent, coverHtml: parts.coverHtml, tocHtml: parts.tocHtml, tocSegments, pages, W, H };
       } finally {
-        m.remove();
+        meas.remove();
       }
     }
+    // 印刷・PDF・プレビューで使う設定（用紙・向き・倍率・手順の配置）
+    function printLayoutOptions() {
+      return { ...pdfOutSettings(), grid: printGridSettings() };
+    }
+
     // @page の size 上書き CSS。coverpage（表紙・余白0）も同じ用紙に合わせる。
-    // scale は出力の倍率（1＝等倍）。#print-root の zoom で掛け（印刷・PDF 共通。v1.0.8）、
-    // % 幅で相殺されてしまう画像にも --print-img-scale として同じ値を降ろす。
+    // scale は出力の倍率（1＝等倍）。#print-root の zoom で掛ける（印刷・PDF 共通。v1.0.8）。
+    // 画像の大きさはページを組むときに px で決めるので、zoom だけで文字と一緒に縮む（v1.0.9）。
     function pdfPageStyleCss(paper, orient, scale) {
       const d = pdfPaperDims(paper, orient);
       const size = `${d.w}mm ${d.h}mm`;
       const n = Number(scale);
       const s = Number.isFinite(n) && n > 0 ? n : 1;
-      return `@page { size: ${size}; }\n@page coverpage { size: ${size}; }\n#print-root { zoom: ${s}; --print-img-scale: ${s}; }`;
+      return `@page { size: ${size}; }\n@page coverpage { size: ${size}; }\n#print-root { zoom: ${s}; }`;
     }
     function pdfOutSettings() {
       const s = store.state.settings || {};
@@ -6226,21 +6532,22 @@
       el.textContent = pdfPageStyleCss(paper, orient, scale / 100);
     }
 
-    // #print-root に印刷ビューを流し込む（window.print / printToPDF の直前に呼ぶ）。
-    function fillPrintRoot(checklist) {
+    // #print-root に印刷のページを組んで入れる（window.print / printToPDF の直前に呼ぶ）。
+    async function fillPrintRoot(checklist) {
+      const layout = await composePrintPages(checklist, printLayoutOptions());
       let root = document.getElementById('print-root');
       if (!root) {
         root = document.createElement('div');
         root.id = 'print-root';
         document.body.appendChild(root);
       }
-      root.className = printColsClass();
-      root.innerHTML = renderPrintView(checklist);
+      root.innerHTML = `<div class="print-doc" style="--print-accent:${layout.accent}">` +
+        `${layout.coverHtml}${layout.tocHtml}${layout.pages.join('')}</div>`;
       return root;
     }
     function clearPrintRoot() {
       const root = document.getElementById('print-root');
-      if (root) { root.innerHTML = ''; root.className = ''; }
+      if (root) root.innerHTML = '';
     }
     // 印刷ルート内の <img> がすべてデコード済みになるまで待つ。printToPDF は現在の
     // 描画をそのまま撮るため、dataURL 画像が未デコードのまま撮ると画像が欠ける。
@@ -6271,7 +6578,7 @@
         checklist = await materializeChecklist(checklist);
         // 用紙・向きの @page 上書きと倍率（#print-root の zoom）。印刷と同じ仕組みで掛ける。
         applyPrintPageStyle();
-        const root = fillPrintRoot(checklist);
+        const root = await fillPrintRoot(checklist);
         await waitForPrintImages(root); // 画像のデコード完了を待ってから撮る（欠け防止）
         const res = await window.printAPI.savePdf({
           title: sanitizeFilename(checklist.title || 'checklist'),
@@ -6290,9 +6597,9 @@
 
     // 印刷ビューを差し込んでブラウザの印刷ダイアログを開く。
     // 印刷後（またはキャンセル後）は中身を空にして画面に残らないようにする。
-    function printChecklist(checklist) {
+    async function printChecklist(checklist) {
       applyPrintPageStyle(); // 用紙・向き・倍率は印刷にも効く（PDF・プレビューと同じ zoom）
-      fillPrintRoot(checklist);
+      await fillPrintRoot(checklist);
       const cleanup = () => {
         clearPrintRoot();
         window.removeEventListener('afterprint', cleanup);
@@ -6301,19 +6608,56 @@
       window.print();
     }
 
+    // 印刷プレビューの紙（1ページ＝1枚）。表紙・目次・手順のページの順。戻り値 { html, count }
+    function previewSheetsHtml(layout, opts) {
+      const d = pdfPaperDims(opts.paper, opts.orient);
+      const s = clampPdfScale(opts.scale) / 100;
+      const doc = (inner) =>
+        `<div class="pp-zoom" style="zoom:${s}"><div class="print-doc" style="--print-accent:${layout.accent}">${inner}</div></div>`;
+      const sheets = [];
+      if (layout.coverHtml) sheets.push({ cover: true, inner: doc(layout.coverHtml) });
+      layout.tocSegments.forEach(([a, b]) => sheets.push({
+        inner: doc(`<div class="pp-clip" style="height:${(b - a).toFixed(2)}px"><div style="margin-top:${(-a).toFixed(2)}px">${layout.tocHtml}</div></div>`),
+      }));
+      layout.pages.forEach((p) => sheets.push({ inner: doc(p) }));
+      const n = sheets.length;
+      const html = sheets.map((sh, i) =>
+        `<div class="pp-sheet${sh.cover ? ' pp-sheet-cover' : ''}" style="width:${d.w}mm;height:${d.h}mm">` +
+        `${sh.inner}<span class="pp-sheet-no">${i + 1} / ${n}</span></div>`).join('');
+      return { html, count: n };
+    }
+
     // 印刷プレビュー。紙面の見た目を画面内で確認してから 印刷 / PDF保存 する。
     // Electron の window.print() は OS のダイアログだけでプレビューが無いため、
     // アプリ内でプレビューを出す（@media print で .modal-overlay は紙面から除外済み）。
+    // ページは印刷・PDF と同じ composePrintPages で組み、1ページずつの紙にして縦に並べる（v1.0.9）。
     async function openPrintPreview(checklist) {
       // 画像参照を dataURL に戻した複製で印刷/PDF ビューを組む
       checklist = await materializeChecklist(checklist);
       const overlay = buildModal(`
         <h3>印刷プレビュー</h3>
         <div class="print-preview-bar">
-          <span class="pp-label">画像の配置:</span>
-          <span class="pp-seg">
-            <button type="button" data-pp-cols="1col">1列（大きく）</button>
-            <button type="button" data-pp-cols="2col">2列</button>
+          <span class="pp-row">
+            <span class="pp-label">手順の配置</span>
+            <span class="pp-unit">縦</span>
+            <select class="pp-grid-rows" aria-label="1ページを縦に分ける段の数">
+              <option value="">自動</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+            </select>
+            <span class="pp-unit">段 × 横</span>
+            <select class="pp-grid-cols" aria-label="1つの段に横に並べる手順の数">
+              <option value="">自動</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+            <span class="pp-unit">列</span>
           </span>
           <span class="pp-spacer"></span>
           <button type="button" class="btn primary" data-pp-print>🖨 印刷</button>
@@ -6348,56 +6692,43 @@
               <option value="landscape">横</option>
             </select>
           </span>
-          <span class="pp-hint">倍率は印刷と PDF に効きます。用紙・向き・画像の配置を変えると、画像が見出しごと1ページに収まる倍率に自動で合わせます${
+          <span class="pp-hint">手順の配置：縦の数で、ページを上から等分します（縦2なら上と下、縦3なら3つ）。手順は上の区切りから入れ、手順の箱で左右いっぱいを使います（横の数は1段に並べる手順の数）。縦1は1ページに1段で、手順を上に詰めて置きます。縦が「自動」なら、ページを上半分と下半分に分け、入るだけの手順を並べてすき間をそろえます（横も「自動」なら1列）。横が「自動」なら、画像の形に合わせた幅で並べます。</span>
+          <span class="pp-hint">倍率は印刷と PDF の文字と画像の大きさに効きます${
             window.printAPI ? '。ページ範囲は PDF だけ（空欄で最初／最後まで）' : ''}</span>
-          <span class="pp-hint">赤い破線は改ページ位置です（手順・図・表は途中で切らずに次ページへ送ります）</span>
+          <span class="pp-hint pp-over-hint" hidden>赤い枠の手順は、文が長くて手順の箱に入りきっていません（はみ出した部分は印刷されません）。縦の段を減らすか、倍率を下げてください。</span>
         </div>
-        <div class="print-preview-body"><div class="print-preview-stage"><div class="print-preview-page"></div></div></div>
+        <div class="print-preview-body"><div class="print-preview-stage"><div class="pp-sheets"></div></div></div>
       `);
       overlay.querySelector('.modal').classList.add('print-preview');
-      const page = overlay.querySelector('.print-preview-page');
+      const sheetsEl = overlay.querySelector('.pp-sheets');
       const stage = overlay.querySelector('.print-preview-stage');
       const previewBody = overlay.querySelector('.print-preview-body');
       const scaleInput = overlay.querySelector('.pp-scale');
-      // 紙面が横に入りきらないとき（A3・B4・横向きなど）は縮小して見せる。
-      // transform は折り返しを変えないので、実出力と同じ行数のまま小さくなる。
-      const fitPage = () => {
-        page.style.transform = '';
-        const natW = page.offsetWidth;
-        const natH = page.offsetHeight;
+      const paperSelect = overlay.querySelector('.pp-paper');
+      const orientSelect = overlay.querySelector('.pp-orient');
+      const rowsSelect = overlay.querySelector('.pp-grid-rows');
+      const colsSelect = overlay.querySelector('.pp-grid-cols');
+      const overHint = overlay.querySelector('.pp-over-hint');
+      // 紙が横に入りきらないとき（A3・B4・横向きなど）は縮小して見せる。
+      // transform は折り返しを変えないので、実出力と同じ組版のまま小さくなる。
+      const fitSheets = () => {
+        sheetsEl.style.transform = '';
+        const natW = sheetsEl.offsetWidth;
+        const natH = sheetsEl.offsetHeight;
         const avail = Math.max(1, previewBody.clientWidth - 36); // .print-preview-body の padding 18px×2
         const k = natW ? Math.min(1, avail / natW) : 1;
-        page.style.transform = k < 1 ? `scale(${k})` : '';
+        sheetsEl.style.transform = k < 1 ? `scale(${k})` : '';
         // transform はレイアウトを動かさないので、器の側で実寸を持たせる
         stage.style.width = `${Math.round(natW * k)}px`;
         stage.style.height = `${Math.round(natH * k)}px`;
       };
-      // 改ページ線を引く。プレビューは1枚の連続した紙なので、@page の上下余白（15mm）は
-      // ページごとには入らない＝本文は「1ページ分の本文高さ」で積み上がる。そのうえで
-      // break-inside:avoid の塊（手順カード・図・表）が境界にかかったときの送りを再現する
-      // （printPageBreaks。規則は Electron 31 の実測に合わせてある）。
-      // 線は送られた手順の上辺に密着させず、少し上に浮かせる（見た目の要望 2026-09-10）
-      const BREAK_LINE_GAP = 6;
-      // 計測は「本文の内部座標」（zoom が掛かる前の px）で行う。倍率は .pp-zoom の zoom で
-      // 掛かっているので、内部座標の1ページ分は「物理の1ページ高 ÷ 倍率」になる（印刷・PDF の
-      // #print-root の zoom と同じ意味論）。線を置くときだけページ座標へ戻す。
-      const drawPageBreaks = () => {
-        page.querySelectorAll('.pp-break').forEach((el) => el.remove());
-        const zoomWrap = page.querySelector('.pp-zoom');
-        const { paper, orient, scale } = pdfOutSettings();
-        const s = scale / 100;
-        const pageContentH = (pdfPaperDims(paper, orient).h - PRINT_PAGE_MARGIN_V_MM) * PX_PER_MM; // ページ座標での1ページ分
-        if (!zoomWrap || !(pageContentH > 1) || !(s > 0)) return;
-        let no = 1;
-        printPageBreaks(zoomWrap, pageContentH / s).forEach((at) => {
-          no += 1;
-          const top = (PRINT_PAGE_MARGIN_V_MM / 2) * PX_PER_MM + at * s - BREAK_LINE_GAP; // 内部座標 → ページ座標
-          page.insertAdjacentHTML('beforeend',
-            `<div class="pp-break" style="top:${top.toFixed(1)}px"><span>${no}ページ目</span></div>`);
-        });
-        setPreviewPageTotal(no);
+      // モーダル幅が変わると縮小率も変わるので合わせ直す。モーダルを閉じたら自分で外れる。
+      const onPreviewResize = () => {
+        if (!sheetsEl.isConnected) { window.removeEventListener('resize', onPreviewResize); return; }
+        fitSheets();
       };
-      // 改ページ線が数えた総ページ数を「全 N ページ」に出し、ページ範囲の上限にも使う。
+      window.addEventListener('resize', onPreviewResize);
+      // 組んだページの数（表紙・目次を含む）を「全 N ページ」に出し、ページ範囲の上限にも使う。
       const fromInput = overlay.querySelector('.pp-from');
       const toInput = overlay.querySelector('.pp-to');
       const totalEl = overlay.querySelector('.pp-total');
@@ -6412,66 +6743,30 @@
         if (!fromInput || !toInput) return null;
         return pdfPageRangeString(parsePdfPageRange(fromInput.value, toInput.value, previewPageTotal), previewPageTotal);
       };
-      const relayoutPreview = () => { fitPage(); drawPageBreaks(); };
-      // モーダル幅が変わると縮小率も変わるので引き直す。モーダルを閉じたら自分で外れる。
-      const onPreviewResize = () => {
-        if (!page.isConnected) { window.removeEventListener('resize', onPreviewResize); return; }
-        relayoutPreview();
-      };
-      window.addEventListener('resize', onPreviewResize);
-      const paperSelect = overlay.querySelector('.pp-paper');
-      const orientSelect = overlay.querySelector('.pp-orient');
-      const renderPreview = () => {
-        const out = pdfOutSettings();
-        page.className = 'print-preview-page ' + printColsClass();
-        // 用紙・向きで紙面の幅を変え、倍率は zoom で近似表示する
-        page.style.width = `${pdfPaperDims(out.paper, out.orient).w}mm`;
-        // zoom も画像の % 幅を相殺してしまうので、同じ倍率を --print-img-scale でも降ろす
-        //（PDF 側の applyPrintPageStyle と同じ意味・同じ値）。
-        page.innerHTML =
-          `<div class="pp-zoom" style="zoom:${out.scale / 100};--print-img-scale:${out.scale / 100}">${renderPrintView(checklist)}</div>`;
-        overlay.querySelectorAll('[data-pp-cols]').forEach((b) =>
-          b.classList.toggle('active', b.dataset.ppCols === printImgLayout())
-        );
-        if (scaleInput && document.activeElement !== scaleInput) scaleInput.value = out.scale;
-        paperSelect.value = out.paper;
-        orientSelect.value = out.orient;
-        relayoutPreview();
-        // 画像は読み込むまで高さ0なので、デコード完了後に引き直す（線の位置がずれるため）
-        waitForPrintImages(page).then(() => { if (page.isConnected) relayoutPreview(); });
-      };
-      // 用紙・向き・画像の配置を変えたら、画像が見出しごと1ページに収まる最大の倍率
-      // （30〜100%・5%刻み）に決め直す（v1.0.8）。紙面に候補の倍率を掛けて実際に組版し、
-      // 高さを実測する。続けて変えたときは最後の変更だけを反映する。
-      let fitSeq = 0;
-      const autoFitScale = async () => {
-        const my = ++fitSeq;
-        await waitForPrintImages(page); // 画像の高さが決まってから測る
-        const zoomWrap = page.querySelector('.pp-zoom');
-        if (my !== fitSeq || !page.isConnected || !zoomWrap) return;
-        const { paper, orient } = pdfOutSettings();
-        const pageH = (pdfPaperDims(paper, orient).h - PRINT_PAGE_MARGIN_V_MM) * PX_PER_MM;
-        const pct = autoPrintScale((p) => measurePrintFitNeeds(zoomWrap, p), pageH);
-        setPdfOutSettings({ scale: pct });
-        renderPreview(); // 測るために掛けた倍率を戻し、決めた倍率で描き直す
-      };
-      const changeLayout = (patch) => {
-        if (patch.cols) setPrintImgLayout(patch.cols);
-        else setPdfOutSettings(patch);
-        renderPreview();
-        autoFitScale();
+      // 組み直し。ページを組むのは非同期（画像の大きさを読む）なので、続けて変えたときは最後の変更だけを描く。
+      let renderSeq = 0;
+      const renderPreview = async () => {
+        const my = ++renderSeq;
+        const opts = printLayoutOptions();
+        if (document.activeElement !== scaleInput) scaleInput.value = opts.scale;
+        paperSelect.value = opts.paper;
+        orientSelect.value = opts.orient;
+        rowsSelect.value = String(opts.grid.rows);
+        colsSelect.value = String(opts.grid.cols);
+        const layout = await composePrintPages(checklist, opts);
+        if (my !== renderSeq || !sheetsEl.isConnected) return;
+        const sheets = previewSheetsHtml(layout, opts);
+        sheetsEl.innerHTML = sheets.html;
+        setPreviewPageTotal(sheets.count);
+        overHint.hidden = !sheetsEl.querySelector('.pl-over');
+        fitSheets();
       };
       renderPreview();
-      overlay.querySelectorAll('[data-pp-cols]').forEach((b) =>
-        b.addEventListener('click', () => changeLayout({ cols: b.dataset.ppCols }))
-      );
-      scaleInput.addEventListener('change', () => {
-        fitSeq += 1; // 手で変えたら、測り途中の自動調整は捨てる
-        setPdfOutSettings({ scale: scaleInput.value });
-        renderPreview();
-      });
-      paperSelect.addEventListener('change', () => changeLayout({ paper: paperSelect.value }));
-      orientSelect.addEventListener('change', () => changeLayout({ orient: orientSelect.value }));
+      rowsSelect.addEventListener('change', () => { setPrintGrid({ rows: rowsSelect.value }); renderPreview(); });
+      colsSelect.addEventListener('change', () => { setPrintGrid({ cols: colsSelect.value }); renderPreview(); });
+      scaleInput.addEventListener('change', () => { setPdfOutSettings({ scale: scaleInput.value }); renderPreview(); });
+      paperSelect.addEventListener('change', () => { setPdfOutSettings({ paper: paperSelect.value }); renderPreview(); });
+      orientSelect.addEventListener('change', () => { setPdfOutSettings({ orient: orientSelect.value }); renderPreview(); });
       overlay.querySelector('[data-pp-print]').addEventListener('click', () => printChecklist(checklist));
       const pdfBtn = overlay.querySelector('[data-pp-pdf]');
       if (pdfBtn) {
@@ -7325,13 +7620,13 @@
               </span>
               <label class="ie-size ie-field" title="線の太さ">
                 <span class="ie-fieldname">線の太さ</span>
-                <span class="ie-fieldbody"><input type="range" min="1" max="40" value="6" /><input type="number" class="ie-num ie-size-num" min="1" max="40" step="1" value="6" aria-label="線の太さ（px）" /></span>
+                <span class="ie-fieldbody"><input type="range" min="1" max="40" value="2" /><input type="number" class="ie-num ie-size-num" min="1" max="40" step="1" value="2" aria-label="線の太さ（px）" /></span>
               </label>
               <span class="ie-textfmt ie-field" hidden>
                 <span class="ie-fieldname">文字の書式</span>
                 <span class="ie-fieldbody">
                   <span class="rb-sizebox" title="文字サイズ（px）">
-                    <input type="number" class="rb-size-in ie-font-size" min="8" max="200" step="1" value="24"
+                    <input type="number" class="rb-size-in ie-font-size" min="8" max="200" step="1" value="14"
                            aria-label="文字サイズ（px）" />
                     <button type="button" class="rb-size-dd ie-font-size-dd" tabindex="-1" title="サイズ一覧">▾</button>
                   </span>
@@ -7460,7 +7755,8 @@
       // 透過率と同じく、選択中の図形があればその太さを即時に変える（テキストの枠線・吹き出し・
       // 矩形などすべて。要望 2026-09-11: テキストの枠線の太さが作成時の値で固定だった）。
       // 選択が無いときに動かした値だけを「次に描く太さ」nextSize として覚える。
-      const DEFAULT_SIZE = 6;
+      // 既定の太さはプレビュー px（仕様 21章。v1.0.8 の単位変更で 6 のままだと一覧で太すぎたため 2 に）。
+      const DEFAULT_SIZE = 2;
       let nextSize = DEFAULT_SIZE;
       const sizeNum = overlay.querySelector('.ie-size-num');
       // スライダーと数値入力の両方から呼ぶ。1〜40 に丸めて両方の欄へ映し、
@@ -7647,7 +7943,8 @@
       const sizeToCanvas = (v) => prevToCanvasPx(v, fsScale());
       const sizeToPrev = (v) => canvasToPrevPx(v, fsScale());
       const curSize = () => sizeToCanvas(Number(sizeInput.value)); // 次に描く太さ（キャンバス px）
-      const textFmt = { fs: 24, bold: true, italic: false }; // 新規作成の既定書式（fs は表示px）
+      // 新規作成の既定書式（fs は表示px）。一覧の本文 16px より少し小さい 14（仕様 21章）。
+      const textFmt = { fs: 14, bold: true, italic: false };
       let fmtTarget = null; // その場編集中の入力欄が登録するフック { get(), set(changes) }
       const isTextObj = (o) => !!o && (o.type === 'text' || o.type === 'callout');
       function syncTextFmtUI() {
@@ -8490,7 +8787,8 @@
       function drawCalloutObj(g, o, withText) {
         const box = calloutBox(o.text, o.fs, o);
         const u = objUnit(o);
-        const r = Math.min(16 * u, box.w / 2, box.h / 2);
+        // 角丸の半径 10（プレビュー px）。16 では文字 14 の吹き出しの左右がほぼ半円になった（仕様 21章）。
+        const r = Math.min(10 * u, box.w / 2, box.h / 2);
         const tW = Math.max(10 * u, Math.round(o.fs * 0.6));
         g.save();
         g.globalAlpha = o.opacity;
@@ -9441,7 +9739,7 @@
           'テキストボックスは「線色」で枠線を付けられます。文字の色は「文字色」で別に決めます。',
           '矢印・直線・×印は線だけの図形なので、塗りつぶしはありません。',
           '文字サイズ・太字・斜体は、テキストか吹き出しを使っているときだけ出ます。',
-          '文字サイズと線の太さの数字は「手順の一覧で表示される大きさ（px）」です。大きなスクリーンショットでも、文字 24 なら一覧でおよそ24pxの文字、太さ 6 ならおよそ6pxの線になります。トリミングしたあとも、切り出した画像が一覧で見える大きさを基準に入ります。',
+          '文字サイズと線の太さの数字は「手順の一覧で表示される大きさ（px）」です。大きなスクリーンショットでも、文字 14 なら一覧でおよそ14pxの文字、太さ 2 ならおよそ2pxの線になります（新しく描くときの既定は文字 14・太さ 2）。トリミングしたあとも、切り出した画像が一覧で見える大きさを基準に入ります。',
           '透過率はツールごとに覚えます（0%＝不透明）。',
         ]],
         ['取り消し', [
@@ -10121,9 +10419,12 @@
         // PDF出力の倍率・用紙・向き
         clampPdfScale, pdfPaperDims, pdfPageStyleCss, pdfOutSettings, setPdfOutSettings,
         paginateBreaks, parsePdfPageRange, pdfPageRangeString,
-        // 印刷の改ページ（入れ子・見出しのまとまり）と倍率の自動調整（v1.0.8）
-        renderPrintView, printBreakBlocks, autoPrintScale, printChecklist,
-        printRuler, printPageBreaks, measurePrintFitNeeds,
+        // 目次の改ページ（v1.0.8 の規則）と印刷
+        printBreakBlocks, printChecklist, printRuler,
+        // 手順の配置：縦○段×横○列・ページの区切り（v1.0.9）
+        clampPrintGrid, printGridSettings, setPrintGrid, balancedGaps, pageDivisions, planPrintDivisions, flowRowFits,
+        fitFlowCardImages, fitImagesInBox, rowCells, fillRowWidths, packRowsByWidth,
+        printDocParts, printItemHtml, composePrintPages, previewSheetsHtml, openPrintPreview,
         // サムネイルサイドバー
         thumbStepModel, renderThumbSidebar, updateThumbSidebar, thumbsCollapsed, setThumbsCollapsed,
         clampThumbsWidth, thumbsWidth, setThumbsWidth,
