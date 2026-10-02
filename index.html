@@ -7394,12 +7394,12 @@
     function ieZoomCssScale(pct, k) {
       return (Number(pct) || 100) / 100 / ieK(k);
     }
-    // 編集画面の枠（availW × availH）に収まる表示倍率（%・整数・10〜400）。
-    // 小さい画像は原寸より拡大しない（以前の fitScale と同じ上限）。
+    // 編集画面の枠（availW × availH）にいっぱいに収まる表示倍率（%・整数・10〜400）。
+    // 小さい画像も枠いっぱいまで拡大する（v1.0.10・仕様 22章。上限は 400%）。
     function ieFitZoomPercent(w, h, availW, availH, k) {
       w = Number(w) || 0; h = Number(h) || 0;
       if (w <= 0 || h <= 0) return 100;
-      const fit = Math.min(availW / w, availH / h, 1); // CSS px ÷ キャンバス px
+      const fit = Math.min(availW / w, availH / h); // CSS px ÷ キャンバス px
       return Math.max(10, Math.min(400, Math.floor(fit * ieK(k) * 100)));
     }
     // 線の太さなどの換算。UI はプレビュー px、図形の値はキャンバス px（小数第2位まで）で持つ。
@@ -7654,7 +7654,7 @@
                 <span class="ie-fieldbody">
                   <input type="range" class="ie-zoom-range" min="10" max="400" step="5" value="100" aria-label="表示倍率" />
                   <input type="number" class="ie-zoom-num" min="10" max="400" step="5" value="100" aria-label="表示倍率（％）" />%
-                  <button type="button" class="ie-zoom-fit" title="編集画面の枠に収まる大きさで表示する">フィット</button>
+                  <button type="button" class="ie-zoom-fit" title="編集画面の枠いっぱいの大きさで表示する（開いたときの表示）">フィット</button>
                 </span>
               </span>
               <span class="ie-toolitem"><button class="ie-tool ie-undo" title="元に戻す (Ctrl+Z)"><svg class="ie-ic" viewBox="0 0 24 24"><path d="M4 9.5h11a5 5 0 0 1 0 10h-5"/><path d="M4 9.5 8 5.5"/><path d="m4 9.5 4 4"/></svg></button><span class="ie-toolname">元に戻す</span></span>
@@ -8035,9 +8035,12 @@
       const zoomFit = overlay.querySelector('.ie-zoom-fit');
       const ZOOM_MIN = 10, ZOOM_MAX = 400;
       let zoom = 100;
+      // フィット（枠いっぱい）で表示している間は true。ウインドウの大きさや画像の大きさが
+      // 変わったらフィットし直す。ユーザーが倍率を変えたら false にして、以後は追わない（仕様 22章）。
+      let fitMode = false;
       // 100% ＝ 手順一覧での見た目（仕様 20章。換算率は文字サイズと同じ fsScale）。
-      // 以前は「編集画面の枠に収まる大きさ」を 100% にしていたため、一覧の見た目と違い、
-      // 線の太さなどの基準もずれていた。ウインドウ自体の大きさはズームで変わらない（CSSで固定）。
+      // 表示倍率が変えるのはキャンバスの見た目の幅だけで、図形の大きさの換算（fsScale）には
+      // 入らない。ウインドウ自体の大きさはズームで変わらない（CSSで固定）。
       function applyZoom() {
         canvas.style.maxWidth = 'none';
         canvas.style.width = (canvas.width * ieZoomCssScale(zoom, fsScale())) + 'px';
@@ -8049,18 +8052,28 @@
         zoomNum.value = zoom;
         applyZoom();
       }
-      // 「フィット」＝編集画面の枠に収まる大きさ（そのときの % を表示する）。
-      // 小さい画像は原寸より拡大しない。
+      // ユーザーの操作（スライダー・数値欄・Ctrl+ホイール）で倍率を変えたとき。
+      function setZoomByUser(p) {
+        fitMode = false;
+        setZoom(p);
+      }
+      // 「フィット」＝編集画面の枠いっぱいの大きさ（そのときの % を表示する）。
+      // 開いたとき・トリミングの後もこれで表示する（v1.0.10・仕様 22章）。
       function fitZoom() {
+        fitMode = true;
         const availW = Math.max(20, canvasWrap.clientWidth - 24);
         const availH = Math.max(20, canvasWrap.clientHeight - 24);
         setZoom(ieFitZoomPercent(canvas.width, canvas.height, availW, availH, fsScale()));
       }
-      zoomRange.addEventListener('input', () => setZoom(zoomRange.value));
-      zoomNum.addEventListener('change', () => setZoom(zoomNum.value));
+      // 画像やウインドウの大きさが変わったときの引き直し。フィット中ならフィットし直す。
+      function refreshZoom() {
+        if (fitMode) fitZoom();
+        else applyZoom();
+      }
+      zoomRange.addEventListener('input', () => setZoomByUser(zoomRange.value));
+      zoomNum.addEventListener('change', () => setZoomByUser(zoomNum.value));
       zoomFit.addEventListener('click', fitZoom);
-      // 100% は一覧での見た目なのでウインドウの大きさには依らないが、念のため引き直す。
-      const onResize = () => applyZoom();
+      const onResize = () => refreshZoom();
       window.addEventListener('resize', onResize);
       // ホイールズーム: ハンドツール中は素のホイールで、他ツールでは Ctrl+ホイールで
       // ズームする（素のホイールは通常スクロールのまま）。トラックパッドのピンチは
@@ -8072,7 +8085,7 @@
         const r = canvas.getBoundingClientRect();
         const px = (e.clientX - r.left) * (canvas.width / r.width);
         const py = (e.clientY - r.top) * (canvas.height / r.height);
-        setZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+        setZoomByUser(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
         // setZoom がクランプ・丸めするため、適用後の実スケールから再アンカーする
         const wrapR = canvasWrap.getBoundingClientRect();
         const scale = canvas.offsetWidth / canvas.width;
@@ -8211,8 +8224,9 @@
           si.src = strokesSrc;
         }
         recomposite();
-        // 開いたときは 100%＝手順一覧での見た目（仕様 20章）。以後ユーザーが自由に拡大縮小できる。
-        setZoom(100);
+        // 開いたときは編集画面の枠いっぱい（仕様 22章）。枠のレイアウトが決まってから測る。
+        // 以後ユーザーが自由に拡大縮小できる。
+        requestAnimationFrame(fitZoom);
       };
       baseImg.src = baseSrc;
 
@@ -8236,7 +8250,7 @@
         objects = JSON.parse(JSON.stringify(snap.objects || []));
         clearSelection();
         let pending = 2;
-        const done = () => { if (--pending === 0) { applyZoom(); recomposite(); } };
+        const done = () => { if (--pending === 0) { refreshZoom(); recomposite(); } };
         setLayerSize(snap.w, snap.h);
         const bi = new Image();
         bi.onload = () => { baseCtx.clearRect(0, 0, snap.w, snap.h); baseCtx.drawImage(bi, 0, 0); done(); };
@@ -9205,9 +9219,9 @@
         cropMode = false; cropRect = null; cropDrag = null;
         if (cropActions) cropActions.hidden = true;
         selectTool('select');
-        // 切り出した画像が一覧で見える大きさを 100% として見せ直す。このあと入れる図形は
-        // 新しい換算率（fsScale）で入る（仕様 20章）。
-        setZoom(100);
+        // 切り出した画像を編集画面の枠いっぱいで見せ直す（仕様 22章）。このあと入れる図形は
+        // 切り出した画像の新しい換算率（fsScale）で入る（仕様 20章。表示倍率には依らない）。
+        fitZoom();
         recomposite();
       }
       if (cropActions) {
@@ -9749,7 +9763,7 @@
         ['トリミングと表示', [
           'トリミングは範囲を決めてから、もう一度「トリミング」ボタンを押すと適用されます（Office と同じ）。やめるときは「取消」か <kbd>Esc</kbd>、別のツールへの切り替えでも取り消せます。',
           'ハンドで画像を動かせます。ホイールで拡大縮小（ハンド以外のツールは <kbd>Ctrl</kbd>＋ホイール）。',
-          '表示倍率は編集中の見え方だけを変えるもので、保存される画像の仕上がりは変わりません。100% が手順の一覧で見える大きさです（開いたときとトリミングの後は 100%）。「フィット」で編集画面の枠に収まる大きさになります。',
+          '表示倍率は編集中の見え方だけを変えるもので、保存される画像の仕上がりは変わりません。100% が手順の一覧で見える大きさです。開いたときとトリミングの後は、編集画面の枠いっぱい（フィット）で表示します。拡大縮小した後も「フィット」で枠いっぱいに戻せます。',
         ]],
       ];
       function openImageEditorHelp() {
