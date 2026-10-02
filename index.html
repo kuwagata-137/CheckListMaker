@@ -1649,7 +1649,7 @@
     <button class="icon" data-action="redo" aria-label="やり直す"
             data-tip="取り消した操作をやり直します（Ctrl+Y）"><span class="tb-ic">↷</span><span class="tb-lb">やり直す</span></button>
     <button class="icon" data-action="record" aria-label="キャプチャ撮影"
-            data-tip="録画ガジェットを開きます。クリックするたびに画面を自動で撮影します">
+            data-tip="録画ガジェットを開きます。クリックするたびに画面を自動で撮影します。F9 キーで1枚だけ撮ることもできます">
       <span class="tb-ic">
         <svg class="rec-ico" width="24" height="24" viewBox="0 0 20 20" aria-hidden="true">
           <rect x="1" y="1" width="18" height="18" rx="4" fill="#111827" />
@@ -4798,6 +4798,8 @@
     // 実体は Electron メインプロセス側（main.js）。preload が公開する
     // window.recorderAPI が無い＝素のブラウザでは、ボタンは無効表示にする。
     let isRecording = false;
+    // ガジェットが開いている（録画準備・録画中・録画停止中）。この間は画像インポートを押せない（v1.0.10）
+    let isGadgetActive = false;
     function updateRecordButton() {
       const btn = document.querySelector('[data-action="record"]');
       if (!btn) return;
@@ -4808,8 +4810,8 @@
       }
       btn.classList.toggle('recording', isRecording);
       btn.title = isRecording
-        ? '録画停止'
-        : '録画ガジェットを開く（ガジェットの「録画開始」で撮影開始）';
+        ? '録画停止（ガジェットは開いたまま。録画を再開できます）'
+        : '録画ガジェットを開く（ガジェットの「録画開始」で撮影開始。F9 で1枚撮影）';
       // 文字ラベルも title と同期して切り替える（トップバーのラベル表示）
       const lb = btn.querySelector('.tb-lb');
       if (lb) lb.textContent = isRecording ? '録画停止' : 'キャプチャ撮影';
@@ -4820,6 +4822,7 @@
         return;
       }
       if (isRecording) {
+        // 停止のみ（v1.0.10）。取り込みはガジェットの「取り込みへ進む」から
         window.recorderAPI.stopRecording();
       } else {
         const c = currentChecklist();
@@ -5262,8 +5265,9 @@
             const shot = st.shots[0];
             const canZoom = st.shots.some((sh) => sh.zoomImage);
             // ドラッグは「拡大」スロットに終点画像が入っているため、表示だけ読み替える。
-            // フォルダから選択（kind:'file'）は元画像1枚のため切替セグメント自体を出さない。
-            const isFile = st.shots.some((sh) => sh.kind === 'file');
+            // フォルダから選択（kind:'file'）と1枚撮影（kind:'snap'・v1.0.10）は元画像1枚のため
+            // 切替セグメント自体を出さない。
+            const isFile = st.shots.some((sh) => sh.kind === 'file' || sh.kind === 'snap');
             const isDrag = st.shots.some((sh) => sh.kind === 'drag');
             const seg = isFile ? '' : (isDrag
               ? [['full', '始点'], ['zoom', '終点'], ['both', '両方']]
@@ -5784,7 +5788,8 @@
       // 環境（ブラウザ単体・単体HTML）では非表示。どちらかがあれば出す。
       const canImport = !!(window.recorderAPI || (window.fileAPI && window.fileAPI.pickImages));
       if (!canImport) { btn.style.display = 'none'; return; }
-      btn.disabled = isRecording;
+      // ガジェットが開いている間は、書きかけのセッションを取り込ませない（v1.0.10）
+      btn.disabled = isRecording || isGadgetActive;
     }
 
     function render() {
@@ -10373,16 +10378,22 @@
     if (window.recorderAPI && window.recorderAPI.onState) {
       window.recorderAPI.onState((d) => {
         isRecording = !!(d && d.recording);
+        isGadgetActive = !!(d && d.active);
         updateRecordButton();
         updateImportButton();
       });
     }
-    // 録画停止でセッションが確定したら取り込みウィザードを開く（2-R4）。
-    // 0枚（フォルダごと削除済み）はトーストのみ。
+    // ガジェットの「取り込みへ進む」でセッションが確定したら取り込みウィザードを開く
+    //（2-R4。v1.0.10 から録画停止では開かない）。0枚（フォルダごと削除済み）はトーストのみ。
+    // import:false は ✕ の確認の窓で「取り込まずに閉じる」を選んだとき（トーストのみ）。
     if (window.recorderAPI && window.recorderAPI.onDone) {
       window.recorderAPI.onDone((d) => {
         if (!d || !d.dir || !d.shots) {
           showToast('撮影された画像がなかったため、取り込みは行いません。');
+          return;
+        }
+        if (d.import === false) {
+          showToast(`撮った画像（${d.shots}枚）を保存しました。「画像インポート」から取り込めます。`);
           return;
         }
         openImportWizard(makeSessionSource(d.dir));

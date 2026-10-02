@@ -159,3 +159,61 @@ test('importwiz — 操作種類の拡張の追従（2-R2b）', async (t) => {
     }]);
   });
 });
+
+// 1枚撮影（kind:"snap"）と、停止と取り込みの分離（v1.0.10・docs/spec-capture-snap-and-import.md）
+test('importwiz — 1枚撮影の手順と、取り込みへ進む／取り込まずに閉じる', async (t) => {
+  const { waitFor } = require('./harness');
+  const FAKE_DIR = 'fake-session-dir'; // スタブが受け取るだけの架空のセッションフォルダ
+  const handlers = {};
+  const sessionData = {
+    info: { name: '新規PC設定手順', startedAt: '2026-10-02T01:00:00.000Z', endedAt: '2026-10-02T01:05:00.000Z', shots: 2, importedAt: null },
+    steps: [
+      { seq: 1, kind: 'snap', image: '001.png', zoomImage: null, zoomSource: null, text: '', uia: null, click: null, time: null, drag: null },
+      { seq: 2, kind: 'click', image: '002.png', zoomImage: '002z.png', zoomSource: 'element', text: '「OK」ボタンをクリック', uia: null, click: null, time: null, drag: null },
+    ],
+  };
+  const recorder = {
+    available: true,
+    onState: (cb) => { handlers.state = cb; },
+    onDone: (cb) => { handlers.done = cb; },
+    listSessions: () => Promise.resolve([]),
+    loadSession: () => Promise.resolve(sessionData),
+    readImage: () => Promise.resolve(null),
+    markImported: () => Promise.resolve({ ok: true }),
+    openShotsDir: () => {},
+    startRecording: () => Promise.resolve({ ok: true }),
+    stopRecording: () => Promise.resolve({ ok: true }),
+  };
+  const app = bootApp({ recorder });
+  t.after(() => app.close());
+  const T = await app.api();
+  const doc = app.document;
+
+  await t.test('wizardStepsFrom — snap は全景・拡大なし', () => {
+    const steps = plain(T.wizardStepsFrom(sessionData));
+    assert.deepEqual(steps[0], { text: '', shots: [{ seq: 1, kind: 'snap', image: '001.png', zoomImage: null, choice: 'full' }] });
+    assert.equal(steps[1].shots[0].choice, 'zoom');
+  });
+
+  await t.test('ガジェットが開いている間は「画像インポート」を押せない', () => {
+    const btn = doc.querySelector('[data-action="import-rec"]');
+    handlers.state({ recording: false, active: true, count: 1 });
+    assert.equal(btn.disabled, true, '録画停止中でもガジェットが開いていれば押せない');
+    handlers.state({ recording: false, active: false, count: 0 });
+    assert.equal(btn.disabled, false, 'ガジェットを閉じたら押せる');
+  });
+
+  await t.test('取り込まずに閉じた（import:false）ときはウィザードを開かずトーストだけ', async () => {
+    handlers.done({ dir: FAKE_DIR, shots: 2, import: false });
+    await waitFor(() => /撮った画像（2枚）を保存しました/.test(doc.body.textContent), { label: 'トースト' });
+    assert.equal(doc.querySelector('.modal.import-wiz'), null);
+  });
+
+  await t.test('取り込みへ進むとウィザードが開き、1枚撮影の手順には拡大／全景の切り替えが出ない', async () => {
+    handlers.done({ dir: FAKE_DIR, shots: 2, import: true });
+    await waitFor(() => doc.querySelectorAll('.modal.import-wiz .iw-row').length === 2, { label: 'ウィザード' });
+    const rows = doc.querySelectorAll('.modal.import-wiz .iw-row');
+    assert.equal(rows[0].querySelector('.iw-seg'), null, '1枚撮影は切り替えなし');
+    assert.ok(rows[1].querySelector('.iw-seg'), 'クリックの手順は従来どおり切り替えあり');
+  });
+});

@@ -101,4 +101,14 @@ function classifyKeydown(e) {
   return { type: 'other' };
 }
 
-module.exports = { classifyKeydown, comboOf, KEY_LABELS };
+// 1枚撮影のキー（v1.0.10・docs/spec-capture-snap-and-import.md）。ガジェットが開いている間だけ
+// main.js が globalShortcut に accelerator を登録する。録画中も、このキー自体は
+// 「キー操作の手順」として記録しない（isSnapKey で除外）。キーを変えるときはここだけ直す。
+const SNAP_KEY = Object.freeze({ accelerator: 'F9', keycode: 67, label: 'F9' });
+
+// keydown が1枚撮影のキー（修飾キーなしの F9）か。Shift+F9 などは通常のショートカット。
+function isSnapKey(e) {
+  return !!e && e.keycode === SNAP_KEY.keycode && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey;
+}
+
+module.exports = { classifyKeydown, comboOf, KEY_LABELS, SNAP_KEY, isSnapKey };

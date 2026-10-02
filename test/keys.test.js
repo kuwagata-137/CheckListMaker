@@ -82,3 +82,16 @@ test('classifyKeydown — 操作種類の分類', async (t) => {
     assert.equal(classifyKeydown(ev(VC.CapsLock)).type, 'other');
   });
 });
+
+// 1枚撮影のキー（v1.0.10・docs/spec-capture-snap-and-import.md）
+test('keys — isSnapKey：修飾キーなしの F9 だけが1枚撮影', () => {
+  const { isSnapKey, SNAP_KEY, KEY_LABELS } = require('../keys');
+  const F9 = 67;
+  assert.equal(SNAP_KEY.accelerator, 'F9');
+  assert.equal(KEY_LABELS[SNAP_KEY.keycode], 'F9', 'keycode は F9 のもの');
+  assert.equal(isSnapKey(ev(F9)), true);
+  assert.equal(isSnapKey(ev(F9, { shiftKey: true })), false, 'Shift+F9 は通常のショートカット');
+  assert.equal(isSnapKey(ev(F9, { ctrlKey: true })), false, 'Ctrl+F9 も');
+  assert.equal(isSnapKey(ev(66)), false, 'F8 は違う');
+  assert.equal(isSnapKey(null), false);
+});
