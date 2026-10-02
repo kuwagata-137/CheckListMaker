@@ -12,12 +12,18 @@ contextBridge.exposeInMainWorld('recorderAPI', {
   // 録画ガジェットを開く（ready 状態。撮影はまだ始まらない）。
   // name は現在開いているチェックリスト名（ファイル名の接頭辞に使う）。
   startRecording: (name) => ipcRenderer.invoke('rec:start', name),
-  // 録画停止（ready のときはガジェットを閉じるだけ）。
-  stopRecording: () => ipcRenderer.invoke('rec:stop'),
+  // 録画停止（v1.0.10 からガジェットは閉じず、取り込みも開かない。ガジェットの停止と同じ）。
+  stopRecording: () => ipcRenderer.invoke('rec:pause'),
 
   // ── ガジェット窓（gadget.html）用 ────────────────────────────
-  // 「録画開始」ボタン。撮影を開始する。戻り値 { ok, startTime }。
+  // 「録画開始」「録画再開」ボタン。撮影を開始・再開する。戻り値 { ok, startTime, elapsedMs }。
   beginCapture: () => ipcRenderer.invoke('rec:begin'),
+  // 「録画停止」ボタン（v1.0.10）。ガジェットは閉じず、録画を再開できる。戻り値 { ok, elapsedMs }。
+  pauseRecording: () => ipcRenderer.invoke('rec:pause'),
+  // 「1枚撮影」ボタン（v1.0.10）。F9 キーはメインプロセスが直接受ける。
+  snap: () => ipcRenderer.invoke('rec:snap'),
+  // 「取り込みへ進む」ボタン（v1.0.10）。ガジェットを閉じ、本体で取り込みウィザードを開く。
+  finishSession: () => ipcRenderer.invoke('rec:finish'),
   // クリック位置の赤丸（〇マーカー）合成の ON/OFF。
   setMarker: (on) => ipcRenderer.invoke('rec:setMarker', !!on),
   // ドラッグ記録（始点終点2枚・2-R2b ④）の ON/OFF。既定 OFF。
@@ -25,14 +31,15 @@ contextBridge.exposeInMainWorld('recorderAPI', {
   // スクショ保存フォルダを OS のファイルマネージャで開く（プレビュークリック）。
   // dir（セッションフォルダ）を渡すとそのフォルダを開く（メイン側で検証される）。
   openShotsDir: (dir) => ipcRenderer.invoke('rec:openDir', dir),
-  // 録画状態の変化通知（true=録画中 / false=停止）。ボタン表示の同期に使う。
+  // 録画状態の変化通知 { recording, active（ガジェットが開いている）, count }。ボタン表示の同期に使う。
   onState: (cb) => {
     ipcRenderer.removeAllListeners('rec:state');
     ipcRenderer.on('rec:state', (_e, data) => cb(data));
   },
 
   // ── 取り込みウィザード（index.html）用（2-R4）─────────────────
-  // 録画停止でセッション確定後に届く通知 { dir, shots }（0枚は dir:null, shots:0）。
+  // セッション確定後に届く通知 { dir, shots, import }（0枚は dir:null, shots:0）。
+  // import:false は「取り込まずに閉じる」（ウィザードは開かずトーストのみ。v1.0.10）。
   onDone: (cb) => {
     ipcRenderer.removeAllListeners('rec:done');
     ipcRenderer.on('rec:done', (_e, data) => cb(data));
@@ -47,10 +54,16 @@ contextBridge.exposeInMainWorld('recorderAPI', {
   markImported: (dir) => ipcRenderer.invoke('rec:markImported', dir),
 
   // ── ガジェット窓（gadget.html）用 ────────────────────────────
-  // 起動時の初期情報（開始時刻・録画名）。
+  // 起動時の初期情報（状態・経過時間・枚数・録画名・1枚撮影のキー）。
   onGadgetInit: (cb) => {
     ipcRenderer.removeAllListeners('gadget:init');
     ipcRenderer.on('gadget:init', (_e, data) => cb(data));
+  },
+  // 状態の変化 { mode: 'ready'|'recording'|'paused', elapsedMs, startTime }（v1.0.10）。
+  // 本体のツールバーから停止したときも届く。
+  onGadgetState: (cb) => {
+    ipcRenderer.removeAllListeners('gadget:state');
+    ipcRenderer.on('gadget:state', (_e, data) => cb(data));
   },
   // 撮影ごとの更新（枚数・最新プレビュー・ファイル名）。
   onGadgetUpdate: (cb) => {

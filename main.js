@@ -15,7 +15,7 @@
 // 確定仕様の詳細は docs/録画機能-仕様.md「実装前に確定した詳細仕様」を参照。
 'use strict';
 
-const { app, BrowserWindow, Menu, ipcMain, screen, nativeImage, shell, dialog } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, screen, nativeImage, shell, dialog, globalShortcut } = require('electron');
 const path = require('path');
 
 // アプリケーション名（メニュー/Dock/通知などに表示される）。
@@ -32,7 +32,7 @@ const uia = require('./uia');
 const capture = require('./capture'); // クリック直前キャプチャの撮影プロセス（v1.0.8。docs/spec-preclick-capture.md）
 const { tickDiff } = require('./preclick-frames');
 const { normalizeUia, stepText, dblClickText, inputText, keyStepText, dragText } = require('./steptext');
-const { classifyKeydown } = require('./keys');
+const { classifyKeydown, isSnapKey, SNAP_KEY } = require('./keys');
 const { planShot } = require('./zoomcrop');
 
 let mainWin = null;
@@ -64,9 +64,16 @@ const MARKER_COLOR = '#ef4444';
 
 // ── 録画状態 ────────────────────────────────────────────────
 let recording = false;
-let sessionShots = 0; // この録画セッションでの撮影枚数（ガジェット表示用）
+let sessionShots = 0; // この録画セッションでの撮影枚数（ガジェット表示用。クリック撮影＋1枚撮影）
 let recordName = ''; // ファイル名の接頭辞（チェックリスト名をサニタイズしたもの）
-let startTime = 0; // 録画開始時刻(ms)
+let startTime = 0; // 今回の録画開始（再開）時刻(ms)
+// 停止・再開（v1.0.10・docs/spec-capture-snap-and-import.md）。経過時間は録画中だけ進める。
+let recordedMs = 0; // 停止するまでに録画した時間の累計(ms)
+let everRecorded = false; // このガジェットで一度でも録画したか（録画準備／録画停止中の区別）
+let quitting = false; // アプリ終了中（ガジェットの ✕ の確認を出さない）
+let closeAsking = false; // ✕ の確認の窓を出している最中
+const SNAP_GUARD_MS = 400; // 1枚撮影の連射（F9 の押しっぱなし）をこの間隔で間引く
+let lastSnapAt = 0;
 let clickMarkerOn = true; // クリック位置の赤丸を合成するか（ガジェットのトグル。セッション単位）
 let dragRecordOn = false; // ドラッグを記録するか（ガジェットのトグル。既定OFF・セッション単位。2-R2b ④）
 
@@ -238,12 +245,17 @@ function createMainWindow() {
 }
 
 // スクリーンショットに写らない録画ガジェット窓。
+// 高さは「1枚撮影」「取り込みへ進む」の1行ぶん拡張済み（v1.0.10）。赤字の警告が出たら
+// GADGET_WARN_H だけ伸ばす（カードは 100vh なので一緒に伸びる。warnGadget）。
+const GADGET_W = 320;
+const GADGET_H = 362; // 中身の下端 345px（Electron 31 実測）＋カードの下の余白
+const GADGET_WARN_H = 60; // 警告2〜3行ぶん（2行で 54px）
 function createGadget() {
   const display = screen.getPrimaryDisplay();
   const { width } = display.workAreaSize;
   gadgetWin = new BrowserWindow({
-    width: 320,
-    height: 336, // ドラッグ記録トグルの1行ぶん拡張（2-R2b）
+    width: GADGET_W,
+    height: GADGET_H,
     x: width - 340,
     y: 24,
     frame: false,
@@ -270,38 +282,71 @@ function createGadget() {
   gadgetWin.webContents.on('did-finish-load', () => {
     if (gadgetWin && !gadgetWin.isDestroyed()) {
       gadgetWin.webContents.send('gadget:init', {
-        mode: recording ? 'recording' : 'ready',
-        startTime,
+        ...gadgetStatePayload(),
+        count: sessionShots,
         name: recordName,
         markerOn: clickMarkerOn,
         dragOn: dragRecordOn,
+        snapKey: SNAP_KEY.label,
       });
+      registerSnapKey(); // 失敗の警告をガジェットに出せるよう、読み込み後に登録する
     }
   });
-  gadgetWin.on('closed', () => {
-    gadgetWin = null;
-    // 録画中に閉じられたら停止（保存フォルダも開く）。ready で閉じられたら
-    // 何も撮っていないので、最小化した本体を戻すだけ。
-    if (recording) { stopRecording(); return; }
-    restoreMainWindow();
-    notifyState();
+  const w = gadgetWin;
+  // ✕・OS の閉じる操作。1枚以上撮っていれば確認の窓を出す（取り込む／取り込まずに閉じる／やめる）。
+  // 「取り込みへ進む」などプログラムから閉じるときは destroy() を使うので、ここは通らない。
+  w.on('close', (e) => {
+    if (quitting) return;
+    e.preventDefault();
+    confirmCloseGadget();
+  });
+  w.on('closed', () => {
+    unregisterSnapKey();
+    // finishSession を通らずに閉じた（想定外）ときも、セッションを確定して本体を戻す。
+    if (gadgetWin === w) {
+      gadgetWin = null;
+      if (!quitting) finishSession({ importNow: false });
+    }
   });
 }
 
-// ── 録画制御 ────────────────────────────────────────────────
-// 状態遷移: idle → openGadget（ready: ガジェット表示・フック停止・タイマー停止）
-//          → startCapture（recording: フック開始・撮影有効）
-//          → stopRecording（idle へ。録画していた場合のみ保存フォルダを開く）
-// ready = ガジェットが開いているが recording === false。
+// ── 1枚撮影のキー（F9）────────────────────────────────────────
+// ガジェットが開いている間だけ登録する（この間、ほかのアプリには F9 が届かない）。
+function registerSnapKey() {
+  const acc = SNAP_KEY.accelerator;
+  let ok = false;
+  try {
+    ok = globalShortcut.isRegistered(acc) || globalShortcut.register(acc, () => snapShot());
+  } catch (err) {
+    console.error('1枚撮影のキーを登録できませんでした:', err);
+  }
+  if (!ok) warnGadget(`${SNAP_KEY.label} キーを使えません（ほかのアプリが使っています）。「1枚撮影」ボタンで撮ってください。`);
+}
+function unregisterSnapKey() {
+  try {
+    globalShortcut.unregister(SNAP_KEY.accelerator);
+  } catch (_) { /* noop */ }
+}
 
-// 【ready】ガジェットを開くだけ。撮影は「録画開始」ボタン（rec:begin）まで始めない。
+// ── 録画制御 ────────────────────────────────────────────────
+// 状態遷移（v1.0.10・docs/spec-capture-snap-and-import.md）:
+//   idle → openGadget（ready: ガジェット表示・フック停止）
+//        → startCapture（recording: フック開始・撮影有効）⇄ pauseRecording（paused: 録画停止中）
+//        → finishSession（idle へ。「取り込みへ進む」か ✕ の確認の窓から）
+//   1枚撮影（snapShot）は ready / recording / paused のどれでも撮れる。
+//   セッションフォルダは最初の録画開始か最初の1枚撮影で作り、finishSession まで続く。
+
+// 【ready】ガジェットを開くだけ。撮影は「録画開始」ボタン（rec:begin）か1枚撮影まで始めない。
 function openGadget(rawName) {
-  if (recording) return { ok: true };
   if (gadgetWin && !gadgetWin.isDestroyed()) {
-    gadgetWin.focus(); // ready で既に開いていれば前面へ出すだけ
+    gadgetWin.focus(); // 既に開いていれば前面へ出すだけ
     return { ok: true };
   }
   sessionShots = 0;
+  recordedMs = 0;
+  startTime = 0;
+  everRecorded = false;
+  lastSnapAt = 0;
   clickMarkerOn = true; // セッションごとに既定の ON へ戻す
   dragRecordOn = false; // ドラッグ記録はセッションごとに既定の OFF へ戻す（2-R2b）
   recordName = sanitizeName(rawName);
@@ -317,30 +362,40 @@ function openGadget(rawName) {
   if (mainWin && !mainWin.isDestroyed()) {
     try { mainWin.minimize(); } catch (_) { /* noop */ }
   }
+  notifyState(); // 本体の「画像インポート」をガジェットが開いている間は押せなくする
   return { ok: true };
 }
 
-// 【recording】ガジェットの「録画開始」で呼ばれる。ここで初めてフックを起こす。
+// セッションフォルダ（録画のまとまり）が無ければ作る。最初の録画開始か最初の1枚撮影で呼ぶ。
+// 作成に失敗しても撮影は続け、各撮影の保存失敗として既存の警告経路に乗せる。
+function ensureSession() {
+  if (session.isActive()) return true;
+  lastAppName = null; // アプリ切り替えの検出はセッション単位（停止・再開ではリセットしない）
+  try {
+    session.startSession(recordName, screenshotDir(), { now: Date.now() });
+    return true;
+  } catch (err) {
+    console.error('録画セッションフォルダの作成に失敗しました:', err);
+    warnGadget('保存フォルダを作成できません。保存先を確認してください。');
+    return false;
+  }
+}
+
+// 【recording】ガジェットの「録画開始」「録画再開」で呼ばれる。ここでフックを起こす。
+// 再開のときは同じセッションフォルダに続き番号で撮る（v1.0.10）。
 function startCapture() {
-  if (recording) return { ok: true, startTime };
+  if (recording) return { ok: true, startTime, elapsedMs: recordedMs };
   if (!gadgetWin || gadgetWin.isDestroyed()) return { ok: false };
+  ensureSession();
   recording = true;
+  everRecorded = true;
   pendingDown = null;
   pendingCapture = null;
   lastShot = { x: 0, y: 0, t: 0 };
   pressedKeys.clear();
   typing = null;
   lastKeyStep = { combo: '', t: 0 };
-  lastAppName = null;
   startTime = Date.now();
-  // 録画1回 = 1セッションフォルダ（2-R1）。作成に失敗しても録画自体は始め、
-  // 各撮影の保存失敗として既存の警告経路（enqueuePersist の catch）に乗せる。
-  try {
-    session.startSession(recordName, screenshotDir(), { now: startTime });
-  } catch (err) {
-    console.error('録画セッションフォルダの作成に失敗しました:', err);
-    warnGadget('保存フォルダを作成できません。保存先を確認してください。');
-  }
   // UIA 要素解決の子プロセスを起動（Windows のみ・失敗してもフォールバック文で録画継続）。
   uia.start();
   // クリック直前キャプチャの撮影プロセスを起動（Windows のみ・失敗しても従来の撮影で録画継続）。
@@ -354,64 +409,168 @@ function startCapture() {
   }
   startPrecapture(); // クリック「直前」フレームの定期取得を開始
   notifyState();
-  return { ok: true, startTime };
+  sendGadgetState();
+  return { ok: true, startTime, elapsedMs: recordedMs };
 }
 
-function stopRecording() {
-  const wasRecording = recording;
+// 【paused】録画を止める（v1.0.10）。ガジェットは閉じず、本体は最小化のまま、セッションは続く
+// （「録画再開」で続きを撮れる）。取り込みは「取り込みへ進む」（finishSession）で行う。
+function pauseRecording() {
+  if (!recording) return { ok: true, elapsedMs: recordedMs };
   recording = false;
-  // 入力中のタイピングバーストがあれば確定する（2-R2b ②。事前キャプチャが
-  // 生きているうちに保存キューへ積む。persistChain の完了待ちが後で回収する）。
-  if (wasRecording) finalizeTyping({});
+  recordedMs += Date.now() - startTime;
+  // 入力中のタイピングバーストがあれば確定する（2-R2b ②。撮影プロセスが
+  // 生きているうちに保存キューへ積む）。
+  finalizeTyping({});
   stopPrecapture();
   pendingDown = null;
   pendingCapture = null;
   pressedKeys.clear();
-  if (wasRecording) {
-    try {
-      uIOhook.stop();
-    } catch (err) {
-      console.error('グローバルマウスフックの停止に失敗しました:', err);
-    }
+  try {
+    uIOhook.stop();
+  } catch (err) {
+    console.error('グローバルマウスフックの停止に失敗しました:', err);
   }
+  // 撮影プロセスは CPU を使うので止めるが、停止直前のクリックがまだ保存キュー（persistChain）に
+  // 残っていることがあるため、キューの完了を待ってから止める。その間に再開されたら止めない。
+  persistChain.then(() => {
+    if (!recording) capture.stop();
+  });
+  notifyState();
+  sendGadgetState();
+  return { ok: true, elapsedMs: recordedMs };
+}
+
+// セッションを終える（v1.0.10。以前の stopRecording の後半）。ガジェットを閉じて本体を前面へ戻し、
+// 保存キューの完了を待ってセッションを確定してから rec:done を送る。
+//   importNow: true  … 取り込みウィザードを開かせる（「取り込みへ進む」・確認の窓の「取り込む」）
+//   importNow: false … 開かせず、本体はトーストで知らせるだけ（確認の窓の「取り込まずに閉じる」）
+// 0枚のセッションはフォルダごと削除されるため shots:0 で通知し、本体はトースト表示のみ行う。
+// セッションを作らないまま閉じた（何も撮っていない）ときは通知しない。
+function finishSession({ importNow }) {
+  pauseRecording();
   if (gadgetWin && !gadgetWin.isDestroyed()) {
     const w = gadgetWin;
-    gadgetWin = null; // closed ハンドラから再帰停止しないよう先に外す
-    w.close();
+    gadgetWin = null; // closed ハンドラから再帰しないよう先に外す
+    w.destroy(); // close() だと close ハンドラの確認の窓が出るため destroy で閉じる
   }
-  // 開始時に最小化した本体を元に戻して前面へ。
-  restoreMainWindow();
+  restoreMainWindow(); // 開いたときに最小化した本体を元に戻して前面へ
   notifyState();
-  // 録画していた場合のみ、セッションを確定してレンダラーへ rec:done を通知し、
-  // 取り込みウィザードを開かせる（2-R4。エクスプローラーは自動では開かない——
-  // フォルダはウィザード内の導線から開ける）。0枚のセッションはフォルダごと
-  // 削除されるため shots:0 で通知し、レンダラーはトースト表示のみ行う。
-  // ready のまま閉じたときは何も撮っていないので通知しない。
-  // ※ 停止直前のクリックがまだ保存キュー（persistChain）に残っていることがある
-  //   （マーカー合成は最大4秒）。確定と UIA 子プロセスの終了はキューの完了を待つ。
-  //   recording=false 以降は新規の enqueue が無いため、この時点のチェーンが最終形。
-  if (wasRecording) {
-    persistChain.then(() => {
-      uia.stop();
-      capture.stop();
-      const ended = session.endSession();
-      const payload = ended && !ended.removed
-        ? { dir: ended.dir, shots: ended.shots }
-        : { dir: null, shots: 0 };
-      if (mainWin && !mainWin.isDestroyed()) {
-        mainWin.webContents.send('rec:done', payload);
-      } else if (payload.dir) {
-        // 本体が閉じられている等でウィザードを出せないときは、素材が行方不明に
-        // ならないよう従来どおりフォルダを開いておく。
-        try {
-          shell.openPath(payload.dir);
-        } catch (err) {
-          console.error('保存フォルダを開けませんでした:', err);
-        }
+  // recording=false・ガジェットなし以降は新規の enqueue が無いため、この時点のチェーンが最終形。
+  persistChain.then(() => {
+    uia.stop();
+    capture.stop();
+    const ended = session.endSession();
+    if (!ended) return;
+    const payload = ended.removed
+      ? { dir: null, shots: 0, import: importNow }
+      : { dir: ended.dir, shots: ended.shots, import: importNow };
+    if (mainWin && !mainWin.isDestroyed()) {
+      mainWin.webContents.send('rec:done', payload);
+    } else if (payload.dir && importNow) {
+      // 本体が閉じられている等でウィザードを出せないときは、素材が行方不明に
+      // ならないよう従来どおりフォルダを開いておく。
+      try {
+        shell.openPath(payload.dir);
+      } catch (err) {
+        console.error('保存フォルダを開けませんでした:', err);
       }
-    });
-  }
+    }
+  });
   return { ok: true };
+}
+
+// ✕・OS の閉じる操作（v1.0.10）。1枚以上撮っていれば確認の窓を出す。0枚なら黙って閉じる。
+async function confirmCloseGadget() {
+  if (closeAsking || !gadgetWin || gadgetWin.isDestroyed()) return;
+  if (sessionShots === 0) {
+    finishSession({ importNow: false });
+    return;
+  }
+  closeAsking = true;
+  let res;
+  try {
+    res = await dialog.showMessageBox(gadgetWin, {
+      type: 'question',
+      title: 'CheckListMaker',
+      message: `撮った画像が ${sessionShots} 枚あります。取り込みますか？`,
+      detail: '「取り込まずに閉じる」を選んでも、画像はピクチャの CheckListMaker フォルダに残ります。' +
+        'あとから「画像インポート」ボタンで取り込めます。',
+      buttons: ['取り込む', '取り込まずに閉じる', 'やめる'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+    });
+  } catch (err) {
+    console.error('確認の窓を出せませんでした:', err);
+    res = { response: 2 };
+  } finally {
+    closeAsking = false;
+  }
+  if (res.response === 0) finishSession({ importNow: true });
+  else if (res.response === 1) finishSession({ importNow: false });
+}
+
+// ── 1枚撮影（v1.0.10）────────────────────────────────────────
+// ガジェットのボタンか F9 で、マウスカーソルのあるモニタ全体を1枚撮る。録画していなくても撮れる。
+// クリック位置の枠・拡大画像は付けず、手順文は空（取り込みウィザードで書く）。
+function snapShot() {
+  if (!gadgetWin || gadgetWin.isDestroyed()) return { ok: false };
+  const now = Date.now();
+  if (now - lastSnapAt < SNAP_GUARD_MS) return { ok: false, skipped: true }; // 押しっぱなしの連射
+  lastSnapAt = now;
+  ensureSession();
+  // 入力中の文字があれば先に入力の手順として確定する（手順の順番を保つ）。
+  if (recording) finalizeTyping({});
+  const pt = cursorPhysPoint();
+  const capPromise = grabSnap(pt.x, pt.y);
+  persistChain = persistChain
+    .then(async () => {
+      const shot = await capPromise;
+      if (shot) persistSnap(shot);
+    })
+    .catch((err) => {
+      console.error('1枚撮影の保存に失敗しました:', err);
+      warnGadget('スクリーンショットを保存できません。画面収録の許可や保存先を確認してください。');
+    });
+  return { ok: true };
+}
+
+// マウスカーソルの位置（物理 px）。uiohook は録画中しか動かないので Electron から取る。
+function cursorPhysPoint() {
+  const dip = screen.getCursorScreenPoint();
+  try {
+    return screen.dipToScreenPoint(dip); // Windows / Linux
+  } catch (_) {
+    return dip; // 変換非対応プラットフォーム（macOS）は DIP のまま
+  }
+}
+
+// その場で1枚撮る。撮影プロセスがあればそれで（source: 'grab'）、無ければ従来の撮影（'ondemand'）。
+async function grabSnap(physX, physY) {
+  captureBusy = true; // 事前キャプチャのポーリングと衝突させない
+  try {
+    const shot = await grabNow(physX, physY);
+    return { ...shot, source: shot.origin ? 'grab' : 'ondemand' };
+  } catch (err) {
+    console.error('1枚撮影に失敗しました:', err);
+    warnGadget('スクリーンショットを撮影できません。画面収録の許可や保存先を確認してください。');
+    return null;
+  } finally {
+    captureBusy = false;
+  }
+}
+
+// 【保存】1枚撮影（kind:"snap"・サイドカー v5）。マーカー・拡大なし・文は空。
+function persistSnap(shot) {
+  const { raw, disp } = shot;
+  const { fileName } = session.recordShot(raw, {
+    kind: 'snap',
+    text: '',
+    display: { id: disp.id, boundsDip: disp.bounds, scaleFactor: disp.scaleFactor },
+    capture: { source: shot.source, ageMs: null },
+  });
+  notifyShotSaved(raw, fileName);
 }
 
 function restoreMainWindow() {
@@ -502,9 +661,24 @@ ipcMain.on('guide:resize', (_e, size) => {
   try { guideWin.setSize(w, h); } catch (_) { /* noop */ }
 });
 
+// 本体へ録画状態を送る。active = ガジェットが開いている（録画準備・録画中・録画停止中）。
 function notifyState() {
   if (mainWin && !mainWin.isDestroyed()) {
-    mainWin.webContents.send('rec:state', { recording, count: sessionShots });
+    const active = !!(gadgetWin && !gadgetWin.isDestroyed());
+    mainWin.webContents.send('rec:state', { recording, active, count: sessionShots });
+  }
+}
+
+// ガジェットの表示状態（v1.0.10）: ready（録画準備）/ recording（録画中）/ paused（録画停止中）。
+// elapsedMs は停止までの録画時間の累計、startTime は今回の録画開始時刻（録画中だけ意味を持つ）。
+function gadgetStatePayload() {
+  const mode = recording ? 'recording' : everRecorded ? 'paused' : 'ready';
+  return { mode, elapsedMs: recordedMs, startTime };
+}
+// 本体の「録画停止」など、ガジェットの外で状態が変わったときもガジェットの表示をそろえる。
+function sendGadgetState() {
+  if (gadgetWin && !gadgetWin.isDestroyed()) {
+    gadgetWin.webContents.send('gadget:state', gadgetStatePayload());
   }
 }
 
@@ -512,6 +686,11 @@ function notifyState() {
 function warnGadget(message) {
   if (gadgetWin && !gadgetWin.isDestroyed()) {
     gadgetWin.webContents.send('gadget:warn', { message });
+    // 警告の行が窓の下からはみ出さないよう、一度だけ窓を伸ばす（v1.0.10）。
+    try {
+      const [w, h] = gadgetWin.getSize();
+      if (h < GADGET_H + GADGET_WARN_H) gadgetWin.setSize(w, GADGET_H + GADGET_WARN_H);
+    } catch (_) { /* noop */ }
   }
 }
 
@@ -1097,6 +1276,8 @@ function onKeyDown(e) {
   if (!recording) return;
   if (pressedKeys.has(e.keycode)) return; // キーリピート（押しっぱなし）は無視
   pressedKeys.add(e.keycode);
+  // 1枚撮影のキー（F9）は globalShortcut が撮影する。キー操作の手順としては記録しない（v1.0.10）。
+  if (isSnapKey(e)) return;
   const c = classifyKeydown(e);
   if (c.type === 'modifier' || c.type === 'other') return;
   // 自アプリ（ガジェット・本体）へのキー入力は記録しない（クリックの
@@ -1544,8 +1725,10 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('rec:start', (_e, name) => openGadget(name));
-  ipcMain.handle('rec:begin', () => startCapture());
-  ipcMain.handle('rec:stop', () => stopRecording());
+  ipcMain.handle('rec:begin', () => startCapture()); // 録画開始・再開
+  ipcMain.handle('rec:pause', () => pauseRecording()); // 録画停止（ガジェットは閉じない・v1.0.10）
+  ipcMain.handle('rec:snap', () => snapShot()); // 1枚撮影（v1.0.10）
+  ipcMain.handle('rec:finish', () => finishSession({ importNow: true })); // 取り込みへ進む（v1.0.10）
   ipcMain.handle('rec:setMarker', (_e, on) => { clickMarkerOn = !!on; return { ok: true }; });
   ipcMain.handle('rec:setDrag', (_e, on) => { dragRecordOn = !!on; return { ok: true }; });
   ipcMain.handle('rec:openDir', (_e, dirArg) => {
@@ -1612,8 +1795,14 @@ app.on('window-all-closed', () => {
 });
 
 // 終了時はフックを確実に止め、録画中ならセッションを確定する
-// （通常は stopRecording 経由で確定済み。ここは二重呼び出しでも無害）。
+// （通常は finishSession 経由で確定済み。ここは二重呼び出しでも無害）。
 app.on('before-quit', () => {
+  quitting = true; // ガジェットの ✕ の確認を出さずに閉じさせる
+  try {
+    globalShortcut.unregisterAll();
+  } catch (_) {
+    /* noop */
+  }
   try {
     uIOhook.stop();
   } catch (_) {

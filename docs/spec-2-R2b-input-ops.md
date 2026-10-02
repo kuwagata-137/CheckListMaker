@@ -31,6 +31,7 @@ R1（サイドカー）の上に載る拡張であり、既存のクリック録
 | `input` | 文字入力の確定（②） | 確定時点の全景（＋フォーカス要素の枠/拡大） | `keys: { type:"input", enter:bool }` |
 | `key` | Enter 単独・ショートカット（③） | 押下時点の全景（枠/拡大なし） | `keys: { type:"shortcut", combo:"Ctrl+S" }` |
 | `drag` | ドラッグ（④） | 始点=`NNN.png`・終点=`NNNe.png`（拡大なし） | `drag: { from:{x,y}, to:{x,y}, endImage, endImagePoint, endUia }` |
+| `snap` | 1枚撮影（v1.0.10・サイドカー v5。ボタンか F9） | カーソルのあるモニタの全景（マーカー・拡大なし） | なし（`text` は空。`docs/spec-capture-snap-and-import.md`） |
 
 - 共通: `appChange: { from, to } | null` を追加（⑤。下記）。
 - `input` の `uia` は**フォーカス要素**（クリック座標ではなく `GetFocusedElement` で解決）。

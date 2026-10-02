@@ -60,7 +60,7 @@ test('session.js — 録画セッション形式', async (t) => {
     assert.deepEqual(fs.readFileSync(path.join(dir, '001.png')), PNG);
 
     const sc = JSON.parse(fs.readFileSync(path.join(dir, '001.json'), 'utf8'));
-    assert.equal(sc.version, 4);
+    assert.equal(sc.version, 5); // v5: kind "snap" を追加（v1.0.10）
     assert.equal(sc.kind, 'click'); // kind 省略の既定はクリック（2-R2b）
     assert.equal(sc.seq, 1);
     assert.equal(sc.image, '001.png');
@@ -295,5 +295,49 @@ test('session.js — 操作種類の拡張（2-R2b）', async (t) => {
     assert.equal(data.steps[0].kind, 'click');
     assert.equal(data.steps[0].drag, null);
     assert.equal(data.steps[0].keys, null);
+  });
+});
+
+// 1枚撮影と、停止をはさんだ再開（v1.0.10・docs/spec-capture-snap-and-import.md）
+test('session.js — 1枚撮影（kind:"snap"）と、停止をはさんだ続き番号', async (t) => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'clm-session-snap-'));
+  t.after(() => {
+    session.endSession();
+    fs.rmSync(parent, { recursive: true, force: true });
+  });
+
+  await t.test('snap は拡大なし・文は空で保存され、readSession が kind を透過する', () => {
+    const { dir } = session.startSession('1枚', parent);
+    session.recordShot(PNG, {
+      kind: 'snap',
+      text: '',
+      display: { id: 1, boundsDip: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 },
+      capture: { source: 'grab', ageMs: null },
+    });
+    session.endSession();
+    const sc = JSON.parse(fs.readFileSync(path.join(dir, '001.json'), 'utf8'));
+    assert.equal(sc.version, 5);
+    assert.equal(sc.kind, 'snap');
+    assert.equal(sc.text, '');
+    assert.equal(sc.zoom, null);
+    assert.deepEqual(sc.marker, { drawn: false });
+    assert.equal(fs.existsSync(path.join(dir, '001z.png')), false);
+    const data = session.readSession(dir);
+    assert.equal(data.steps[0].kind, 'snap');
+    assert.equal(data.steps[0].zoomImage, null);
+  });
+
+  await t.test('録画の停止・再開はセッションを閉じないので、1枚撮影とクリックが同じフォルダに続き番号で入る', () => {
+    // main.js の pauseRecording はセッションに触らない（endSession は「取り込みへ進む」か ✕ のときだけ）
+    const { dir } = session.startSession('再開', parent);
+    session.recordShot(PNG, { kind: 'snap', text: '' }); // 録画準備中に F9
+    session.recordShot(PNG, { button: 'left', clicks: 1 }); // 録画中のクリック
+    session.recordShot(PNG, { kind: 'snap', text: '' }); // 停止中に F9
+    session.recordShot(PNG, { button: 'left', clicks: 1 }); // 再開後のクリック
+    assert.equal(session.sessionDir(), dir);
+    const ended = session.endSession();
+    assert.equal(ended.shots, 4);
+    const kinds = session.readSession(dir).steps.map((s) => `${s.seq}:${s.kind}`);
+    assert.deepEqual(kinds, ['1:snap', '2:click', '3:snap', '4:click']);
   });
 });

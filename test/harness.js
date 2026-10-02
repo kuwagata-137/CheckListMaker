@@ -50,8 +50,9 @@ function createMainStorage() {
 //                  省略時はブラウザモード。
 //   localStorage … 起動前に localStorage へ入れる { key: value }
 //   logs         … 配列を渡すと window.appLogAPI をスタブし、logError の記録を集める
+//   recorder     … 起動前に window.recorderAPI として入れるスタブ（起動時に登録される onState / onDone を拾う）
 // 戻り値の api() は window.__test__（起動完了後に埋まる）を待って返す。
-function bootApp({ storage = null, localStorage = null, logs = null, url = 'https://localhost/app/index.html', html = HTML } = {}) {
+function bootApp({ storage = null, localStorage = null, logs = null, recorder = null, url = 'https://localhost/app/index.html', html = HTML } = {}) {
   const vc = new VirtualConsole();
   vc.on('error', () => {});
   vc.on('jsdomError', () => {});
@@ -72,6 +73,7 @@ function bootApp({ storage = null, localStorage = null, logs = null, url = 'http
           error: (entry) => { logs.push(entry); return Promise.resolve({ ok: true }); },
         };
       }
+      if (recorder) window.recorderAPI = recorder;
       if (storage) {
         window.storageAPI = {
           available: true,

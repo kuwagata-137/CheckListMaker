@@ -15,7 +15,8 @@ const fs = require('fs');
 
 const SESSION_VERSION = 2; // v2: importedAt（取り込み完了時刻。未取り込みは null）を追加
 // v4: kind（操作種類）・keys・drag・appChange を追加（2-R2b）。kind 欠落は "click" 扱い。
-const SIDECAR_VERSION = 4;
+// v5: kind に "snap"（1枚撮影。ボタンか F9）を追加（v1.0.10・docs/spec-capture-snap-and-import.md）。
+const SIDECAR_VERSION = 5;
 
 // UIA 解決なし（非 Windows・タイムアウト・失敗）のときのサイドカー uia 欄。
 const UIA_EMPTY = Object.freeze({
@@ -135,7 +136,7 @@ function recordShot(pngBuffer, meta = {}) {
   const sidecar = {
     version: SIDECAR_VERSION,
     seq: current.seq,
-    // 操作種類（2-R2b）: "click"（既定・ダブルクリック含む）/ "input" / "key" / "drag"。
+    // 操作種類（2-R2b）: "click"（既定・ダブルクリック含む）/ "input" / "key" / "drag" / "snap"（1枚撮影・v5）。
     kind: meta.kind || 'click',
     image: fileName,
     time: now.toISOString(),
