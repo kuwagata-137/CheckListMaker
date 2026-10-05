@@ -59,6 +59,7 @@ h2 { font-size: 1.15rem; margin: 32px 0 12px; padding: 6px 0 6px 12px;
   border-left: 5px solid var(--accent, #3b6ea5); }
 .step { border: 1px solid #d5d9df; border-radius: 8px; padding: 12px 16px; margin: 0 0 12px; }
 .step > h3 { display: flex; align-items: baseline; gap: 10px; font-size: 1rem; margin: 0; }
+.step-text { white-space: pre-line; }
 .no { flex: none; min-width: 1.9em; height: 1.9em; display: inline-flex; align-items: center;
   justify-content: center; border-radius: 999px; background: var(--accent, #3b6ea5);
   color: #fff; font-size: .8rem; }
@@ -68,7 +69,7 @@ h2 { font-size: 1.15rem; margin: 32px 0 12px; padding: 6px 0 6px 12px;
 .rb th, .rb td { border: 1px solid #cfd3da; padding: 5px 9px; }
 .rb thead th { background: #f2f4f7; }
 @media (prefers-color-scheme: dark) { .rb thead th { background: #23262a; } }
-.note { margin: 10px 0 0; color: #4b5563; font-size: .92rem; }
+.note { margin: 10px 0 0; color: #4b5563; font-size: .92rem; white-space: pre-line; }
 @media (prefers-color-scheme: dark) { .note, .meta, .time, .cover dt { color: #9aa3ad; } }
 figure { margin: 12px 0 0; }
 figure img { max-width: 100%; height: auto; border: 1px solid #d5d9df; border-radius: 6px; }
@@ -127,7 +128,7 @@ function renderChecklist(c) {
         .join('');
       const box = isTemplate ? '' : `${it.done ? '☑' : '☐'} `;
       return `<article class="step"><h3><span class="no">${no}</span>` +
-        `<span>${box}${escapeHtml(it.text)}</span>${time}</h3>${body}${note}${imgs}</article>`;
+        `<span class="step-text">${box}${escapeHtml(it.text)}</span>${time}</h3>${body}${note}${imgs}</article>`;
     }).join('\n');
     const head = s.title ? `<h2>${escapeHtml(s.title)}</h2>` : '';
     return `${head}\n${items}`;
