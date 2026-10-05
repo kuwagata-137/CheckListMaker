@@ -378,7 +378,8 @@
   .items { list-style: none; margin: 0; padding: 6px 8px; }
   .item {
     display: flex;
-    align-items: center;
+    /* 文字欄が複数行になっても、つかみ手・チェック欄・ボタンは1行目の高さにそろえる（v1.0.11） */
+    align-items: flex-start;
     flex-wrap: wrap;
     gap: 8px;
     padding: 4px 6px;
@@ -425,17 +426,25 @@
   .item-add:hover { background: var(--primary); color: #fff; }
   /* 完了した項目は灰色にするだけ。取り消し線は「無効」に見えて誤解を招くので付けない（2026-09-11） */
   .item.done .item-text { color: var(--muted); }
+  /* 項目・手順の文字欄は textarea。欄の幅で折り返し、高さは文の行数に合わせて伸び縮みする
+     （v1.0.11。仕様 docs/spec-item-text-wrap.md）。field-sizing が効かないブラウザは JS の fitGrowFields が補う。 */
   .item-text {
     flex: 1;
+    min-width: 0;
     border: 1px solid transparent;
     border-radius: 6px;
     background: transparent;
     color: var(--text);
     font: inherit;
     padding: 3px 6px;
+    field-sizing: content;
+    resize: none;
+    overflow: hidden;
   }
   .item-text:focus { border-color: var(--border); background: var(--surface); outline: none; }
-  .item input[type='checkbox'] { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary); }
+  /* 1行目（文字欄の1行ぶんの高さ 32px）の真ん中にそろえる */
+  .item > .grip { margin-top: 4px; }
+  .item input[type='checkbox'] { width: 18px; height: 18px; margin-top: 7px; cursor: pointer; accent-color: var(--primary); }
 
   /* セクションバーの「＋」追加ボタン */
   .icon.add {
@@ -500,7 +509,7 @@
   }
   .step:last-child .step-line { display: none; }
   .step-body { padding-bottom: 5px; min-width: 0; }
-  .step-main { display: flex; align-items: center; gap: 8px; }
+  .step-main { display: flex; align-items: flex-start; gap: 8px; }
   .step-text { flex: 1; font-weight: 600; }
   .step.done .step-text { text-decoration: line-through; color: var(--muted); font-weight: 500; }
   .step-time { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); white-space: nowrap; }
@@ -517,7 +526,11 @@
   .step-time-input:focus { border-color: var(--border); background: var(--surface); outline: none; }
   .step-time .unit { font-size: 0.8rem; }
   .step-note-input {
+    display: block;
     width: 100%;
+    field-sizing: content;
+    resize: none;
+    overflow: hidden;
     margin-top: 2px;
     border: 1px solid transparent;
     border-radius: 6px;
@@ -897,11 +910,12 @@
   }
   .pl-thumbs img.active { border-color: var(--primary); }
   .pl-pane { display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; overflow-y: auto; }
-  .pl-text { font-size: 1.3rem; font-weight: 600; line-height: 1.5; margin: 0; overflow-wrap: anywhere; }
+  /* 項目の文字・メモの改行は、その位置で行を変える（v1.0.11） */
+  .pl-text { font-size: 1.3rem; font-weight: 600; line-height: 1.5; margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
   .pl-text.empty { color: var(--muted); font-weight: 400; }
   .pl-note {
     background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
-    padding: 10px 12px; color: var(--muted); font-size: 0.92rem; overflow-wrap: anywhere;
+    padding: 10px 12px; color: var(--muted); font-size: 0.92rem; overflow-wrap: anywhere; white-space: pre-line;
   }
   .pl-bodyview {
     background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
@@ -1310,12 +1324,13 @@
     font-size: 10.5pt; line-height: 1; padding: 4px 7px; border-radius: 2px;
     min-width: 1.5em; text-align: center;
   }
-  .print-step-text { flex: 1; min-width: 0; font-weight: 700; font-size: 11.5pt; word-break: break-word; }
+  /* 手順の文字・メモ・ToDo の項目の改行は、その位置で行を変える（v1.0.11。目次は1行のまま） */
+  .print-step-text { flex: 1; min-width: 0; font-weight: 700; font-size: 11.5pt; word-break: break-word; white-space: pre-line; }
   .print-step-time { flex: 0 0 auto; color: #808080; font-size: 10pt; white-space: nowrap; }
   .print-body { margin: 8px 0 0 2.4em; }
   .print-body p { margin: 0 0 5px; }
   .print-body ul, .print-body ol { margin: 3px 0 5px 1.3em; padding: 0; }
-  .print-note { margin: 8px 0 0 2.4em; color: #4c525a; font-size: 10pt; word-break: break-word; }
+  .print-note { margin: 8px 0 0 2.4em; color: #4c525a; font-size: 10pt; word-break: break-word; white-space: pre-line; }
   .print-note-lbl { color: #808080; }
   /* 画像の欄。画像の大きさは、ページを組むときに px で決めて <img> に書く（composePrintPages） */
   .print-imgs { margin: 10px 0 0 2.4em; display: flex; flex-direction: column; gap: 10px; }
@@ -1326,7 +1341,7 @@
   .print-todo { padding: 4px 0; }
   .print-todo-head { display: flex; align-items: baseline; gap: 6px; }
   .print-todo .print-box { font-size: 1.05rem; line-height: 1; }
-  .print-todo .print-text { flex: 1; min-width: 0; word-break: break-word; }
+  .print-todo .print-text { flex: 1; min-width: 0; word-break: break-word; white-space: pre-line; }
   .print-todo.done .print-text { color: #666; } /* 画面と同じく取り消し線は付けない */
   .print-todo .print-imgs { margin: 6px 0 4px 1.6em; }
 
@@ -2599,14 +2614,15 @@
             stepNo += 1;
             // 所要時間は @@DXTAB@@（後処理で右タブに置換）で手順名の行末に右詰めする。
             const time = it.time ? `@@DXTAB@@⏱${escapeHtml(String(it.time))}分` : '';
-            parts.push(`<h4>@@DXNUM@@${stepNo}@@DXNE@@${escapeHtml(it.text)}${time}</h4>`);
+            // 手順名・メモ・ToDo 項目の改行は <br>（Word の改行）にする（v1.0.11）
+            parts.push(`<h4>@@DXNUM@@${stepNo}@@DXNE@@${htmlWithBreaks(it.text)}${time}</h4>`);
             const bodyClean = sanitizeBodyHtml(it.body || '');
             if (bodyClean) parts.push(bodyClean);
-            if (it.note) parts.push(`<p>（メモ）${escapeHtml(it.note)}</p>`);
+            if (it.note) parts.push(`<p>（メモ）${htmlWithBreaks(it.note)}</p>`);
           } else {
             // ToDo 型はチェック状態が本体情報なので従来通り記号を出す
             const box = it.done ? '☑' : '☐';
-            parts.push(`<p>${box} ${escapeHtml(it.text)}</p>`);
+            parts.push(`<p>${box} ${htmlWithBreaks(it.text)}</p>`);
           }
           (Array.isArray(it.images) ? it.images : []).forEach((src) => {
             // 画像は必ず独立した段落に置く（li/div 入れ子だと html-to-docx が落とす）。
@@ -2943,6 +2959,15 @@
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
     }
+    // <textarea> の中身。HTML の解析は開始タグ直後の改行を1つ捨てるので、先に1つ足しておく
+    // （値が改行で始まっても落ちない）。
+    function textareaBody(str = '') {
+      return '\n' + escapeHtml(str);
+    }
+    // 改行を <br> にした HTML（Word 用。html-to-docx は素の改行を空白に潰す）
+    function htmlWithBreaks(str = '') {
+      return escapeHtml(str).replace(/\r?\n/g, '<br>');
+    }
     const modeLabel = (type) => (type === MODES.TEMPLATE ? 'テンプレート' : 'ToDo');
 
     function renderHome(state) {
@@ -3128,9 +3153,8 @@
           <span class="grip" title="ドラッグで並べ替え">⠿</span>
           <input type="checkbox" ${item.done ? 'checked' : ''}
                  data-action="toggle" data-section="${sectionId}" data-item="${item.id}" />
-          <input class="item-text" data-action="edit-item"
-                 data-section="${sectionId}" data-item="${item.id}"
-                 value="${escapeHtml(item.text)}" />
+          <textarea class="item-text" data-action="edit-item" rows="1"
+                    data-section="${sectionId}" data-item="${item.id}">${textareaBody(item.text)}</textarea>
           <button class="icon" title="上へ移動"
                   data-action="move-item-up" data-section="${sectionId}" data-item="${item.id}">↑</button>
           <button class="icon" title="下へ移動"
@@ -3157,9 +3181,9 @@
             <div class="step-main">
               <input type="checkbox" ${item.done ? 'checked' : ''}
                      data-action="toggle" data-section="${sectionId}" data-item="${item.id}" />
-              <input class="item-text step-text" data-action="edit-item"
-                     data-section="${sectionId}" data-item="${item.id}"
-                     placeholder="手順の内容" value="${escapeHtml(item.text)}" />
+              <textarea class="item-text step-text" data-action="edit-item" rows="1"
+                        data-section="${sectionId}" data-item="${item.id}"
+                        placeholder="手順の内容">${textareaBody(item.text)}</textarea>
               <span class="step-time">
                 <input class="step-time-input" data-action="edit-time" inputmode="numeric"
                        list="step-time-options"
@@ -3177,9 +3201,9 @@
                       data-action="delete-item" data-section="${sectionId}" data-item="${item.id}">✕</button>
             </div>
             ${renderRichBody(sectionId, item)}
-            <input class="step-note-input" data-action="edit-note"
-                   data-section="${sectionId}" data-item="${item.id}"
-                   placeholder="メモ（任意）" value="${escapeHtml(note)}" />
+            <textarea class="step-note-input" data-action="edit-note" rows="1"
+                      data-section="${sectionId}" data-item="${item.id}"
+                      placeholder="メモ（任意）">${textareaBody(note)}</textarea>
             ${renderImages(sectionId, item, true)}
           </div>
         </li>`;
@@ -3275,7 +3299,7 @@
               const fig = it.image
                 ? `<img class="tsb-shot" src="${resolveImageSync(it.image)}"${
                     isImgRef(it.image) ? ` data-img-ref="${escapeHtml(it.image)}"` : ''
-                  } alt="" />`
+                  } alt="" draggable="false" />` // 画像の上から掴んでもカードごと動かす（画像だけのドラッグにしない）
                 : '<span class="tsb-noimg">画像なし</span>';
               const cap = it.text || '（未入力）';
               return `
@@ -3368,7 +3392,9 @@
         item: '.tsb-card',
         list: '.tsb-body',
         section: '.tsb-phase',
-        handle: '.tsb-grip',
+        // カードのどこを掴んでも並べ替えられる（v1.0.11）。カードには文字を選ぶ欄が無いので、
+        // 本文のように掴み手（⠿）だけに絞る必要がない。⠿ は「動かせる」目印として残す。
+        handle: '.tsb-card',
         // 選択中のカード（2件以上）を掴んだら、選んだ手順をまとめて動かす
         dragIds: (id) => (thumbSel.size >= 2 && thumbSel.has(id) ? thumbOrder().filter((x) => thumbSel.has(x)) : [id]),
       });
@@ -5802,6 +5828,7 @@
         attachImageDnD(app);
         scaleCoverStages(app);
         updateThumbSidebar(checklist);
+        fitGrowFields();
       } else {
         app.innerHTML = renderHome(store.state);
         updateThumbSidebar(null);
@@ -7146,25 +7173,42 @@
       }
       return true;
     }
-    async function addImageFromDataUrl(c, sectionId, itemId, dataUrl, openEditor) {
+    // 画像を手順／項目に足す。貼り付け・ドロップ・ファイル選択のどれでも画像編集は開かず、
+    // 一覧の画面のままにする（v1.0.11。直したいときはサムネイルをクリック）。
+    async function addImageFromDataUrl(c, sectionId, itemId, dataUrl) {
       try {
+        const keep = focusedFieldIn(itemId); // 再描画で外れるフォーカスを戻す（続けて Ctrl+V できるように）
         // Electron では原寸＋サムネの2枚を個別ファイルへ保存して参照を state に持つ
         //（ブラウザはサムネの dataURL を素通し）。
         const { thumb, full } = await storeImagePair(dataUrl);
         const ok = commitImage((s) =>
           M.addItemImage(M.findChecklist(s, c.id), sectionId, itemId, thumb, full)
         );
-        if (ok && openEditor) {
-          const item = findItemLive(c.id, sectionId, itemId);
-          const idx = item ? item.images.length - 1 : -1;
-          if (idx >= 0) openImageEditor(c, sectionId, itemId, idx);
-        }
+        if (ok && keep) refocusField(itemId, keep);
       } catch (err) {
         alert(err.message || '画像の追加に失敗しました');
       }
     }
-    async function addImageFromBlob(c, sectionId, itemId, blob, openEditor) {
-      return addImageFromDataUrl(c, sectionId, itemId, await blobToDataUrl(blob), openEditor);
+    async function addImageFromBlob(c, sectionId, itemId, blob) {
+      return addImageFromDataUrl(c, sectionId, itemId, await blobToDataUrl(blob));
+    }
+    // その手順の文字欄（項目の文字・メモなど）にフォーカスがあれば、欄の種類とカーソル位置を返す。
+    function focusedFieldIn(itemId) {
+      const el = document.activeElement;
+      if (!el || !el.matches || !el.matches('textarea[data-action], input[data-action]')) return null;
+      const row = el.closest('.item');
+      if (!row || row.dataset.item !== itemId) return null;
+      let sel = null;
+      try { sel = [el.selectionStart, el.selectionEnd]; } catch (_) {} // チェック欄は選択範囲を持たない
+      return { action: el.dataset.action, sel };
+    }
+    function refocusField(itemId, keep) {
+      const el = app.querySelector(`.item[data-item="${CSS.escape(itemId)}"] [data-action="${keep.action}"]`);
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      if (keep.sel && keep.sel[0] != null) {
+        try { el.setSelectionRange(keep.sel[0], keep.sel[1]); } catch (_) {}
+      }
     }
     async function pickAndAddImage(c, sectionId, itemId) {
       // Electron: ネイティブダイアログで既定フォルダ（ピクチャ\CheckListMaker）を初期表示する。
@@ -7175,7 +7219,7 @@
         catch (_) { res = { error: '画像の選択に失敗しました' }; }
         if (!res || res.canceled) return;
         if (res.error) { alert(res.error); return; }
-        if (res.dataUrl) addImageFromDataUrl(c, sectionId, itemId, res.dataUrl, true);
+        if (res.dataUrl) addImageFromDataUrl(c, sectionId, itemId, res.dataUrl);
         return;
       }
       const inp = document.createElement('input');
@@ -7183,7 +7227,7 @@
       inp.accept = 'image/*';
       inp.addEventListener('change', () => {
         const f = inp.files && inp.files[0];
-        if (f) addImageFromBlob(c, sectionId, itemId, f, true);
+        if (f) addImageFromBlob(c, sectionId, itemId, f);
       });
       inp.click();
     }
@@ -7207,7 +7251,7 @@
         : null;
       if (!host) return; // 貼り付け先の手順が不明な場合は何もしない
       e.preventDefault();
-      addImageFromBlob(c, host.dataset.section, host.dataset.item, blob, true);
+      addImageFromBlob(c, host.dataset.section, host.dataset.item, blob);
     });
 
     // エクスプローラ等からの画像ドラッグ＆ドロップ。ドロップ先の手順（.item）へ添付する。
@@ -7244,8 +7288,8 @@
       const files = Array.from(e.dataTransfer.files || []).filter((f) => f.type && f.type.startsWith('image/'));
       if (!files.length) return;
       e.preventDefault();
-      // 1 枚なら編集モーダルを開く（paste と同挙動）。複数は順に挿入のみ。
-      files.forEach((f, i) => addImageFromBlob(c, host.dataset.section, host.dataset.item, f, files.length === 1 && i === 0));
+      // 画像編集は開かず、順に足すだけ（paste と同じ挙動。v1.0.11）
+      files.forEach((f) => addImageFromBlob(c, host.dataset.section, host.dataset.item, f));
     });
 
     // ペイント編集モーダル。矢印/四角/丸・ペン・ハイライト・テキスト・モザイク・
@@ -10283,6 +10327,27 @@
       }
     });
 
+    // ---- 項目・手順・メモの文字欄の高さを文に合わせる（v1.0.11。仕様 docs/spec-item-text-wrap.md）----
+    // ふだんは CSS の field-sizing: content が受け持つ。効かないブラウザ（HTML 保存したファイルを
+    // Firefox などで開いた場合）だけ、scrollHeight に合わせて高さを付け直す。
+    const GROW_FIELDS = 'textarea.item-text, textarea.step-note-input';
+    const fieldSizingSupported = !!(window.CSS && CSS.supports && CSS.supports('field-sizing', 'content'));
+    function fitGrowField(el) {
+      el.style.height = 'auto';
+      // box-sizing: border-box なので、scrollHeight（枠を含まない）に上下の枠の太さを足す
+      if (el.scrollHeight) el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`;
+    }
+    function fitGrowFields() {
+      if (fieldSizingSupported) return;
+      app.querySelectorAll(GROW_FIELDS).forEach(fitGrowField);
+    }
+    if (!fieldSizingSupported) {
+      document.addEventListener('input', (e) => {
+        if (e.target.matches && e.target.matches(GROW_FIELDS)) fitGrowField(e.target);
+      });
+      window.addEventListener('resize', fitGrowFields); // 欄の幅が変わると折り返しの行数も変わる
+    }
+
     // セクションバーの「＋」で追加した項目に、再描画後フォーカスする
     let pendingFocusItem = null;
     let pendingFocusSection = null; // 「＋」で挿入したセクションの見出し（名前をすぐ打てるように）
@@ -10460,6 +10525,8 @@
         guideStepPayload,
         // Excel/CSV 出力（3-A）の純関数
         buildXlsxSheetData, buildCsvText, htmlToPlainText, excelSheetName, capImageSize,
+        // Word 出力の本文 HTML（改行の <br> 化の確認用。v1.0.11）
+        renderDocxView,
         // 表紙（カバーページ）の純関数
         renderCoverHtml, sanitizeBodyHtml, formatCoverDate, toIsoDate,
       });

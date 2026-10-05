@@ -169,8 +169,9 @@ function buildXlsxWorkbook(ExcelJS, data) {
               ? { horizontal: 'center', vertical: 'top' }
               : { wrapText: true, vertical: 'top' };
         });
-        // 詳細のセル内改行ぶん行高を確保（1行約12pt。exceljs は自動計算しない）
-        const lines = String(row.detail || '').split('\n').length;
+        // 項目・メモ・詳細のうち、セル内改行の最も多いものに合わせて行高を確保
+        //（1行約12pt。exceljs は自動計算しない）
+        const lines = Math.max(...[row.text, row.note, row.detail].map((v) => String(v || '').split('\n').length));
         if (lines > 1) ws.getRow(r).height = Math.min(200, 14 * lines);
         break;
       }

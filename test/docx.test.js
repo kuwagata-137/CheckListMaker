@@ -164,3 +164,27 @@ test('3-C docx 回帰 — フェイルソフト（マーカー不在でも壊れ
     assert.ok(out.footer.includes('PAGE'), 'フッターは差し替わる');
   });
 });
+
+// v1.0.11: 手順名・メモ・ToDo 項目の改行は <br> で渡す（docs/spec-item-text-wrap.md）。
+// html-to-docx が w:br にし、番号バッジと所要時間の右タブの後処理もそのまま効くこと。
+test('docx — 改行入りの手順名・メモが Word の改行になる', async (t) => {
+  const html = [
+    '<!DOCTYPE html><html><body>',
+    '<h4>@@DXNUM@@1@@DXNE@@電源を<br>入れる@@DXTAB@@⏱2分</h4>',
+    '<p>（メモ）メモ1<br>メモ2</p>',
+    '</body></html>',
+  ].join('');
+  const out = await buildDocx(html, { isTemplate: true, accent: '#3b6ea5' });
+  await t.test('改行が w:br になり、文字は残る', () => {
+    assert.equal((out.document.match(/<w:br\b[^>]*\/>/g) || []).length, 2, '見出しとメモで1つずつ');
+    for (const s of ['電源を', '入れる', 'メモ1', 'メモ2']) assert.ok(out.document.includes(s), s);
+  });
+  await t.test('番号バッジと所要時間の右タブはそのまま', () => {
+    assert.ok(!out.document.includes('@@'), 'マーカートークンが残らない');
+    assert.ok(out.document.includes('<w:tab/>'), '@@DXTAB@@ が右タブ run になる');
+    assert.match(out.document, /<w:t xml:space="preserve"> 1 <\/w:t>/, '番号バッジ');
+    // 右タブ（所要時間）は2行目の後ろ＝見出しの最後に来る
+    const h = out.document.slice(out.document.indexOf('入れる'));
+    assert.ok(h.indexOf('<w:tab/>') >= 0 && h.indexOf('<w:tab/>') < h.indexOf('2分'), '所要時間は2行目の右端');
+  });
+});
