@@ -7171,25 +7171,42 @@
       }
       return true;
     }
-    async function addImageFromDataUrl(c, sectionId, itemId, dataUrl, openEditor) {
+    // 画像を手順／項目に足す。貼り付け・ドロップ・ファイル選択のどれでも画像編集は開かず、
+    // 一覧の画面のままにする（v1.0.11。直したいときはサムネイルをクリック）。
+    async function addImageFromDataUrl(c, sectionId, itemId, dataUrl) {
       try {
+        const keep = focusedFieldIn(itemId); // 再描画で外れるフォーカスを戻す（続けて Ctrl+V できるように）
         // Electron では原寸＋サムネの2枚を個別ファイルへ保存して参照を state に持つ
         //（ブラウザはサムネの dataURL を素通し）。
         const { thumb, full } = await storeImagePair(dataUrl);
         const ok = commitImage((s) =>
           M.addItemImage(M.findChecklist(s, c.id), sectionId, itemId, thumb, full)
         );
-        if (ok && openEditor) {
-          const item = findItemLive(c.id, sectionId, itemId);
-          const idx = item ? item.images.length - 1 : -1;
-          if (idx >= 0) openImageEditor(c, sectionId, itemId, idx);
-        }
+        if (ok && keep) refocusField(itemId, keep);
       } catch (err) {
         alert(err.message || '画像の追加に失敗しました');
       }
     }
-    async function addImageFromBlob(c, sectionId, itemId, blob, openEditor) {
-      return addImageFromDataUrl(c, sectionId, itemId, await blobToDataUrl(blob), openEditor);
+    async function addImageFromBlob(c, sectionId, itemId, blob) {
+      return addImageFromDataUrl(c, sectionId, itemId, await blobToDataUrl(blob));
+    }
+    // その手順の文字欄（項目の文字・メモなど）にフォーカスがあれば、欄の種類とカーソル位置を返す。
+    function focusedFieldIn(itemId) {
+      const el = document.activeElement;
+      if (!el || !el.matches || !el.matches('textarea[data-action], input[data-action]')) return null;
+      const row = el.closest('.item');
+      if (!row || row.dataset.item !== itemId) return null;
+      let sel = null;
+      try { sel = [el.selectionStart, el.selectionEnd]; } catch (_) {} // チェック欄は選択範囲を持たない
+      return { action: el.dataset.action, sel };
+    }
+    function refocusField(itemId, keep) {
+      const el = app.querySelector(`.item[data-item="${CSS.escape(itemId)}"] [data-action="${keep.action}"]`);
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      if (keep.sel && keep.sel[0] != null) {
+        try { el.setSelectionRange(keep.sel[0], keep.sel[1]); } catch (_) {}
+      }
     }
     async function pickAndAddImage(c, sectionId, itemId) {
       // Electron: ネイティブダイアログで既定フォルダ（ピクチャ\CheckListMaker）を初期表示する。
@@ -7200,7 +7217,7 @@
         catch (_) { res = { error: '画像の選択に失敗しました' }; }
         if (!res || res.canceled) return;
         if (res.error) { alert(res.error); return; }
-        if (res.dataUrl) addImageFromDataUrl(c, sectionId, itemId, res.dataUrl, true);
+        if (res.dataUrl) addImageFromDataUrl(c, sectionId, itemId, res.dataUrl);
         return;
       }
       const inp = document.createElement('input');
@@ -7208,7 +7225,7 @@
       inp.accept = 'image/*';
       inp.addEventListener('change', () => {
         const f = inp.files && inp.files[0];
-        if (f) addImageFromBlob(c, sectionId, itemId, f, true);
+        if (f) addImageFromBlob(c, sectionId, itemId, f);
       });
       inp.click();
     }
@@ -7232,7 +7249,7 @@
         : null;
       if (!host) return; // 貼り付け先の手順が不明な場合は何もしない
       e.preventDefault();
-      addImageFromBlob(c, host.dataset.section, host.dataset.item, blob, true);
+      addImageFromBlob(c, host.dataset.section, host.dataset.item, blob);
     });
 
     // エクスプローラ等からの画像ドラッグ＆ドロップ。ドロップ先の手順（.item）へ添付する。
@@ -7269,8 +7286,8 @@
       const files = Array.from(e.dataTransfer.files || []).filter((f) => f.type && f.type.startsWith('image/'));
       if (!files.length) return;
       e.preventDefault();
-      // 1 枚なら編集モーダルを開く（paste と同挙動）。複数は順に挿入のみ。
-      files.forEach((f, i) => addImageFromBlob(c, host.dataset.section, host.dataset.item, f, files.length === 1 && i === 0));
+      // 画像編集は開かず、順に足すだけ（paste と同じ挙動。v1.0.11）
+      files.forEach((f) => addImageFromBlob(c, host.dataset.section, host.dataset.item, f));
     });
 
     // ペイント編集モーダル。矢印/四角/丸・ペン・ハイライト・テキスト・モザイク・
