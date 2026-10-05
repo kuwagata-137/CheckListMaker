@@ -283,6 +283,51 @@ test('thumbmultiselect — まとめてドラッグ・ドロップ後の片づ�
   });
 });
 
+// v1.0.11: サイドバーのカードは ⠿ だけでなく、どこを掴んでも並べ替えられる。
+test('thumbmultiselect — カードのどこを掴んでもドラッグできる', async (t) => {
+  // part を押してからドラッグを始め、target の上半分（前）／下半分（後ろ）へ落とす
+  const dragFrom = (c, fromId, part, toEl, clientY) => {
+    const src = c.card(fromId);
+    const el = src.querySelector(part);
+    assert.ok(el, `${part} がある`);
+    el.dispatchEvent(new c.win.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    src.dispatchEvent(dragEvent(c.win, 'dragstart'));
+    toEl.dispatchEvent(dragEvent(c.win, 'dragover', clientY));
+    toEl.dispatchEvent(dragEvent(c.win, 'drop', clientY));
+  };
+  await t.test('画像の上', async (t) => {
+    const c = await openEditor(t);
+    dragFrom(c, 'i1', '.tsb-shot', c.card('i4'), 1);
+    assert.deepEqual(c.order(), [['i2'], ['i3', 'i4', 'i1']]);
+  });
+  await t.test('番号の上', async (t) => {
+    const c = await openEditor(t);
+    dragFrom(c, 'i3', '.tsb-no', c.card('i1'), 0);
+    assert.deepEqual(c.order(), [['i3', 'i1', 'i2'], ['i4']]);
+  });
+  await t.test('手順の文・「画像なし」の枠の上', async (t) => {
+    const c = await openEditor(t);
+    dragFrom(c, 'i2', '.tsb-cap', c.card('i4'), 1);
+    assert.deepEqual(c.order(), [['i1'], ['i3', 'i4', 'i2']]);
+    dragFrom(c, 'i4', '.tsb-noimg', c.card('i1'), 0);
+    assert.deepEqual(c.order(), [['i4', 'i1'], ['i3', 'i2']]);
+  });
+  await t.test('カードの画像は単独ではドラッグされない（カードごと動く）', async (t) => {
+    const c = await openEditor(t);
+    assert.equal(c.card('i1').querySelector('img.tsb-shot').getAttribute('draggable'), 'false');
+  });
+  await t.test('本文の行は今までどおり ⠿／番号でだけ動く（文字欄の上から掴んでも動かない）', async (t) => {
+    const c = await openEditor(t);
+    const src = c.doc.querySelector('#app .item[data-item="i1"]');
+    src.querySelector('.item-text').dispatchEvent(new c.win.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    src.dispatchEvent(dragEvent(c.win, 'dragstart'));
+    const target = c.doc.querySelector('#app .item[data-item="i4"]');
+    target.dispatchEvent(dragEvent(c.win, 'dragover', 1));
+    target.dispatchEvent(dragEvent(c.win, 'drop', 1));
+    assert.deepEqual(c.order(), [['i1', 'i2'], ['i3', 'i4']]);
+  });
+});
+
 test('thumbmultiselect — Ctrl+Z／Ctrl+Y をアプリの元に戻す・やり直しに', async (t) => {
   await t.test('入力欄の外なら Ctrl+Z で元に戻り、Ctrl+Y でやり直す', async (t) => {
     const c = await openEditor(t);

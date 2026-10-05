@@ -3299,7 +3299,7 @@
               const fig = it.image
                 ? `<img class="tsb-shot" src="${resolveImageSync(it.image)}"${
                     isImgRef(it.image) ? ` data-img-ref="${escapeHtml(it.image)}"` : ''
-                  } alt="" />`
+                  } alt="" draggable="false" />` // 画像の上から掴んでもカードごと動かす（画像だけのドラッグにしない）
                 : '<span class="tsb-noimg">画像なし</span>';
               const cap = it.text || '（未入力）';
               return `
@@ -3392,7 +3392,9 @@
         item: '.tsb-card',
         list: '.tsb-body',
         section: '.tsb-phase',
-        handle: '.tsb-grip',
+        // カードのどこを掴んでも並べ替えられる（v1.0.11）。カードには文字を選ぶ欄が無いので、
+        // 本文のように掴み手（⠿）だけに絞る必要がない。⠿ は「動かせる」目印として残す。
+        handle: '.tsb-card',
         // 選択中のカード（2件以上）を掴んだら、選んだ手順をまとめて動かす
         dragIds: (id) => (thumbSel.size >= 2 && thumbSel.has(id) ? thumbOrder().filter((x) => thumbSel.has(x)) : [id]),
       });
