@@ -58,21 +58,36 @@
     line-height: 1.5;
   }
 
-  /* ---- トップバー ---- */
+  /* ---- トップバー（メニューバー）----
+     上の段に題名、下の段にボタン（ツールの段）の2段（v1.0.12。docs/spec-editor-menubar.md 6章）。
+     ツールの段は折り返さず、横幅が足りないときは横スクロールバーを出す。 */
   #topbar {
     position: sticky;
     top: 0;
     z-index: 10;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 8px 14px;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     box-shadow: var(--topbar-shadow);
   }
+  .topbar-brand-row { padding: 6px 14px 0; }
   .topbar-brand { font-weight: 700; letter-spacing: -0.01em; }
-  .topbar-spacer { flex: 1; }
+  .topbar-tools {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 10px 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+  .topbar-tools > * { flex: none; }
+  .topbar-tools > .topbar-spacer { flex: 1 1 8px; }
+  /* 編集画面だけのボタンの入れ物（一覧画面では空） */
+  .tb-group { display: flex; align-items: center; gap: 4px; }
+  .tb-group:empty { display: none; }
+  .tb-sep { width: 1px; height: 34px; margin: 0 4px; background: var(--border); flex: none; }
+  /* メニューバーの線画アイコン（Tabler Icons・MIT の形） */
+  .tb-svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
   #app {
     max-width: 880px;
@@ -251,17 +266,6 @@
 
   .editor-progress { margin-bottom: 14px; }
   .editor-progress small { color: var(--muted); }
-
-  /* メニューバーは横一列。狭いときだけ折り返す（縦に段を積まない）。 */
-  .editor-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-bottom: 18px;
-  }
-  /* 編集系（フェーズを追加・表紙を編集）は右へ寄せる */
-  .editor-toolbar .tb-edit { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
 
   /* ツールバーのドロップダウン（rb-palette と同系の軽量ポップオーバー） */
   .tb-menu {
@@ -1657,12 +1661,17 @@
 </head>
 <body>
   <div id="topbar">
-    <span class="topbar-brand">✓ チェックリスト</span>
+    <div class="topbar-brand-row"><span class="topbar-brand">✓ チェックリスト</span></div>
+    <div class="topbar-tools">
+    <!-- 編集画面だけのボタン（ファイルで出力〜表紙を編集・手順／フェーズを追加）は updateTopbarEditor が入れる -->
+    <span class="tb-group tb-editor-main"></span>
     <span class="topbar-spacer"></span>
+    <span class="tb-group tb-editor-add"></span>
     <button class="icon" data-action="undo" aria-label="元に戻す"
             data-tip="直前の操作を取り消します（Ctrl+Z）"><span class="tb-ic">↶</span><span class="tb-lb">元に戻す</span></button>
     <button class="icon" data-action="redo" aria-label="やり直す"
             data-tip="取り消した操作をやり直します（Ctrl+Y）"><span class="tb-ic">↷</span><span class="tb-lb">やり直す</span></button>
+    <span class="tb-sep" aria-hidden="true"></span>
     <button class="icon" data-action="record" aria-label="キャプチャ撮影"
             data-tip="録画ガジェットを開きます。クリックするたびに画面を自動で撮影します。F9 キーで1枚だけ撮ることもできます">
       <span class="tb-ic">
@@ -1689,6 +1698,7 @@
       </span>
       <span class="tb-lb">画像インポート</span>
     </button>
+    </div>
   </div>
 
   <main id="app"></main>
@@ -2464,12 +2474,16 @@
         '</head>\n' +
         '<body>\n' +
         '  <div id="topbar">\n' +
-        '    <span class="topbar-brand">✓ チェックリスト</span>\n' +
+        '    <div class="topbar-brand-row"><span class="topbar-brand">✓ チェックリスト</span></div>\n' +
+        '    <div class="topbar-tools">\n' +
+        '    <span class="tb-group tb-editor-main"></span>\n' +
         '    <span class="topbar-spacer"></span>\n' +
+        '    <span class="tb-group tb-editor-add"></span>\n' +
         '    <button class="icon" data-action="undo" aria-label="元に戻す" data-tip="直前の操作を取り消します（Ctrl+Z）">' +
         '<span class="tb-ic">↶</span><span class="tb-lb">元に戻す</span></button>\n' +
         '    <button class="icon" data-action="redo" aria-label="やり直す" data-tip="取り消した操作をやり直します（Ctrl+Y）">' +
         '<span class="tb-ic">↷</span><span class="tb-lb">やり直す</span></button>\n' +
+        '    </div>\n' +
         '  </div>\n' +
         '  <main id="app"></main>\n' +
         '  <input id="file-input" type="file" accept="application/json,.json,text/html,.html" hidden />\n' +
@@ -3044,32 +3058,6 @@
             <div class="progress"><div class="progress-bar" style="width:${p.percent}%"></div></div>
             <small>${p.done} / ${p.total} 完了（${p.percent}%）${timeNote}</small>
           </div>
-          <div class="editor-toolbar">
-            <button class="btn" data-action="menu-export"
-                    data-tip="Word・Excel・PDF・HTML などのファイルに書き出します">ファイルで出力 ▾</button>
-            <button class="btn" data-action="print"
-                    data-tip="印刷プレビューを開きます。用紙サイズ・向き・倍率を指定できます">印刷</button>
-            ${
-              window.guideAPI
-                ? `<button class="btn" data-action="menu-run" ${p.total ? '' : 'disabled '}data-tip="手順を1つずつ大きく表示して、チェックを付けながら順番に進めます。全画面と、作業しながら見られる小窓のどちらかを選べます。">作業を開始 ▾</button>`
-                : `<button class="btn" data-action="play" ${p.total ? '' : 'disabled '}data-tip="手順を1つずつ全画面で大きく表示して、チェックを付けながら順番に進めます。">作業を開始</button>`
-            }
-            ${
-              isTemplate
-                ? `<button class="btn" data-action="reset"
-                           data-tip="すべてのチェックを外して、最初から実施できる状態に戻します">作業をリセット</button>`
-                : `<button class="btn" data-action="clear-completed"
-                           data-tip="チェック済みの項目をまとめて削除します">完了を削除</button>`
-            }
-            <span class="tb-edit">
-              ${
-                isTemplate
-                  ? `<button class="btn" data-action="cover"
-                             data-tip="Word・PDF の先頭に付ける表紙を作成・編集します">表紙を編集</button>`
-                  : ''
-              }
-            </span>
-          </div>
           ${
             isTemplate && checklist.coverPage && checklist.coverPage.enabled
               ? `<div class="cover-card">
@@ -3082,6 +3070,64 @@
           <div class="sections">${sections}</div>
         </section>`;
     }
+    // ---- メニューバーの編集画面用ボタン（docs/spec-editor-menubar.md 6章・v1.0.12）----
+    // 以前は編集画面の上の段（.editor-toolbar）にあったボタンを、メニューバーのツールの段へ移した。
+    // 左側に「ファイルで出力〜表紙を編集」、右側の「元に戻す」の左に「手順を追加」「フェーズを追加」。
+    // アイコンは Tabler Icons（MIT ライセンス・https://tabler.io/icons）の形を線画のまま使う。
+    const TB_SVG = (paths) => `<svg class="tb-svg" viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
+    const TB_ICONS = {
+      export: TB_SVG('<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M11.5 21h-4.5a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v5m-5 6h7m-3 -3l3 3l-3 3"/>'),
+      print: TB_SVG('<path d="M17 17h2a2 2 0 0 0 2 -2v-4a2 2 0 0 0 -2 -2h-14a2 2 0 0 0 -2 2v4a2 2 0 0 0 2 2h2"/><path d="M17 9v-4a2 2 0 0 0 -2 -2h-6a2 2 0 0 0 -2 2v4"/><path d="M7 15a2 2 0 0 1 2 -2h6a2 2 0 0 1 2 2v4a2 2 0 0 1 -2 2h-6a2 2 0 0 1 -2 -2z"/>'),
+      play: TB_SVG('<path d="M7 4v16l13 -8z"/>'),
+      reset: TB_SVG('<path d="M19.95 11a8 8 0 1 0 -.5 4m.5 5v-5h-5"/>'),
+      cover: TB_SVG('<path d="M19 4v16h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h12z"/><path d="M19 16h-12a2 2 0 0 0 -2 2"/><path d="M9 8h6"/>'),
+      clear: TB_SVG('<path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12"/><path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3"/>'),
+      addStep: TB_SVG('<path d="M20 6v4a1 1 0 0 1 -1 1h-14a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1h14a1 1 0 0 1 1 1z"/><path d="M12 15v4"/><path d="M14 17h-4"/>'),
+      addSection: TB_SVG('<path d="M9 12h6"/><path d="M12 9v6"/><path d="M4 6v-1a1 1 0 0 1 1 -1h1m5 0h2m5 0h1a1 1 0 0 1 1 1v1m0 5v2m0 5v1a1 1 0 0 1 -1 1h-1m-5 0h-2m-5 0h-1a1 1 0 0 1 -1 -1v-1m0 -5v-2m0 -5"/>'),
+    };
+    function tbButton(action, label, tip, icon, { menu = false } = {}) {
+      return `<button class="icon" data-action="${action}" aria-label="${label}" data-tip="${tip}">` +
+        `<span class="tb-ic">${icon}</span><span class="tb-lb">${label}${menu ? ' ▾' : ''}</span></button>`;
+    }
+    // 戻り値 { main: 左側のボタン, add: 「元に戻す」の左のボタン（区切り線つき） }
+    function renderTopbarEditor(checklist) {
+      const isTemplate = checklist.type === MODES.TEMPLATE;
+      const stepWord = isTemplate ? '手順' : '項目';
+      const secWord = isTemplate ? 'フェーズ' : 'セクション';
+      const main = [
+        tbButton('menu-export', 'ファイルで出力', 'Word・Excel・PDF・HTML などのファイルに書き出します', TB_ICONS.export, { menu: true }),
+        tbButton('print', '印刷', '印刷プレビューを開きます。用紙サイズ・向き・倍率を指定できます', TB_ICONS.print),
+        window.guideAPI
+          ? tbButton('menu-run', '作業を開始', '手順を1つずつ大きく表示して、チェックを付けながら順番に進めます。全画面と、作業しながら見られる小窓のどちらかを選べます。', TB_ICONS.play, { menu: true })
+          : tbButton('play', '作業を開始', '手順を1つずつ全画面で大きく表示して、チェックを付けながら順番に進めます。', TB_ICONS.play),
+        isTemplate
+          ? tbButton('reset', '作業をリセット', 'すべてのチェックを外して、最初から実施できる状態に戻します', TB_ICONS.reset)
+          : tbButton('clear-completed', '完了を削除', 'チェック済みの項目をまとめて削除します', TB_ICONS.clear),
+        isTemplate ? tbButton('cover', '表紙を編集', 'Word・PDF の先頭に付ける表紙を作成・編集します', TB_ICONS.cover) : '',
+      ].join('');
+      const add = [
+        tbButton('add-step-here', `${stepWord}を追加`,
+          `最後に入力した${stepWord}のすぐ下に、新しい${stepWord}を追加します（まだ入力していなければ最後に追加します）`, TB_ICONS.addStep),
+        tbButton('add-section-here', `${secWord}を追加`,
+          `最後に入力した${stepWord}がある${secWord}のすぐ下に、新しい${secWord}を追加します（まだ入力していなければ最後に追加します）`, TB_ICONS.addSection),
+        '<span class="tb-sep" aria-hidden="true"></span>',
+      ].join('');
+      return { main, add };
+    }
+    // 「手順を追加」「フェーズを追加」の入れる場所。基準は最後に入力した手順（itemId）。
+    // 見つからない（まだ入力していない・消えた・別のチェックリストの手順）ときは最後。
+    // -- 純関数（テスト対象。window.__test__ に公開） --
+    // 戻り値 { sectionIndex, itemIndex（その位置に入れる）, found }。フェーズが無ければ sectionIndex は -1。
+    function addHerePosition(checklist, itemId) {
+      const secs = (checklist && checklist.sections) || [];
+      for (let si = 0; si < secs.length; si++) {
+        const ii = (secs[si].items || []).findIndex((x) => x.id === itemId);
+        if (ii >= 0) return { sectionIndex: si, itemIndex: ii + 1, found: true };
+      }
+      const last = secs.length - 1;
+      return { sectionIndex: last, itemIndex: last < 0 ? 0 : (secs[last].items || []).length, found: false };
+    }
+
     // type/startNo を受け取り、テンプレート時は手順タイムライン、ToDo時は通常リストを描く
     function renderSection(section, prog, type, startNo) {
       const isTemplate = type === MODES.TEMPLATE;
@@ -3245,8 +3291,8 @@
     const THUMBS_W_MAX = 520;  // #app は max-width:880px の中央寄せ。本文を潰さない上限
     const THUMBS_W_COLLAPSED = 30;
     const THUMBS_W_STEP = 16;  // キーボード（←/→）での1回ぶん
-    const THUMBS_EDITOR_MIN_W = 520; // 本文側に必ず残す幅。#topbar は flex-wrap しないので
-                                     // ここを削ると横スクロールが出てしまう
+    const THUMBS_EDITOR_MIN_W = 520; // 本文側に必ず残す幅。メニューバーのツールの段は折り返さず
+                                     // 横スクロールになるので、ここを削るとボタンの多くが隠れる
     // -- 純関数（テスト対象。window.__test__ に公開） --
     // 保存幅を使える値に丸める。窓が狭いときは本文ぶんを残せる幅までしか許さない。
     function clampThumbsWidth(px, viewportW) {
@@ -5893,6 +5939,27 @@
       document.querySelector('[data-action="redo"]').disabled = !store.canRedo();
       updateRecordButton();
       updateImportButton();
+      updateTopbarEditor();
+    }
+    // メニューバーに編集画面用のボタンを入れる（一覧画面では空にする）。入力のたびの保存
+    //（commitInPlace）でも updateTopbar は走るので、作り直すのはチェックリストの id か種類が
+    // 変わったときだけにする（毎回作り直すと、ホバー中の説明や開いたメニューが壊れ、
+    // 入力欄の blur → click の間にボタンが消えて押せなくなる）。それ以外は「作業を開始」の可否だけ直す。
+    let topbarEditorKey = null;
+    function updateTopbarEditor() {
+      const main = document.querySelector('#topbar .tb-editor-main');
+      const add = document.querySelector('#topbar .tb-editor-add');
+      if (!main || !add) return;
+      const c = currentChecklist();
+      const key = c ? `${c.id}|${c.type}` : '';
+      if (key !== topbarEditorKey) {
+        topbarEditorKey = key;
+        const parts = c ? renderTopbarEditor(c) : { main: '', add: '' };
+        main.innerHTML = parts.main;
+        add.innerHTML = parts.add;
+      }
+      const run = main.querySelector('[data-action="menu-run"], [data-action="play"]');
+      if (run) run.disabled = !(c && progress(c).total);
     }
     // 所要時間の表示（ヘッダの総所要・セクション別の⏱分）だけを部分更新する。
     // 時間入力の保存は commitInPlace（再描画なし）のため、派生表示はここで追随させる。
@@ -10143,6 +10210,15 @@
       // 本文の手順にフォーカスが入ったら、サイドバーの選択はその1件に戻す（複数選択 v1.0.8）
       if (thumbSel.size !== 1 || !thumbSel.has(row.dataset.item)) setThumbSelection([row.dataset.item], row.dataset.item);
     });
+    // 入力欄の無い所（番号・画像・↑↓ など）を押したときも、その手順を「今さわっている手順」にする。
+    // メニューバーの「手順を追加」「フェーズを追加」はこの手順を基準に入れる（v1.0.12・仕様
+    // docs/spec-editor-menubar.md 6章）。サイドバーの選択（複数選択）はフォーカスのときだけ畳む。
+    document.addEventListener('pointerdown', (e) => {
+      if (!document.body.classList.contains('has-thumbs')) return;
+      if (!app.contains(e.target)) return;
+      const row = e.target.closest('.item');
+      if (row && row.dataset.item !== currentItemId) markCurrentThumb(row.dataset.item);
+    }, true);
 
     // ---- Ctrl+Z／Ctrl+Shift+Z／Ctrl+Y をアプリの元に戻す・やり直すにつなぐ（v1.0.8）----
     // 入力欄・リッチ本文の中では文字の取り消しをブラウザに任せる。画像編集・モーダル・実行モードは
@@ -10266,6 +10342,11 @@
     document.addEventListener('click', hideTip); // ボタンを押したら用は済んでいるので消す
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { tbCloseMenu(); hideTip(); } });
     window.addEventListener('scroll', hideTip, true);
+    // メニューバーのツールの段を横にスクロールしたら、開いているメニューを閉じる
+    //（メニューは position: fixed なので、ボタンだけが動いて離れてしまう）
+    window.addEventListener('scroll', (e) => {
+      if (e.target && e.target.classList && e.target.classList.contains('topbar-tools')) tbCloseMenu();
+    }, true);
 
     // ---- イベント委譲 ----
     document.addEventListener('click', (e) => {
@@ -10348,6 +10429,29 @@
             const cc = M.findChecklist(s, c.id);
             M.addSection(cc, '', at);
             const added = cc.sections[Math.max(0, Math.min(cc.sections.length - 1, at))];
+            pendingFocusSection = added ? added.id : null; // 追加した見出しへ再描画後にフォーカス
+          });
+        }
+        case 'add-step-here': { // メニューバー「手順を追加」: 最後に入力した手順のすぐ下（無ければ最後）
+          if (!c) return;
+          const blank = M.createItem('');
+          pendingFocusItem = blank.id; // 追加後にその入力欄へ
+          return store.commit((s) => {
+            const cc = M.findChecklist(s, c.id);
+            const at = addHerePosition(cc, currentItemId);
+            if (at.sectionIndex < 0) { M.addSection(cc, ''); at.sectionIndex = 0; at.itemIndex = 0; } // フェーズが無ければ作る
+            cc.sections[at.sectionIndex].items.splice(at.itemIndex, 0, blank);
+            cc.updatedAt = Date.now();
+          });
+        }
+        case 'add-section-here': { // メニューバー「フェーズを追加」: 最後に入力した手順のフェーズのすぐ下（無ければ最後）
+          if (!c) return;
+          return store.commit((s) => {
+            const cc = M.findChecklist(s, c.id);
+            const at = addHerePosition(cc, currentItemId);
+            const idx = at.found ? at.sectionIndex + 1 : cc.sections.length;
+            M.addSection(cc, '', idx);
+            const added = cc.sections[Math.min(idx, cc.sections.length - 1)];
             pendingFocusSection = added ? added.id : null; // 追加した見出しへ再描画後にフォーカス
           });
         }
@@ -10537,6 +10641,10 @@
     // 編集画面ヘッダーの固定位置（top）に使うトップバー高さを実測して CSS 変数へ反映。
     syncTopbarHeight();
     window.addEventListener('resize', syncTopbarHeight);
+    // ツールの段の横スクロールバーの出入りや、編集画面と一覧画面の切り替えでも高さが変わる
+    if (window.ResizeObserver && document.getElementById('topbar')) {
+      new ResizeObserver(syncTopbarHeight).observe(document.getElementById('topbar'));
+    }
     // サイドバーの幅ドラッグ。窓を縮めたときは保存幅を上限で丸め直す（保存値は変えない）。
     initThumbsResize();
     window.addEventListener('resize', applyThumbsChrome);
@@ -10621,6 +10729,8 @@
         printDocParts, printItemHtml, composePrintPages, previewSheetsHtml, openPrintPreview,
         // ↑↓ で動かした手順を画面上の同じ位置に残す（v1.0.12）
         keepPositionScrollDelta,
+        // メニューバーの編集画面用ボタンと、手順／フェーズを追加する位置（v1.0.12）
+        renderTopbarEditor, addHerePosition,
         // サムネイルサイドバー
         thumbStepModel, renderThumbSidebar, updateThumbSidebar, thumbsCollapsed, setThumbsCollapsed,
         clampThumbsWidth, thumbsWidth, setThumbsWidth,
