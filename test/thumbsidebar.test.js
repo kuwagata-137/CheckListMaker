@@ -94,8 +94,8 @@ test('thumbsidebar — 画面への出方', async (t) => {
         ['1', '2', '3', '4'],
         '通し番号が本文と揃う'
       );
-      // ドラッグの掴み手と削除ボタンがカードごとに付く
-      assert.equal(sidebar.querySelectorAll('.tsb-grip').length, 4);
+      // 削除ボタンがカードごとに付く。掴み手（⠿）はカードのどこを掴んでも動くので出さない（v1.0.12）
+      assert.equal(sidebar.querySelectorAll('.tsb-grip').length, 0);
       assert.equal(sidebar.querySelectorAll('[data-action="delete-item"]').length, 4);
       // 画像なしの手順はプレースホルダ、ある手順は img
       assert.equal(sidebar.querySelectorAll('.tsb-noimg').length, 3);
@@ -118,8 +118,8 @@ test('thumbsidebar — 画面への出方', async (t) => {
       assert.equal(sidebar.querySelectorAll('.tsb-card').length, 1);
       // 区切りの呼び名はテンプレート型の「フェーズ」ではなく「セクション」
       assert.equal(sidebar.querySelector('.tsb-phase-head .nm').textContent, 'セクション 1');
-      assert.equal(sidebar.querySelector('.tsb-grip').getAttribute('title'),
-        'ドラッグで並べ替え（セクション間も可）');
+      assert.match(sidebar.querySelector('.tsb-card').getAttribute('title'),
+        /\nドラッグで並べ替え（セクション間も可）$/, '並べ替えの説明はカードの title の2行目');
       assert.equal(sidebar.querySelector('.tsb-card button').getAttribute('title'), 'この項目を削除');
     } finally {
       app.close();

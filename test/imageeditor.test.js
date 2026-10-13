@@ -478,3 +478,49 @@ test('imageeditor — 表示倍率 100%＝一覧での見た目・線の太さ�
     near(T.prevToCanvasPx(6, NaN), 6, '換算率が壊れていたら 1 とみなす');
   });
 });
+
+test('imageeditor — translateObj（矢印キーでの移動・ドラッグ移動・トリミングの共通の平行移動。仕様 23章）', async (t) => {
+  const app = bootApp();
+  t.after(() => app.close());
+  const T = await app.api();
+
+  await t.test('線・矢印は両端が動く', () => {
+    for (const type of ['line', 'arrow']) {
+      const o = { type, x1: 1, y1: 2, x2: 30, y2: 40 };
+      T.translateObj(o, o, 5, -3);
+      assert.deepEqual(plain(o), { type, x1: 6, y1: -1, x2: 35, y2: 37 }, type);
+    }
+  });
+
+  await t.test('四角・丸・×印・テキストは左上だけが動き、大きさと回転は変わらない', () => {
+    for (const type of ['rect', 'ellipse', 'cross', 'text']) {
+      const o = { type, x: 10, y: 20, w: 100, h: 60, rot: 30 };
+      T.translateObj(o, o, -2.5, 4);
+      assert.deepEqual(plain(o), { type, x: 7.5, y: 24, w: 100, h: 60, rot: 30 }, type);
+    }
+  });
+
+  await t.test('多角形は全頂点が動く（頂点が無くても落ちない）', () => {
+    const o = { type: 'freeform', pts: [{ x: 0, y: 0 }, { x: 10, y: 5 }, { x: 3, y: 9 }], closed: true };
+    T.translateObj(o, o, 1, 2);
+    assert.deepEqual(plain(o.pts), [{ x: 1, y: 2 }, { x: 11, y: 7 }, { x: 4, y: 11 }]);
+    const empty = { type: 'freeform' };
+    T.translateObj(empty, empty, 1, 2);
+    assert.deepEqual(plain(empty.pts), []);
+  });
+
+  await t.test('吹き出しは本体と尻尾が一緒に動く', () => {
+    const o = { type: 'callout', x: 50, y: 60, tip: { x: 70, y: 120 } };
+    T.translateObj(o, o, 10, 10);
+    assert.deepEqual(plain(o), { type: 'callout', x: 60, y: 70, tip: { x: 80, y: 130 } });
+  });
+
+  await t.test('src を基準に dst へ書く（ドラッグ移動。src は変わらない）', () => {
+    const src = { type: 'callout', x: 50, y: 60, tip: { x: 70, y: 120 } };
+    const dst = plain(src);
+    T.translateObj(dst, src, 3, 4);
+    T.translateObj(dst, src, 3, 4); // 同じ差を2回渡しても累積しない
+    assert.deepEqual(plain(dst), { type: 'callout', x: 53, y: 64, tip: { x: 73, y: 124 } });
+    assert.deepEqual(plain(src), { type: 'callout', x: 50, y: 60, tip: { x: 70, y: 120 } });
+  });
+});

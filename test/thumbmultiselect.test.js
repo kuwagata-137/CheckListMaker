@@ -61,12 +61,12 @@ function dragEvent(win, type, clientY = 0) {
   Object.defineProperty(ev, 'clientY', { value: clientY });
   return ev;
 }
-// ⠿ を掴んで target の上（clientY=0＝上半分）か下（1＝下半分）に落とす。jsdom は矩形が 0 なので
+// カードを掴んで target の上（clientY=0＝上半分）か下（1＝下半分）に落とす。jsdom は矩形が 0 なので
 // 中点は 0。clientY 1 が「下半分＝後ろへ」、0 が「上半分＝前へ」になる。
 function dragCard(ctx, fromId, toEl, clientY) {
   const { win, card } = ctx;
   const src = card(fromId);
-  src.querySelector('.tsb-grip').dispatchEvent(new win.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+  src.dispatchEvent(new win.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
   src.dispatchEvent(dragEvent(win, 'dragstart'));
   toEl.dispatchEvent(dragEvent(win, 'dragover', clientY));
   toEl.dispatchEvent(dragEvent(win, 'drop', clientY));
@@ -283,7 +283,7 @@ test('thumbmultiselect — まとめてドラッグ・ドロップ後の片づ�
   });
 });
 
-// v1.0.11: サイドバーのカードは ⠿ だけでなく、どこを掴んでも並べ替えられる。
+// v1.0.11: サイドバーのカードは ⠿ だけでなく、どこを掴んでも並べ替えられる（v1.0.12 で ⠿ 自体を無くした）。
 test('thumbmultiselect — カードのどこを掴んでもドラッグできる', async (t) => {
   // part を押してからドラッグを始め、target の上半分（前）／下半分（後ろ）へ落とす
   const dragFrom = (c, fromId, part, toEl, clientY) => {
