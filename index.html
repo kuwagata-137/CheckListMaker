@@ -7533,6 +7533,21 @@
       return mode === 'move' || mode === 'p1' || mode === 'p2'
         || mode === 'tip' || mode.startsWith('pt');
     }
+    // 図形を平行移動する（src の位置 ＋ (dx, dy) を dst に書く）。種類ごとに位置の持ち方が違うので
+    // 1か所にまとめる：線・矢印＝両端、多角形＝全頂点、それ以外＝左上、吹き出しは尻尾も。
+    // dst === src でもよい（その場で動かす。矢印キーでの移動。仕様 23章）。回転・大きさには触らない
+    //（回転の軸も一緒に動くので、回転した図形もそのまま平行移動される）。
+    function translateObj(dst, src, dx, dy) {
+      if (src.type === 'arrow' || src.type === 'line') {
+        dst.x1 = src.x1 + dx; dst.y1 = src.y1 + dy; dst.x2 = src.x2 + dx; dst.y2 = src.y2 + dy;
+      } else if (src.type === 'freeform') {
+        dst.pts = (src.pts || []).map((pt) => ({ x: pt.x + dx, y: pt.y + dy }));
+      } else {
+        dst.x = src.x + dx; dst.y = src.y + dy;
+      }
+      if (src.tip) dst.tip = { x: src.tip.x + dx, y: src.tip.y + dy };
+      return dst;
+    }
     // 選択オブジェクトのドラッグ（移動・端点・四隅/辺・頂点・尻尾）を適用する。
     // d.orig（ドラッグ開始時の複製）基準で差分を足すので累積誤差が出ない。
     // shift: 水平・垂直に拘束する（省略時は拘束しない＝従来どおり）。
@@ -7554,10 +7569,7 @@
         if (Math.abs(dx) >= Math.abs(dy)) dy = 0; else dx = 0;
       }
       if (d.mode === 'move') {
-        if (o.type === 'arrow' || o.type === 'line') { o.x1 = s.x1 + dx; o.y1 = s.y1 + dy; o.x2 = s.x2 + dx; o.y2 = s.y2 + dy; }
-        else if (o.type === 'freeform') { o.pts = s.pts.map((pt) => ({ x: pt.x + dx, y: pt.y + dy })); }
-        else { o.x = s.x + dx; o.y = s.y + dy; }
-        if (o.tip) { o.tip.x = s.tip.x + dx; o.tip.y = s.tip.y + dy; }
+        translateObj(o, s, dx, dy);
       } else if (d.mode === 'p1') { o.x1 = s.x1 + dx; o.y1 = s.y1 + dy; }
       else if (d.mode === 'p2') { o.x2 = s.x2 + dx; o.y2 = s.y2 + dy; }
       else if (d.mode === 'tip') { // 吹き出しの尻尾（tip はローカル座標なので差分もローカルへ）
@@ -7740,6 +7752,9 @@
       let lastDefaultTool = 'select'; // 描画ツール中に右クリックしたときの戻り先
       const undoStack = [];
       const redoStack = []; // やり直し（Redo）。新規操作で空になる
+      // 矢印キーで続けて動かした分を元に戻す1回にまとめる印（選択中の id を連ねたもの）。
+      // pushUndo のたびに空へ戻すので、ほかの操作が挟まると次の矢印は別の1回になる（仕様 23章）。
+      let nudgeGestureFor = null;
 
       // ---- ベクター注釈オブジェクト ----
       // 矢印・直線・四角・丸・テキスト・吹き出しはラスタライズせずオブジェクトとして
@@ -8241,9 +8256,12 @@
         if (!DRAW_TOOLS.includes(t)) return;
         if (t === lastDrawTool) return;
         lastDrawTool = t;
-        lineNone = false;
+        // テキストは枠線なしで始める（線色を選んだときだけ枠線が付く。仕様 24章）。
+        // colorInput には既定の赤を残す（線色を選び直すときの元の色）。
+        lineNone = t === 'text';
         colorInput.value = DEFAULT_LINE_COLOR;
-        fillValue = null;
+        // 吹き出しは白地で始める。「塗りつぶしなし」を選んだときだけ透明にする（仕様 24章）。
+        fillValue = t === 'callout' ? '#ffffff' : null;
         textColorValue = DEFAULT_LINE_COLOR;
         nextSize = DEFAULT_SIZE;
         sizeInput.value = DEFAULT_SIZE;
@@ -8290,6 +8308,7 @@
         };
       }
       function pushUndo() {
+        nudgeGestureFor = null;
         try { undoStack.push(snapshotEdit()); } catch (_) {}
         if (undoStack.length > IE_HISTORY_MAX) undoStack.shift();
         redoStack.length = 0; // 新規操作でやり直し履歴は消える（一般的な履歴規約）
@@ -8920,6 +8939,12 @@
         ta.style.left = (canvas.offsetLeft + pos.x * scale) + 'px';
         ta.style.top = (canvas.offsetTop + pos.y * scale) + 'px';
         ta.style.color = textCol;
+        // 入力中の欄にも、できあがりの塗りと枠線の色を映す（仕様 24章）。
+        // どちらも無いときは CSS の既定（白92%の背景・青い破線）のまま。
+        const boxFill = existing ? existing.fill : fillValue;
+        const boxLine = existing ? existing.color : lineColor();
+        if (boxFill) ta.style.background = boxFill;
+        if (boxLine) { ta.style.borderColor = boxLine; ta.style.borderStyle = 'solid'; }
         const applyTaStyle = () => { ta.style.font = objFont(fmt, scale); };
         applyTaStyle();
         canvasWrap.appendChild(ta);
@@ -8969,7 +8994,7 @@
           const obj = {
             id: newObjId(), type: 'text', x: pos.x, y: pos.y, text,
             fs: fmt.fs, bold: fmt.bold, italic: fmt.italic,
-            textColor: textCol, color: null, fill: fillValue, // 新規テキストの枠線は無し（後から線色で付けられる）
+            textColor: textCol, color: lineColor(), fill: fillValue, // そのときの線色・塗りを反映（仕様 24章）
             size: curSize(), u: fsScale(), opacity: toolAlpha('text'),
           };
           objects.push(obj);
@@ -9037,7 +9062,7 @@
           if (activeCallout !== ac) return;
           // 編集中の見た目は本体だけ描き、文字は textarea 側に出す。
           const color = existing ? existing.color : lineColor();
-          const fill = existing ? existing.fill : (fillValue || '#ffffff');
+          const fill = existing ? existing.fill : fillValue; // 吹き出しへ切り替えた直後は白（仕様 24章）
           const textCol = existing ? existing.textColor : textColorValue;
           const size = existing ? existing.size : curSize();
           const u = existing ? existing.u : fsScale();
@@ -9125,7 +9150,7 @@
           id: newObjId(), type: 'callout', x: ac.x, y: ac.y, text,
           fs: ac.fs, bold: ac.bold, italic: ac.italic,
           tip: { x: ac.tip.x, y: ac.tip.y },
-          color: lineColor(), fill: fillValue || '#ffffff', textColor: textColorValue,
+          color: lineColor(), fill: fillValue, textColor: textColorValue, // 塗りなしも選べる（仕様 24章）
           size: curSize(), u: fsScale(), opacity: toolAlpha('callout'),
         };
         objects.push(obj);
@@ -9259,12 +9284,7 @@
         annoCtx.drawImage(tak, 0, 0);
         // オブジェクトは切り出し位置に合わせて平行移動する（範囲外に出たものも
         // 消さずに残す＝描画時にクリップされるだけで、移動で戻せる）。
-        objects.forEach((o) => {
-          if (o.type === 'arrow' || o.type === 'line') { o.x1 -= rx; o.y1 -= ry; o.x2 -= rx; o.y2 -= ry; }
-          else if (o.type === 'freeform') { (o.pts || []).forEach((pt) => { pt.x -= rx; pt.y -= ry; }); }
-          else { o.x -= rx; o.y -= ry; }
-          if (o.tip) { o.tip.x -= rx; o.tip.y -= ry; }
-        });
+        objects.forEach((o) => translateObj(o, o, -rx, -ry));
         cropMode = false; cropRect = null; cropDrag = null;
         if (cropActions) cropActions.hidden = true;
         selectTool('select');
@@ -9376,6 +9396,12 @@
 
       canvas.addEventListener('pointerdown', (e) => {
         e.preventDefault();
+        // ツールバーのスライダー・数値欄に残ったフォーカスを外す。preventDefault でフォーカスが
+        // キャンバスへ移らないため、そのままだと矢印キーがスライダーの値を変えてしまい、
+        // Delete・Ctrl+Z も効かない（仕様 23章）。数値欄は blur で確定する（欄の外クリックと同じ）。
+        // テキスト・吹き出しの入力欄は、下のそれぞれの処理で確定させる。
+        const fe = document.activeElement;
+        if (fe && overlay.contains(fe) && !fe.matches('textarea')) fe.blur();
         // 右ボタンは contextmenu（右クリック削除メニュー）に任せる。
         // ここを素通しすると右ドラッグで描画・選択が始まってしまう。
         // （左を押したままの右押下は通常 pointermove で届くが、別ポインタとして来た場合の保険）
@@ -9389,6 +9415,7 @@
           return;
         }
         colorGestureFor = null;
+        nudgeGestureFor = null;
         const p = xy(e);
         // 吹き出し編集中：先端付近を掴めば尻尾ドラッグ、それ以外を押したら確定のみ。
         if (activeCallout) {
@@ -9791,7 +9818,7 @@
           '何も無い所を右クリックすると、この2つが入れ替わります。',
           '描画ツールを使っている最中に右クリックすると、直前の既定モードへ戻ります（描きかけは取りやめ）。',
           '左ボタンを押したまま右クリックすると、その場で「選択」と「ハンド」が入れ替わります（どちらのボタンを先に離しても同じです）。',
-          '別の描画ツールに切り替えると、線色・塗りつぶし・文字色・線の太さは既定に戻ります（同じツールに戻ったときはそのままです）。',
+          '別の描画ツールに切り替えると、線色・塗りつぶし・文字色・線の太さは既定に戻ります（同じツールに戻ったときはそのままです）。テキストは「線なし」、吹き出しは白の塗りから始まります。',
           '同じツールで描き続けている間は、これらの設定は図形を置いても保持されます。選択中の図形に加えた変更（太さ・色・透過率）も、次に描く図形へそのまま引き継がれます。',
         ]],
         ['色と書式', [
@@ -9804,6 +9831,10 @@
           '文字サイズ・太字・斜体は、テキストか吹き出しを使っているときだけ出ます。',
           '文字サイズと線の太さの数字は「手順の一覧で表示される大きさ（px）」です。大きなスクリーンショットでも、文字 14 なら一覧でおよそ14pxの文字、太さ 2 ならおよそ2pxの線になります（新しく描くときの既定は文字 14・太さ 2）。トリミングしたあとも、切り出した画像が一覧で見える大きさを基準に入ります。',
           '透過率はツールごとに覚えます（0%＝不透明）。',
+        ]],
+        ['位置の微調整', [
+          '図形を選んで矢印キー（<kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd>）を押すと、画面上で1pxずつ動きます。<kbd>Shift</kbd>＋矢印キーで10pxずつ動きます。',
+          '複数選んでいれば、まとめて動きます。続けて押した分は、元に戻す1回で戻ります。',
         ]],
         ['取り消し', [
           '元に戻す＝<kbd>Ctrl</kbd>+<kbd>Z</kbd>、やり直す＝<kbd>Ctrl</kbd>+<kbd>Y</kbd>（<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>も同じ）。',
@@ -9872,6 +9903,9 @@
         } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && selectedIds.length && !inField) {
           ev.preventDefault();
           deleteSelection();
+        } else if (ev.key.startsWith('Arrow') && !ev.ctrlKey && !ev.metaKey && !ev.altKey && canNudge(inField)) {
+          ev.preventDefault(); // 画面（エディタの枠）がスクロールしないように
+          nudgeSelection(ev.key, ev.shiftKey);
         } else if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && !inField && ev.key.toLowerCase() === 'z') {
           // Ctrl+Z＝元に戻す / Ctrl+Shift+Z＝やり直す（テキスト入力中は素通し）
           ev.preventDefault();
@@ -9881,6 +9915,21 @@
           ev.preventDefault();
           redoEdit();
         }
+      }
+      // ---- 矢印キーで選択中の図形を動かす（仕様 23章）----
+      // 1回＝画面上の1px、Shift で10px（表示倍率によらず見た目の動きを一定にするため dispScale を掛ける）。
+      function canNudge(inField) {
+        return selectedIds.length > 0 && !inField && !editingText && !activeCallout && !activeFreeform && !cropMode;
+      }
+      function nudgeSelection(key, big) {
+        const step = (big ? 10 : 1) * dispScale();
+        const dx = key === 'ArrowLeft' ? -step : key === 'ArrowRight' ? step : 0;
+        const dy = key === 'ArrowUp' ? -step : key === 'ArrowDown' ? step : 0;
+        if (!dx && !dy) return;
+        const gesture = selectedIds.join(',');
+        if (nudgeGestureFor !== gesture) { pushUndo(); nudgeGestureFor = gesture; }
+        selectedObjs().forEach((o) => translateObj(o, o, dx, dy));
+        recomposite();
       }
       document.addEventListener('keydown', onKey);
       // ドラッグ中に Ctrl／Shift を押した・離したときも即座に反映する。pointermove は
@@ -10496,7 +10545,7 @@
         // 画像一括インポート（フォルダから選択）
         naturalCompareFilenames, wizardStepsFromFiles, makeFilesSource, makeSessionSource,
         // 画像編集の図形ジオメトリ（8ハンドル・フリーフォーム・線分距離）
-        freeformBounds, distSeg, objHandles, applyObjDrag, wrapTextLines, textBoxPadOf, TEXT_WRAP_CHARS,
+        freeformBounds, distSeg, objHandles, applyObjDrag, translateObj, wrapTextLines, textBoxPadOf, TEXT_WRAP_CHARS,
         // 画像編集の色モデル（線・塗り・文字）と多角形の内包判定
         normalizeObjColors, pointInPoly, marqueeRect, rectContainsBounds,
         // 線・矢印の始点スナップと文字サイズの表示px換算（仕様 16章）
