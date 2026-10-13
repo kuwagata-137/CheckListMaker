@@ -3515,6 +3515,54 @@
       el.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
 
+    // ---- ↑↓ で順番を入れ替えた手順を、画面上の同じ位置に残す（docs/spec-move-item-keep-position.md）----
+    // ↑↓ は #app を丸ごと描き直すだけで文書のスクロール量を変えないため、そのままだと画面の同じ高さに
+    // 入れ替わった隣の手順が来る。描き直す前と後で行の上端を測り、差だけスクロールし直す。
+    // ↑↓ は行の1行目に付いているので、行が戻ればボタンもマウスの下に戻り、続けて押せる。
+    // -- 純関数（テスト対象。window.__test__ に公開） --
+    // before/after は同じ行を描き直しの前後に getBoundingClientRect で測った上端、unit はその座標系の
+    // 1 が内部座標の何 px か（printRuler の unit）、zoom は編集ズーム。戻り値は scrollBy に渡す画面 px。
+    function keepPositionScrollDelta(before, after, unit, zoom) {
+      if (before == null || after == null) return 0;
+      const d = Number(after) - Number(before);
+      if (!Number.isFinite(d)) return 0;
+      const u = Number(unit) > 0 ? Number(unit) : 1;
+      const z = Number(zoom) > 0 ? Number(zoom) : 1;
+      return (d / u) * z;
+    }
+    // 行の画面上の上端。ホバーの浮き（ToDo の .item:hover の translateY(-1px)）を外して測る。
+    // 押す前はホバー中、描き直した直後はまだホバーが付かないので、外さないと押すたびに1pxずれる。
+    // transition も止めないと、測った瞬間はまだ浮いたままの値になる。
+    function itemRowTop(itemId) {
+      const row = app.querySelector(`.item[data-item="${CSS.escape(itemId)}"]`);
+      if (!row) return null;
+      const { transform, transition } = row.style;
+      row.style.transition = 'none';
+      row.style.transform = 'none';
+      const top = row.getBoundingClientRect().top;
+      row.style.transition = transition;
+      row.style.transform = transform;
+      return top;
+    }
+    // mutate（store.commit。描き直しまで同期で終わる）の前後で itemId の行を同じ高さに保つ。
+    // スクロール量は整数 px に丸められるので、毎回「今の位置」に合わせると端数が同じ向きにたまり、
+    // 続けて押すたびに少しずつずれる（実測で1回 0.6px ほど）。同じ手順を続けて動かしている間は、
+    // 最初に押したときの高さ（keepItemPin）へ戻す。手でスクロールしたなどで2px以上違えば測り直す。
+    let keepItemPin = null; // { itemId, top }
+    function keepItemOnScreen(itemId, mutate) {
+      const ruler = printRuler(app);
+      const unit = ruler.unit;
+      ruler.remove();
+      const now = itemRowTop(itemId);
+      const pinned = keepItemPin && keepItemPin.itemId === itemId && now != null
+        && Math.abs(keepItemPin.top - now) < 2 * unit;
+      if (!pinned) keepItemPin = now == null ? null : { itemId, top: now };
+      const before = pinned ? keepItemPin.top : now;
+      mutate();
+      const dy = Math.round(keepPositionScrollDelta(before, itemRowTop(itemId), unit, editorZoom));
+      if (dy) window.scrollBy({ top: dy, behavior: 'instant' });
+    }
+
     // 編集画面の表示ズーム: Ctrl+ホイールで編集内容(#app)を拡大縮小する。トップバーは
     // 等倍のまま。トラックパッドのピンチも ctrlKey 付き wheel として届くので同じく効く。
     let editorZoom = 1;
@@ -5351,11 +5399,16 @@
         const op = e.target.closest('[data-iw]');
         if (!op || op.disabled) return;
         const kind = op.dataset.iw;
-        if (kind === 'up' && i > 0) { const [x] = steps.splice(i, 1); steps.splice(i - 1, 0, x); }
-        if (kind === 'down' && i < steps.length - 1) { const [x] = steps.splice(i, 1); steps.splice(i + 1, 0, x); }
+        const before = row.getBoundingClientRect().top;
+        let movedTo = -1;
+        if (kind === 'up' && i > 0) { const [x] = steps.splice(i, 1); steps.splice(i - 1, 0, x); movedTo = i - 1; }
+        if (kind === 'down' && i < steps.length - 1) { const [x] = steps.splice(i, 1); steps.splice(i + 1, 0, x); movedTo = i + 1; }
         if (kind === 'merge') wizardMergeUp(steps, i);
         if (kind === 'del') steps.splice(i, 1);
         renderList();
+        // ↑↓ で動かした行を一覧の同じ高さに残す（本文の ↑↓ と同じ。v1.0.12）
+        const moved = movedTo >= 0 && listEl.querySelector(`.iw-row[data-i="${movedTo}"]`);
+        if (moved) listEl.scrollTop += moved.getBoundingClientRect().top - before;
       });
       // 文の編集は再描画せずモデルへ反映（入力中のフォーカスを奪わない）
       listEl.addEventListener('input', (e) => {
@@ -6090,6 +6143,7 @@
       const unit = rr.height / 100 || 1;
       const origin = rr.top; // 本文の先頭
       return {
+        unit, // getBoundingClientRect の 1 が内部座標の何 px か（Electron 31 は 1、M128 以降は zoom）
         boxOf: (el) => {
           const r = el.getBoundingClientRect();
           return { top: (r.top - origin) / unit, bottom: (r.bottom - origin) / unit };
@@ -10063,9 +10117,10 @@
         if (i < 0) return;
         const to = action === 'move-item-up' ? i - 1 : i + 1;
         if (to < 0 || to > sec.items.length - 1) return; // 先頭↑・末尾↓は何もしない
-        store.commit((s) =>
+        // 動かした手順を画面上の同じ位置に残す（マウスを動かさずに続けて押せる。v1.0.12）
+        keepItemOnScreen(itemId, () => store.commit((s) =>
           M.moveItem(M.findChecklist(s, c.id), sectionId, itemId, sectionId, to)
-        );
+        ));
       } else if (action === 'merge-item-up') {
         // 直前の手順へ統合（同一セクション内のみ・先頭は無効）。1コミット＝Undo1回。
         const sec = c.sections.find((x) => x.id === sectionId);
@@ -10564,6 +10619,8 @@
         clampPrintGrid, printGridSettings, setPrintGrid, balancedGaps, pageDivisions, planPrintDivisions, flowRowFits,
         fitFlowCardImages, fitImagesInBox, rowCells, fillRowWidths, packRowsByWidth,
         printDocParts, printItemHtml, composePrintPages, previewSheetsHtml, openPrintPreview,
+        // ↑↓ で動かした手順を画面上の同じ位置に残す（v1.0.12）
+        keepPositionScrollDelta,
         // サムネイルサイドバー
         thumbStepModel, renderThumbSidebar, updateThumbSidebar, thumbsCollapsed, setThumbsCollapsed,
         clampThumbsWidth, thumbsWidth, setThumbsWidth,
