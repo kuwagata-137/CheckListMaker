@@ -87,7 +87,7 @@ test('メニューバー — 「作業を開始」は手順が0件なら押せ�
   assert.equal(doc.querySelector('#topbar [data-action="play"]'), play, '同じボタンのまま（作り直さない）');
 });
 
-test('「手順を追加」— 最後に入力した手順のすぐ下に入れ、入力欄へカーソルを移す。まだなら最後', async (t) => {
+test('「手順を追加」— 最後にさわった手順のすぐ下に入れ、入力欄へカーソルを移す。まだなら最後', async (t) => {
   const b = await boot(t, [checklist('c1', 'template', twoPhases())]);
   const { doc } = b;
   await b.open('c1', '#app .item[data-item="i3"]');
@@ -108,7 +108,9 @@ test('「手順を追加」— 最後に入力した手順のすぐ下に入れ�
   assert.equal(doc.activeElement.closest('.item').dataset.item, added2);
 
   b.click('add-step-here'); // 続けて押すと、いま入れた手順のすぐ下に続く
-  assert.equal(ids()[0][2] !== 'i2' && ids()[0][3], 'i2');
+  assert.equal(ids()[0].length, 4);
+  assert.deepEqual(ids()[0].slice(0, 2), ['i1', added2], '2回目に入れた手順はそのまま2番目');
+  assert.equal(ids()[0][3], 'i2', '3回目は2回目のすぐ下（手順2の上）');
 
   b.api.store.undo(); // 元に戻す1回で1件ずつ消える
   assert.equal(ids()[0].length, 3);
@@ -136,6 +138,30 @@ test('「手順を追加」— 入力欄の無い所（番号など）を押し�
   assert.deepEqual([s1[0], s1[2]], ['i1', 'i2'], '手順1のすぐ下に入った');
 });
 
+test('「フェーズを追加」の直後の「手順を追加」は、いま入れたフェーズに入る。見出しにさわったフェーズも基準になる', async (t) => {
+  const b = await boot(t, [checklist('c1', 'template', twoPhases())]);
+  const { doc } = b;
+  await b.open('c1', '#app .item[data-item="i3"]');
+  doc.querySelector('#app .item[data-item="i2"] .item-text').focus(); // 準備（s1）の手順2にさわる
+  b.click('add-section-here'); // 準備のすぐ下に新しいフェーズ
+  const secs = () => plain(b.sections('c1').map((s) => ({ id: s.id, items: s.items.map((x) => x.id) })));
+  const added = secs()[1];
+  assert.deepEqual(added.items, []);
+  b.click('add-step-here'); // 手順2の下ではなく、いま入れたフェーズへ
+  assert.equal(secs()[0].items.length, 2, '準備には入らない');
+  assert.equal(secs()[1].id, added.id);
+  assert.equal(secs()[1].items.length, 1, '新しいフェーズに入った');
+
+  doc.querySelector('#app .section[data-section="s2"] .section-title').focus(); // 作業（s2）の見出しにさわる
+  b.click('add-step-here');
+  assert.equal(secs()[2].items.length, 2);
+  assert.equal(secs()[2].items[1], 'i3', '見出しのすぐ下（作業のいちばん上）に入った');
+  doc.querySelector('#app .section[data-section="s1"] .section-title').focus(); // 準備の見出しにさわる
+  b.click('add-section-here');
+  assert.equal(secs()[0].id, 's1');
+  assert.equal(secs()[2].id, added.id, '準備のすぐ下に入った');
+});
+
 test('「フェーズを追加」— 最後に入力した手順のフェーズのすぐ下に入れ、見出しへカーソルを移す。まだなら最後', async (t) => {
   const b = await boot(t, [checklist('c1', 'template', twoPhases())]);
   const { doc } = b;
@@ -160,6 +186,9 @@ test('「手順を追加」の位置の決め方（addHerePosition）', async (t
   const c = checklist('c', 'template', twoPhases());
   assert.deepEqual(plain(T.addHerePosition(c, 'i1')), { sectionIndex: 0, itemIndex: 1, found: true });
   assert.deepEqual(plain(T.addHerePosition(c, 'i3')), { sectionIndex: 1, itemIndex: 1, found: true });
+  assert.deepEqual(plain(T.addHerePosition(c, { item: 'i2' })), { sectionIndex: 0, itemIndex: 2, found: true });
+  assert.deepEqual(plain(T.addHerePosition(c, { section: 's2' })), { sectionIndex: 1, itemIndex: 0, found: true }, 'フェーズの見出しはそのフェーズのいちばん上');
+  assert.deepEqual(plain(T.addHerePosition(c, { section: 'none' })), { sectionIndex: 1, itemIndex: 1, found: false });
   assert.deepEqual(plain(T.addHerePosition(c, 'none')), { sectionIndex: 1, itemIndex: 1, found: false }, '見つからなければ最後');
   assert.deepEqual(plain(T.addHerePosition(c, null)), { sectionIndex: 1, itemIndex: 1, found: false });
   assert.deepEqual(plain(T.addHerePosition(checklist('e', 'template', []), 'i1')), { sectionIndex: -1, itemIndex: 0, found: false });

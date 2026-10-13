@@ -3107,21 +3107,25 @@
       ].join('');
       const add = [
         tbButton('add-step-here', `${stepWord}を追加`,
-          `最後に入力した${stepWord}のすぐ下に、新しい${stepWord}を追加します（まだ入力していなければ最後に追加します）`, TB_ICONS.addStep),
+          `最後にさわった${stepWord}のすぐ下に、新しい${stepWord}を追加します（${secWord}の見出しにさわっていたときはその${secWord}のいちばん上、まだどこにもさわっていなければ最後）`, TB_ICONS.addStep),
         tbButton('add-section-here', `${secWord}を追加`,
-          `最後に入力した${stepWord}がある${secWord}のすぐ下に、新しい${secWord}を追加します（まだ入力していなければ最後に追加します）`, TB_ICONS.addSection),
+          `最後にさわった${stepWord}（または見出し）がある${secWord}のすぐ下に、新しい${secWord}を追加します（まだどこにもさわっていなければ最後）`, TB_ICONS.addSection),
         '<span class="tb-sep" aria-hidden="true"></span>',
       ].join('');
       return { main, add };
     }
-    // 「手順を追加」「フェーズを追加」の入れる場所。基準は最後に入力した手順（itemId）。
-    // 見つからない（まだ入力していない・消えた・別のチェックリストの手順）ときは最後。
+    // 「手順を追加」「フェーズを追加」の入れる場所。基準は最後にさわった所（base）：
+    //   { item: 手順の id } … その手順のすぐ下（フェーズはその手順のフェーズのすぐ下）
+    //   { section: フェーズの id } … そのフェーズのいちばん上（フェーズはそのフェーズのすぐ下）
+    // 文字列は手順の id とみなす。見つからない（まださわっていない・消えた・別のチェックリスト）ときは最後。
     // -- 純関数（テスト対象。window.__test__ に公開） --
     // 戻り値 { sectionIndex, itemIndex（その位置に入れる）, found }。フェーズが無ければ sectionIndex は -1。
-    function addHerePosition(checklist, itemId) {
+    function addHerePosition(checklist, base) {
       const secs = (checklist && checklist.sections) || [];
+      const b = typeof base === 'string' ? { item: base } : (base || {});
       for (let si = 0; si < secs.length; si++) {
-        const ii = (secs[si].items || []).findIndex((x) => x.id === itemId);
+        if (b.section && secs[si].id === b.section) return { sectionIndex: si, itemIndex: 0, found: true };
+        const ii = b.item ? (secs[si].items || []).findIndex((x) => x.id === b.item) : -1;
         if (ii >= 0) return { sectionIndex: si, itemIndex: ii + 1, found: true };
       }
       const last = secs.length - 1;
@@ -7873,9 +7877,14 @@
       let lastDefaultTool = 'select'; // 描画ツール中に右クリックしたときの戻り先
       const undoStack = [];
       const redoStack = []; // やり直し（Redo）。新規操作で空になる
-      // 矢印キーで続けて動かした分を元に戻す1回にまとめる印（選択中の id を連ねたもの）。
-      // pushUndo のたびに空へ戻すので、ほかの操作が挟まると次の矢印は別の1回になる（仕様 23章）。
+      // 続けた操作を元に戻す1回にまとめる印。色（colorGestureFor）・文字の書式（fmtGestureFor）・
+      // 矢印キーでの移動（nudgeGestureFor）は、同じ印のあいだは pushUndo しない。どの印も pushUndo と
+      // 元に戻す・やり直すのたびに空へ戻すので、ほかの操作が挟まると次の操作は別の1回になる（仕様 23章。
+      // 以前は色・書式の印が残り、「色 → 矢印で移動 → 色」の移動まで1回で戻っていた）。
+      let colorGestureFor = null;
+      let fmtGestureFor = null;
       let nudgeGestureFor = null;
+      const endUndoGestures = () => { colorGestureFor = null; fmtGestureFor = null; nudgeGestureFor = null; };
 
       // ---- ベクター注釈オブジェクト ----
       // 矢印・直線・四角・丸・テキスト・吹き出しはラスタライズせずオブジェクトとして
@@ -8148,7 +8157,6 @@
         boldBtn.classList.toggle('active', src.bold !== false);
         italicBtn.classList.toggle('active', !!src.italic);
       }
-      let fmtGestureFor = null; // 選択オブジェクトへの連続変更を1回の undo にまとめる
       // changes.fs は表示px で受け取る（UI から呼ばれるため）。オブジェクト・編集中
       // フックへはキャンバスpx へ換算して渡し、textFmt には表示px のまま引き継ぐ。
       function applyTextFmt(changes) {
@@ -8429,7 +8437,7 @@
         };
       }
       function pushUndo() {
-        nudgeGestureFor = null;
+        endUndoGestures();
         try { undoStack.push(snapshotEdit()); } catch (_) {}
         if (undoStack.length > IE_HISTORY_MAX) undoStack.shift();
         redoStack.length = 0; // 新規操作でやり直し履歴は消える（一般的な履歴規約）
@@ -8452,6 +8460,7 @@
       }
       function undoEdit() {
         if (!undoStack.length) return;
+        endUndoGestures();
         exitCropMode();
         try { redoStack.push(snapshotEdit()); } catch (_) {}
         if (redoStack.length > IE_HISTORY_MAX) redoStack.shift();
@@ -8460,6 +8469,7 @@
       }
       function redoEdit() {
         if (!redoStack.length) return;
+        endUndoGestures();
         exitCropMode();
         try { undoStack.push(snapshotEdit()); } catch (_) {}
         if (undoStack.length > IE_HISTORY_MAX) undoStack.shift();
@@ -9434,7 +9444,6 @@
       //   sx,sy … 掴んだ座標  p … 最後のポインタ座標  moved … しきい値を超えて動いたか
       //   copy … 今コピーを掴んでいるか  shift … 水平・垂直に拘束中か
       let objDrag = null;
-      let colorGestureFor = null; // 選択オブジェクトへの色変更を1操作でundoするための印
       // オブジェクトを配置する系のツール＋ハンドでは、既存オブジェクトのクリックを
       // 「選択・移動」として扱う（Excel と同じ感覚）。ペン・ハイライト・消しゴム・
       // モザイク・トリミングは描く／消すが優先なので選択しない。
@@ -9522,7 +9531,13 @@
         // Delete・Ctrl+Z も効かない（仕様 23章）。数値欄は blur で確定する（欄の外クリックと同じ）。
         // テキスト・吹き出しの入力欄は、下のそれぞれの処理で確定させる。
         const fe = document.activeElement;
-        if (fe && overlay.contains(fe) && !fe.matches('textarea')) fe.blur();
+        if (fe && overlay.contains(fe) && !fe.matches('textarea')) {
+          const shownW = canvas.offsetWidth;
+          fe.blur();
+          // 表示倍率の欄に打ちかけの値があると、blur の確定で表示の大きさが変わり、押した点が
+          // 見ていた点とずれる。そのときは確定だけにして、このクリックでは何もしない。
+          if (canvas.offsetWidth !== shownW) return;
+        }
         // 右ボタンは contextmenu（右クリック削除メニュー）に任せる。
         // ここを素通しすると右ドラッグで描画・選択が始まってしまう。
         // （左を押したままの右押下は通常 pointermove で届くが、別ポインタとして来た場合の保険）
@@ -10210,15 +10225,19 @@
       // 本文の手順にフォーカスが入ったら、サイドバーの選択はその1件に戻す（複数選択 v1.0.8）
       if (thumbSel.size !== 1 || !thumbSel.has(row.dataset.item)) setThumbSelection([row.dataset.item], row.dataset.item);
     });
-    // 入力欄の無い所（番号・画像・↑↓ など）を押したときも、その手順を「今さわっている手順」にする。
-    // メニューバーの「手順を追加」「フェーズを追加」はこの手順を基準に入れる（v1.0.12・仕様
-    // docs/spec-editor-menubar.md 6章）。サイドバーの選択（複数選択）はフォーカスのときだけ畳む。
-    document.addEventListener('pointerdown', (e) => {
-      if (!document.body.classList.contains('has-thumbs')) return;
-      if (!app.contains(e.target)) return;
-      const row = e.target.closest('.item');
-      if (row && row.dataset.item !== currentItemId) markCurrentThumb(row.dataset.item);
-    }, true);
+    // ---- メニューバーの「手順を追加」「フェーズを追加」の基準＝最後にさわった所（v1.0.12）----
+    // 手順（入力欄・番号・画像・↑↓ など、手順の中のどこでも）にさわればその手順、フェーズの見出しに
+    // さわればそのフェーズ。フォーカスが入ったときと押したときの両方で覚える（仕様 docs/spec-editor-menubar.md 6章）。
+    let addBase = null; // { item: 手順の id } | { section: フェーズの id }
+    function noteAddBase(target) {
+      if (!target || !target.closest || !app.contains(target)) return;
+      const row = target.closest('.item');
+      if (row) { addBase = { item: row.dataset.item }; return; }
+      const sec = target.closest('.section-head') ? target.closest('.section') : null;
+      if (sec) addBase = { section: sec.dataset.section };
+    }
+    document.addEventListener('focusin', (e) => noteAddBase(e.target));
+    document.addEventListener('pointerdown', (e) => noteAddBase(e.target), true);
 
     // ---- Ctrl+Z／Ctrl+Shift+Z／Ctrl+Y をアプリの元に戻す・やり直すにつなぐ（v1.0.8）----
     // 入力欄・リッチ本文の中では文字の取り消しをブラウザに任せる。画像編集・モーダル・実行モードは
@@ -10436,9 +10455,11 @@
           if (!c) return;
           const blank = M.createItem('');
           pendingFocusItem = blank.id; // 追加後にその入力欄へ
+          const base = addBase;
+          addBase = { item: blank.id }; // 続けて押したら、いま入れた手順のすぐ下に続く
           return store.commit((s) => {
             const cc = M.findChecklist(s, c.id);
-            const at = addHerePosition(cc, currentItemId);
+            const at = addHerePosition(cc, base);
             if (at.sectionIndex < 0) { M.addSection(cc, ''); at.sectionIndex = 0; at.itemIndex = 0; } // フェーズが無ければ作る
             cc.sections[at.sectionIndex].items.splice(at.itemIndex, 0, blank);
             cc.updatedAt = Date.now();
@@ -10448,11 +10469,13 @@
           if (!c) return;
           return store.commit((s) => {
             const cc = M.findChecklist(s, c.id);
-            const at = addHerePosition(cc, currentItemId);
+            const at = addHerePosition(cc, addBase);
             const idx = at.found ? at.sectionIndex + 1 : cc.sections.length;
             M.addSection(cc, '', idx);
             const added = cc.sections[Math.min(idx, cc.sections.length - 1)];
             pendingFocusSection = added ? added.id : null; // 追加した見出しへ再描画後にフォーカス
+            // 続けて「手順を追加」を押したら、いま入れたフェーズに入る
+            if (added) addBase = { section: added.id };
           });
         }
         case 'add-item-btn': {
