@@ -1287,7 +1287,6 @@
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 6px; padding: 1px 3px; box-shadow: var(--shadow-item);
   }
-  .tsb-ops .tsb-grip { color: var(--muted); font-size: 0.72rem; padding: 0 3px; cursor: grab; user-select: none; }
   .tsb-ops button { font: inherit; font-size: 0.72rem; padding: 0 3px; border: 0; background: transparent; color: var(--danger); cursor: pointer; }
   .tsb-empty { color: var(--muted); font-size: 0.76rem; padding: 10px 4px; }
 
@@ -3354,11 +3353,10 @@
               const cap = it.text || '（未入力）';
               return `
               <div class="tsb-card" data-item="${it.id}" data-section="${p.id}" data-drag="item"
-                   data-action="goto-item" title="${escapeHtml(cap)}">
+                   data-action="goto-item" title="${escapeHtml(cap)}&#10;ドラッグで並べ替え（${unit}間も可）">
                 <span class="tsb-no">${it.no}</span>
                 <span class="tsb-fig">${fig}<span class="tsb-cap">${escapeHtml(cap)}</span></span>
                 <span class="tsb-ops">
-                  <span class="tsb-grip" title="ドラッグで並べ替え（${unit}間も可）">⠿</span>
                   <button type="button" title="${todo ? 'この項目を削除' : 'この手順を削除'}"
                           data-action="delete-item" data-section="${p.id}" data-item="${it.id}">✕</button>
                 </span>
@@ -3443,7 +3441,8 @@
         list: '.tsb-body',
         section: '.tsb-phase',
         // カードのどこを掴んでも並べ替えられる（v1.0.11）。カードには文字を選ぶ欄が無いので、
-        // 本文のように掴み手（⠿）だけに絞る必要がない。⠿ は「動かせる」目印として残す。
+        // 本文のように掴み手（⠿）だけに絞る必要がない。v1.0.12 で右上の ⠿ も無くした
+        //（どこを掴んでも動くので不要。ユーザー要望 2026-10-13）。並べ替えの説明はカードの title に出す。
         handle: '.tsb-card',
         // 選択中のカード（2件以上）を掴んだら、選んだ手順をまとめて動かす
         dragIds: (id) => (thumbSel.size >= 2 && thumbSel.has(id) ? thumbOrder().filter((x) => thumbSel.has(x)) : [id]),
