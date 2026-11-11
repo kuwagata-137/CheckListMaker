@@ -24,3 +24,6 @@ tools/uia-spike/package-lock.json
 
 # lockfile は当面コミットしない（docs/spec-1-2-test-ci.md の決定 5）
 package-lock.json
+
+# 操作マニュアルの撮影で撮った画面（npm run manual:shoot で作り直せる。Word だけをリポジトリで管理する）
+screenshots/manual/
