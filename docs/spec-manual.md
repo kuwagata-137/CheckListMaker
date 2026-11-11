@@ -24,6 +24,16 @@ MultipurposeDiagramMaker（以下 MDM）の `マニュアル/`（`MultipurposeDi
 
 - **形**: Word の操作マニュアル1冊。ファイル名 `マニュアル/CheckListMaker_操作マニュアル_v<版>.docx`。
   アプリの中に使い方の窓は作らない（MDM にもない）。
+- **アプリから開く**（2026-11-11 ユーザー指示「アプリのヘルプからマニュアルを開けるようにして」）:
+  アプリのメニューに「ヘルプ」を足し、「操作マニュアル」と「バージョン情報」を置く。
+  - インストーラは `マニュアル/*.docx` を `resources/マニュアル/` に入れる（`package.json` の `extraResources`）。
+    開発中（`npm start`）はリポジトリの `マニュアル/` を読む。
+  - 「操作マニュアル」は、アプリの版と同じ名前の .docx（なければ名前の順で最後のもの）を一時フォルダ
+    （`%TEMP%\CheckListMaker\`）に写してから、OS の既定のアプリ（Word）で開く。インストール先のファイルを
+    Word が掴んだままだと、次の版のインストーラが上書きできなくなるため。処理は `manualfile.js`（テスト対象）と
+    `main.js` の `openManual()`。
+  - 見つからない・開けないときは、警告の窓で知らせる（.docx を開けるアプリがないときなど）。
+  - 「バージョン情報」は、アプリの名前と版を窓で出す（マニュアルの版と見比べるため）。
 - **読む人**: CheckListMaker で手順書・チェックリストを作る人と、作った手順書で作業する人。
   開発者向けのこと（ビルド・テスト）は書かない（README と `docs/exe作成ガイド.md` にある）。
 - **章立て**:
@@ -51,7 +61,8 @@ MultipurposeDiagramMaker（以下 MDM）の `マニュアル/`（`MultipurposeDi
 | `マニュアル/作成ツール/manual-content.js` | 原稿（ブロックの並び） |
 | `マニュアル/作成ツール/capture.js` | 画面の撮影（`npm run manual:shoot`）。`screenshots/manual/` と `_manifest.json` を出す |
 | `マニュアル/作成ツール/create-manual.js` | Word を組む（`npm run manual`。`--preview` で `screenshots/manual/_preview.html` も出す） |
-| `マニュアル/CheckListMaker_操作マニュアル_v<版>.docx` | 操作マニュアル（リポジトリで管理） |
+| `マニュアル/CheckListMaker_操作マニュアル_v<版>.docx` | 操作マニュアル（リポジトリで管理。インストーラにも入る） |
+| `manualfile.js` | 「ヘルプ」→「操作マニュアル」で開くファイルを選び、一時フォルダに写す |
 
 ## 4. 作り直し方
 

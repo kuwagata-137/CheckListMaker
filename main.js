@@ -34,6 +34,7 @@ const { tickDiff } = require('./preclick-frames');
 const { normalizeUia, stepText, dblClickText, inputText, keyStepText, dragText } = require('./steptext');
 const { classifyKeydown, isSnapKey, SNAP_KEY } = require('./keys');
 const { planShot } = require('./zoomcrop');
+const { manualDir, prepareManual } = require('./manualfile');
 
 let mainWin = null;
 let gadgetWin = null;
@@ -209,8 +210,46 @@ function buildAppMenu() {
           : [{ role: 'close', label: '閉じる' }]),
       ],
     },
+    {
+      label: 'ヘルプ',
+      submenu: [
+        { label: '操作マニュアル', click: () => openManual() },
+        { type: 'separator' },
+        { label: 'バージョン情報', click: () => showVersion() },
+      ],
+    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// ── ヘルプ ──────────────────────────────────────────────
+// 操作マニュアル（Word）を OS の既定のアプリで開く（docs/spec-manual.md・manualfile.js）。
+async function openManual() {
+  const win = BrowserWindow.getFocusedWindow() || mainWin || undefined;
+  const fail = (detail) => dialog.showMessageBox(win, {
+    type: 'warning', title: '操作マニュアル', message: '操作マニュアルを開けませんでした。', detail, buttons: ['OK'],
+  });
+  let file = null;
+  try {
+    const dir = manualDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appDir: __dirname });
+    file = prepareManual({ dir, version: app.getVersion(), tmpDir: app.getPath('temp') });
+  } catch (err) {
+    console.error('操作マニュアルの準備に失敗しました:', err);
+    return fail('マニュアルのファイルを用意できませんでした。');
+  }
+  if (!file) return fail('マニュアルのファイルが見つかりません。アプリを入れ直してください。');
+  const err = await shell.openPath(file); // 成功なら空文字
+  if (err) {
+    console.error('操作マニュアルを開けませんでした:', err);
+    return fail('Word など、.docx のファイルを開けるアプリが必要です。');
+  }
+}
+function showVersion() {
+  const win = BrowserWindow.getFocusedWindow() || mainWin || undefined;
+  dialog.showMessageBox(win, {
+    type: 'info', title: 'バージョン情報', message: `${app.name} v${app.getVersion()}`,
+    detail: '操作マニュアルは「ヘルプ」→「操作マニュアル」で開けます。', buttons: ['OK'],
+  });
 }
 
 // ── ウィンドウ生成 ──────────────────────────────────────────

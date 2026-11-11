@@ -55,7 +55,17 @@
       "xlsx-export.js",
       "gadget.html",
       "guide.html",
+      "manualfile.js",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "マニュアル",
+        "to": "マニュアル",
+        "filter": [
+          "*.docx"
+        ]
+      }
     ],
     "asarUnpack": [
       "**/node_modules/uiohook-napi/**",

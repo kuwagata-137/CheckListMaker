@@ -61,6 +61,43 @@ test('マニュアルの作り方を npm のコマンドで動かせ、撮った
   assert.equal(PKG.scripts['manual:shoot'], 'node マニュアル/作成ツール/capture.js');
   const ignore = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
   assert.match(ignore, /^screenshots\/manual\/$/m);
-  // インストーラにはマニュアルを入れない（配るときに別に渡す）
-  assert.ok(!PKG.build.files.some((f) => /マニュアル|docx$/.test(f)), PKG.build.files.join(' '));
+});
+
+test('インストーラは マニュアル/ の .docx を resources/マニュアル に入れる（作成ツールは入れない）', () => {
+  assert.deepEqual(PKG.build.extraResources, [{ from: 'マニュアル', to: 'マニュアル', filter: ['*.docx'] }]);
+  assert.ok(!PKG.build.files.some((f) => /マニュアル|作成ツール/.test(f)), PKG.build.files.join(' '));
+  assert.ok(PKG.build.files.includes('manualfile.js'));
+});
+
+test('ヘルプ > 操作マニュアル: メニュー → openManual → 一時フォルダに写して既定のアプリで開く', () => {
+  const main = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+  assert.match(main, /label: 'ヘルプ'/);
+  assert.match(main, /\{ label: '操作マニュアル', click: \(\) => openManual\(\) \}/);
+  assert.match(main, /prepareManual\(\{ dir, version: app\.getVersion\(\), tmpDir: app\.getPath\('temp'\) \}\)/);
+  assert.match(main, /await shell\.openPath\(file\)/);
+});
+
+test('manualfile: 開くファイルの選び方と、一時フォルダへの写し', () => {
+  const os = require('os');
+  const { pickManualFile, manualDir, prepareManual } = require(path.join(ROOT, 'manualfile.js'));
+  const a = 'CheckListMaker_操作マニュアル_v1.0.13.docx', b = 'CheckListMaker_操作マニュアル_v1.0.14.docx';
+  assert.equal(pickManualFile([b, a, 'メモ.txt'], '1.0.13'), a); // アプリの版と同じもの
+  assert.equal(pickManualFile([a, b], '2.0.0'), b);               // なければ名前の順で最後
+  assert.equal(pickManualFile(['メモ.docx'], '1.0.13'), null);
+  assert.equal(manualDir({ isPackaged: true, resourcesPath: '/r', appDir: '/a' }), path.join('/r', 'マニュアル'));
+  assert.equal(manualDir({ isPackaged: false, resourcesPath: '/r', appDir: '/a' }), path.join('/a', 'マニュアル'));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clm-manual-'));
+  try {
+    const src = path.join(tmp, 'src');
+    fs.mkdirSync(src);
+    fs.writeFileSync(path.join(src, a), 'docx');
+    const out = prepareManual({ dir: src, version: '1.0.13', tmpDir: path.join(tmp, 't') });
+    assert.equal(out, path.join(tmp, 't', 'CheckListMaker', a));
+    assert.equal(fs.readFileSync(out, 'utf8'), 'docx');
+    assert.equal(prepareManual({ dir: path.join(tmp, 'ない'), version: '1.0.13', tmpDir: tmp }), null);
+    // リポジトリのマニュアルも、今の版のものが選ばれる
+    assert.equal(pickManualFile(fs.readdirSync(DIR), PKG.version), `CheckListMaker_操作マニュアル_${APP_VERSION}.docx`);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
