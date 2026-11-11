@@ -1,7 +1,7 @@
 {
   "name": "checklistmaker",
   "productName": "CheckListMaker",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "CheckListMaker — チェックリスト／手順テンプレート管理アプリ（録画＝クリック連動スクリーンショット対応のデスクトップ版）",
   "main": "main.js",
   "scripts": {
@@ -9,7 +9,9 @@
     "test": "node --test",
     "rebuild": "electron-rebuild -f -w uiohook-napi",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder --win --publish never"
+    "dist": "electron-builder --win --publish never",
+    "manual": "node マニュアル/作成ツール/create-manual.js",
+    "manual:shoot": "node マニュアル/作成ツール/capture.js"
   },
   "author": "",
   "license": "MIT",
@@ -22,6 +24,7 @@
     "uiohook-napi": "^1.5.4"
   },
   "devDependencies": {
+    "docx": "^9.5.1",
     "@electron/rebuild": "^3.6.0",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
