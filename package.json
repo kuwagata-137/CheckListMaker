@@ -41,6 +41,7 @@
       "main.js",
       "preload.js",
       "storage.js",
+      "save-before-close.js",
       "errorlog.js",
       "session.js",
       "uia.js",

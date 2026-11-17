@@ -2467,6 +2467,11 @@
         }
         return this.lastSaveOk;
       }
+      // 書き込みの途中の保存（FileAdapter の非同期の保存）が終わるのを待つ。同期で保存する adapter はすぐ終わる。
+      //（窓を閉じる前・再読み込みの前の確定で使う。v1.0.14・計画外）
+      flushPending() {
+        return (this.adapter && this.adapter.queue) || Promise.resolve();
+      }
     }
 
     // =========================================================================
@@ -5331,6 +5336,20 @@
       }
     }
     const store = await createAppStore();
+    // 窓を閉じる前・再読み込みの前に、編集中の欄（手順名・メモ・本文など）を確定し、ファイルへの書き込みが
+    // 終わるのを待つ（v1.0.14・計画外。docs/spec-file-storage-migration.md「閉じる前と再読み込みの前の保存」）。欄の保存は change・focusout
+    //（欄を離れた時）に行うので、フォーカスを外して確定させる。main プロセスの save-before-close.js が呼ぶ。
+    function blurActiveField() {
+      const a = document.activeElement;
+      if (a && a !== document.body && typeof a.blur === 'function') a.blur();
+    }
+    window.clmFlushBeforeUnload = async () => {
+      blurActiveField();
+      await store.flushPending();
+      return true;
+    };
+    // ブラウザ版・単体 HTML は localStorage へ同期で保存するので、閉じる直前にフォーカスを外すだけで保存できる
+    window.addEventListener('beforeunload', blurActiveField);
     const app = document.getElementById('app');
     const fileInput = document.getElementById('file-input');
 
