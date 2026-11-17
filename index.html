@@ -1573,6 +1573,10 @@
   .rb-body table { border-collapse: collapse; margin: 6px 0; font-size: 0.9rem; max-width: 100%; }
   .rb-body th, .rb-body td { border: 1px solid #c9ccd2; padding: 5px 9px; text-align: left; vertical-align: top; min-width: 48px; }
   .rb-body thead th { background: #eef4fb; font-weight: 700; }
+  /* 暗い表示では、見出し行の背景を暗い色にする（明るい背景に明るい文字で読めなかった。v1.0.14・計画外） */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) .rb-body thead th { background: #243042; }
+  }
   /* 行列コントロール（フローティング・近接時のみ表示） */
   #rb-tctl { position: fixed; inset: 0; pointer-events: none; z-index: 60; }
   #rb-tctl[hidden] { display: none; }
@@ -5049,7 +5053,8 @@
       const disarm = () => { if (armed) { armed.removeAttribute('draggable'); armed = null; } };
       document.addEventListener('mouseup', disarm);
       container.addEventListener('dragstart', (e) => {
-        const el = e.target.closest('[data-drag]');
+        // 本文で選んだ文字をドラッグした時は、e.target が文字のノードで closest を持たない（v1.0.14・計画外）
+        const el = e.target.closest && e.target.closest('[data-drag]');
         if (!el || el.getAttribute('draggable') !== 'true') return;
         const kind = el.dataset.drag;
         if (kind === 'item') {
