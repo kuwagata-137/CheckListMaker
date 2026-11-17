@@ -7625,23 +7625,60 @@
       const boxed = (o.fill && o.fill !== 'none') || (o.color && o.color !== 'none');
       return boxed ? Math.round((Number(o.fs) || 16) * 0.3) : 0;
     }
+    // ── 吹き出しの行組み（仕様 26章）──
+    // 本体（尻尾を除く）の行組みと寸法。measure(str) は文字列の幅を返す関数（canvas の measureText を
+    // 注入する。jsdom には canvas が無いため試験では擬似関数）。o は吹き出し（または書式）。
+    //   大きさを変えていない … 全角12字で折り返し、文字量で幅と高さが決まる（変更前と同じ）
+    //   幅を変えた（wFixed）… o.w から左右の余白を除いた幅で折り返す。幅は o.w のまま
+    //   高さを変えた（hMin）… 高さは hMin と文字が入る高さの大きい方（文字を隠さない）
+    // wFixed・hMin が無ければ o.w・o.h は使わない（描くたびに上書きする計算値のため）。
+    // 戻り値: lines（行）・lh（行の高さ）・P（余白）・tw / th（文字のかたまりの幅と高さ）・
+    //   w / h（本体の幅と高さ）・needH（文字が入る高さ）
+    function calloutLayout(text, fs, measure, o) {
+      fs = Number(fs) || 16;
+      const m = typeof measure === 'function' ? measure : () => 0;
+      const P = Math.round(fs * 0.55);
+      const lh = Math.round(fs * 1.3);
+      const fixedW = !!(o && o.wFixed && o.w > 0);
+      const str = String(text == null ? '' : text);
+      const lines = wrapTextLines(str.length ? str : ' ', fixedW ? Math.max(1, o.w - P * 2) : fs * TEXT_WRAP_CHARS, m);
+      let tw = 0;
+      for (const l of lines) tw = Math.max(tw, m(l.length ? l : ' '));
+      tw = Math.ceil(tw);
+      const th = lines.length * lh;
+      const needH = th + P * 2;
+      return { lines, lh, P, tw, th, needH, w: fixedW ? o.w : tw + P * 2, h: Math.max(needH, Number(o && o.hMin) || 0) };
+    }
+    // 吹き出しの中で、文字のかたまりを置く位置（本体の左上からのずれ）。行の左端はそろえたまま
+    //（各行を同じ x から書く）、かたまりを上下左右の中央に置く。仕様 26章の推奨案（統括役が
+    // ユーザーに確認中の質問 Q3）で、もう 1 つの案「左上」は { x: lay.P, y: lay.P } にする。
+    // 大きさを変えていない吹き出しは、どちらの案でも (P, P) になり、変更前と同じ位置。
+    function calloutTextOffset(lay) {
+      return { x: (lay.w - lay.tw) / 2, y: (lay.h - lay.th) / 2 };
+    }
+    // 矩形の四つ角＋各辺の中点の8か所（四角・丸・×印・吹き出し）。n/s/e/w は縦のみ／横のみのリサイズ
+    function boxHandles(o) {
+      const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+      return [
+        { kind: 'nw', x: o.x, y: o.y }, { kind: 'n', x: cx, y: o.y }, { kind: 'ne', x: o.x + o.w, y: o.y },
+        { kind: 'w', x: o.x, y: cy }, { kind: 'e', x: o.x + o.w, y: cy },
+        { kind: 'sw', x: o.x, y: o.y + o.h }, { kind: 's', x: cx, y: o.y + o.h }, { kind: 'se', x: o.x + o.w, y: o.y + o.h },
+      ];
+    }
     function objHandles(o) {
       if (o.type === 'arrow' || o.type === 'line') {
         return [{ kind: 'p1', x: o.x1, y: o.y1 }, { kind: 'p2', x: o.x2, y: o.y2 }];
       }
-      if (o.type === 'rect' || o.type === 'ellipse' || o.type === 'cross') {
-        const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
-        return [
-          // 四つ角＋各辺の中点の8か所。n/s/e/w は縦のみ／横のみのリサイズ
-          { kind: 'nw', x: o.x, y: o.y }, { kind: 'n', x: cx, y: o.y }, { kind: 'ne', x: o.x + o.w, y: o.y },
-          { kind: 'w', x: o.x, y: cy }, { kind: 'e', x: o.x + o.w, y: cy },
-          { kind: 'sw', x: o.x, y: o.y + o.h }, { kind: 's', x: cx, y: o.y + o.h }, { kind: 'se', x: o.x + o.w, y: o.y + o.h },
-        ];
-      }
+      if (o.type === 'rect' || o.type === 'ellipse' || o.type === 'cross') return boxHandles(o);
       if (o.type === 'freeform') {
         return (Array.isArray(o.pts) ? o.pts : []).map((p, i) => ({ kind: `pt${i}`, x: p.x, y: p.y }));
       }
-      if (o.type === 'callout') return [{ kind: 'tip', x: o.tip.x, y: o.tip.y }];
+      if (o.type === 'callout') {
+        // 本体の大きさ（o.w / o.h。drawObject が描くたびに最新にする）が分かれば、四角と同じ 8 個と
+        // 尻尾（仕様 26章）。尻尾は最後＝上に描く（当たり判定は hitObjHandle が尻尾を先に見る）。
+        const tip = { kind: 'tip', x: o.tip.x, y: o.tip.y };
+        return o.w > 0 && o.h > 0 ? [...boxHandles(o), tip] : [tip];
+      }
       if (o.type === 'text' && o.w > 0) {
         // 左右の辺の中点だけ（幅を変える。高さは文字量から自動で決まる）。
         // o.w / o.h は textLayout が描画のたびに最新へ更新している。
@@ -7721,12 +7758,13 @@
           }
         }
       }
-      else { // nw/n/ne/w/e/sw/s/se（rect・ellipse・cross のリサイズ。単字は縦のみ／横のみ）
+      else { // nw/n/ne/w/e/sw/s/se（rect・ellipse・cross・callout のリサイズ。単字は縦のみ／横のみ）
         const rot = objRotation(s);
         if (rot) { // 回転中はドラッグ差分を図形ローカル軸へ写してから辺の計算をする
           const v = rotatePointAround({ x: dx, y: dy }, { x: 0, y: 0 }, -rot);
           dx = v.x; dy = v.y;
         }
+        if (o.type === 'callout') { resizeCallout(d, o, s, rot, dx, dy); return; }
         let x1 = s.x, y1 = s.y, x2 = s.x + s.w, y2 = s.y + s.h;
         if (d.mode.includes('w')) x1 = Math.min(x2 - 4, x1 + dx);
         if (d.mode.includes('e')) x2 = Math.max(x1 + 4, x2 + dx);
@@ -7745,6 +7783,42 @@
         o.x = x1; o.y = y1; o.w = x2 - x1; o.h = y2 - y1;
         if (rot) reanchorRotatedBox(o, s, d.mode, rot, x1, y1, x2, y2);
       }
+    }
+    // 吹き出しの大きさをハンドル 8 個で変える（仕様 26章）。dx, dy は吹き出しの軸に合わせた移動量、
+    // d.measure は吹き出しの書式で文字幅を測る関数（文字が入る高さを求める）。
+    //  - 幅（左右の辺・四隅）: 反対側の辺を固定し、最小は 1 文字ぶん。幅を変えたら wFixed（その幅で折り返す）。
+    //  - 高さ（上下の辺・四隅）: 反対側の辺を固定し、その幅で文字が入る高さより小さくしない。決めた高さは hMin。
+    //  - 幅だけ: 上の辺を固定し、高さは hMin と文字が入る高さの大きい方（行が増えたら下へ伸びる）。
+    //  - 回転していても、固定した辺と尻尾の先（tip）は画面上で動かない。
+    function resizeCallout(d, o, s, rot, dx, dy) {
+      const mode = d.mode, fs = Number(s.fs) || 16;
+      const lay0 = calloutLayout(s.text, fs, d.measure, s);
+      const W0 = s.w > 0 ? s.w : lay0.w, H0 = s.h > 0 ? s.h : lay0.h; // ドラッグ前の本体の大きさ
+      const minW = fs + lay0.P * 2;
+      let x1 = s.x, y1 = s.y, x2 = s.x + W0, y2 = s.y + H0;
+      if (mode.includes('w')) x1 = Math.min(x2 - minW, x1 + dx);
+      if (mode.includes('e')) x2 = Math.max(x1 + minW, x2 + dx);
+      const w = x2 - x1;
+      const needH = calloutLayout(s.text, fs, d.measure, { wFixed: true, w }).needH; // その幅で文字が入る高さ
+      const setH = mode.includes('n') || mode.includes('s');
+      if (mode.includes('n')) y1 = Math.min(y2 - needH, y1 + dy);
+      if (mode.includes('s')) y2 = Math.max(y1 + needH, y2 + dy);
+      if (!setH) y2 = y1 + Math.max(Number(s.hMin) || 0, needH);
+      const h = y2 - y1;
+      if (mode.includes('w') || mode.includes('e')) o.wFixed = true;
+      if (setH) o.hMin = h;
+      o.w = w; o.h = h;
+      if (!rot) {
+        o.x = x1; o.y = y1;
+        o.tip = { x: s.tip.x, y: s.tip.y };
+        return;
+      }
+      // 新しい本体の中心を、ドラッグ前の軸で求めた画面上の位置に置く（固定した辺はそのまま残る）。
+      // 尻尾の先は、画面上の位置が変わらないよう、新しい中心のまわりで吹き出しの軸の座標に直す。
+      const c0 = { x: s.x + W0 / 2, y: s.y + H0 / 2 };
+      const c1 = rotatePointAround({ x: (x1 + x2) / 2, y: (y1 + y2) / 2 }, c0, rot);
+      o.x = c1.x - w / 2; o.y = c1.y - h / 2;
+      o.tip = rotatePointAround(rotatePointAround(s.tip, c0, rot), c1, -rot);
     }
 
     // ---- トリミング（仕様 16章・25章）----
@@ -8715,13 +8789,15 @@
       }
       function drawObject(g, o) {
         if (o.hidden) return; // 入力欄で再編集中は canvas 側を消しておく
+        // 吹き出しは文字量（大きさを変えた吹き出しは決めた大きさ）で本体の箱が決まるので、回転の有無に
+        // かかわらず描くたびに o.w / o.h を最新にする（ハンドル 8 個の位置と回転の中心に使う。仕様 26章）。
+        if (o.type === 'callout') { const b = calloutBox(o.text, o.fs, o); o.w = b.w; o.h = b.h; }
         // 回転は中心まわりの座標変換で掛ける（各描画関数は無回転のまま）。
         const rot = objRotation(o);
         if (rot) {
-          // 回転の中心は最新の箱で決める。テキスト・吹き出しは文字量で箱が変わるため、
-          // 中心を計算する前に o.w / o.h を測り直す（保存データを開いた直後も正しく回る）。
-          if (o.type === 'callout') { const b = calloutBox(o.text, o.fs, o); o.w = b.w; o.h = b.h; }
-          else if (o.type === 'text') textLayout(o);
+          // 回転の中心は最新の箱で決める。テキストは文字量で箱が変わるため、中心を計算する前に
+          // o.w / o.h を測り直す（保存データを開いた直後も正しく回る。吹き出しは上で測り直した）。
+          if (o.type === 'text') textLayout(o);
           const c = objRotationCenter(o);
           g.save();
           g.translate(c.x, c.y); g.rotate(rot * Math.PI / 180); g.translate(-c.x, -c.y);
@@ -8916,7 +8992,9 @@
           const rp = rotateHandleWorldPos(o);
           if (Math.abs(p.x - rp.x) <= tol && Math.abs(p.y - rp.y) <= tol) return 'rotate';
         }
-        for (const h of objHandles(o)) {
+        // 吹き出しの尻尾は本体のハンドル 8 個より先に見る（重なっても、上に描いた尻尾を掴める。仕様 26章）
+        const hs = objHandles(o);
+        for (const h of hs.filter((x) => x.kind === 'tip').concat(hs.filter((x) => x.kind !== 'tip'))) {
           const wp = toWorldPoint(o, h); // 回転している図形はハンドルもワールドへ写して判定
           if (Math.abs(p.x - wp.x) <= tol && Math.abs(p.y - wp.y) <= tol) return h.kind;
         }
@@ -9041,21 +9119,24 @@
         }
         g.restore();
       }
-      // ── 吹き出し（クリック挿入・文字で自動リサイズ・尻尾を好きな向きへ）──────
-      // calloutBox: 文字から本体（尻尾を除く）の寸法を測る。
+      // ── 吹き出し（クリック挿入・文字で自動リサイズ・尻尾を好きな向きへ・ハンドル 8 個で大きさを変える）──
+      // calloutBox: 文字から本体（尻尾を除く）の寸法を測る。行組みは calloutLayout（仕様 26章）。
+      // 大きさを変えていなければ全角12字（fs×12）で自動的に折り返す（テキストボックスと同じ。明示の改行は残す）。
       function calloutBox(text, fs, style) {
         annoCtx.save();
         annoCtx.font = objFont({ fs, bold: style && style.bold, italic: style && style.italic });
-        // 全角12字（fs×12）で自動的に折り返す（テキストボックスと同じ。明示の改行は残す）
-        const measure = (str) => annoCtx.measureText(str).width;
-        const lines = wrapTextLines(text.length ? text : ' ', fs * TEXT_WRAP_CHARS, measure);
-        const lh = Math.round(fs * 1.3);
-        let tw = 0;
-        for (const l of lines) tw = Math.max(tw, measure(l.length ? l : ' '));
+        const lay = calloutLayout(text, fs, (str) => annoCtx.measureText(str).width, style);
         annoCtx.restore();
-        const P = Math.round(fs * 0.55);
-        return { lines, lh, P, w: Math.ceil(tw) + P * 2, h: lines.length * lh + P * 2 };
+        return lay;
       }
+      // 吹き出しの書式で文字幅を測る関数。ハンドルで大きさを変える時に、文字が入る高さを求めるのに使う。
+      const calloutMeasure = (o) => (str) => {
+        annoCtx.save();
+        annoCtx.font = objFont(o);
+        const w = annoCtx.measureText(str).width;
+        annoCtx.restore();
+        return w;
+      };
       // calloutPath: 角丸本体＋「tip（先端）が向く辺」に尻尾を差し込んだ一筆書きパス。
       // 本体中心から tip への方向で上下左右いずれの辺から尻尾を出すか決めるので、
       // tip をどこへ動かしても（360°）自然に向く。
@@ -9106,7 +9187,8 @@
           g.fillStyle = o.textColor || o.color || '#ff3b30';
           g.font = objFont(o);
           g.textBaseline = 'top';
-          box.lines.forEach((l, i) => g.fillText(l, o.x + box.P, o.y + box.P + i * box.lh));
+          const off = calloutTextOffset(box); // 大きくした吹き出しでは、文字のかたまりを中央に置く（仕様 26章）
+          box.lines.forEach((l, i) => g.fillText(l, o.x + off.x, o.y + off.y + i * box.lh));
         }
         g.restore();
       }
@@ -9266,6 +9348,10 @@
           x: existing ? existing.x : p.x,
           y: existing ? existing.y : p.y,
           fs: fmt0.fs, bold: fmt0.bold, italic: fmt0.italic,
+          // ハンドルで大きさを変えた吹き出しは、その大きさのまま編集する（calloutBox が読む。仕様 26章）
+          wFixed: existing ? !!existing.wFixed : false,
+          w: existing && existing.wFixed ? existing.w : 0,
+          hMin: existing ? existing.hMin : undefined,
           ta, existing: existing || null,
           done: false, dragTip: false, hoverTip: false,
           // 初期の尻尾先端＝本体の下・少し左（下向き）。以後ドラッグで自由に。
@@ -9291,7 +9377,10 @@
             const b0 = calloutBox(ta.value, ac.fs, ac);
             ac.tip = { x: ac.x + Math.min(b0.w * 0.25, 40 * fsScale()), y: ac.y + b0.h + Math.round(ac.fs * 1.6) };
           }
-          const preview = { x: ac.x, y: ac.y, text: ta.value, fs: ac.fs, bold: ac.bold, italic: ac.italic, tip: ac.tip, color, fill, textColor: textCol, size, u, opacity };
+          const preview = {
+            x: ac.x, y: ac.y, text: ta.value, fs: ac.fs, bold: ac.bold, italic: ac.italic, tip: ac.tip,
+            wFixed: ac.wFixed, w: ac.w, hMin: ac.hMin, color, fill, textColor: textCol, size, u, opacity,
+          };
           recomposite();
           drawCalloutObj(ctx, preview, false);
           if (ac.dragTip || ac.hoverTip) {
@@ -9302,15 +9391,16 @@
             ctx.fill(); ctx.stroke();
             ctx.restore();
           }
-          // textarea を本文位置へ重ねる（透明背景）。
+          // textarea を本文位置（文字のかたまりの位置。仕様 26章）へ重ねる（透明背景）。
           const box = calloutBox(ta.value, ac.fs, ac);
+          const off = calloutTextOffset(box);
           const s = canvas.offsetWidth ? canvas.offsetWidth / canvas.width : 1;
-          ta.style.left = (canvas.offsetLeft + (ac.x + box.P) * s) + 'px';
-          ta.style.top = (canvas.offsetTop + (ac.y + box.P) * s) + 'px';
+          ta.style.left = (canvas.offsetLeft + (ac.x + off.x) * s) + 'px';
+          ta.style.top = (canvas.offsetTop + (ac.y + off.y) * s) + 'px';
           // 幅は本文の行組みと同じ幅＋わずかなキャレット余白。広く取ると入力欄側だけ
           // 1文字多く入ってしまい、確定後の折り返し位置とずれる。
-          ta.style.width = (Math.ceil((box.w - box.P * 2) * s) + 4) + 'px';
-          ta.style.height = ((box.h - box.P * 2) * s) + 'px';
+          ta.style.width = (Math.ceil(box.tw * s) + 4) + 'px';
+          ta.style.height = (box.th * s) + 'px';
           ta.style.font = objFont(ac, s);
           ta.style.lineHeight = (box.lh * s) + 'px';
           ta.style.color = textCol;
@@ -9556,7 +9646,7 @@
       // orig 基準の絶対計算なので、何度呼んでもずれない（掴み替えの土台）。
       function applyDrag(d, p, shift) {
         d.items.forEach((it) => {
-          applyObjDrag({ mode: d.mode, obj: it.obj, sx: d.sx, sy: d.sy, orig: it.orig }, p, shift);
+          applyObjDrag({ mode: d.mode, obj: it.obj, sx: d.sx, sy: d.sy, orig: it.orig, measure: d.measure }, p, shift);
         });
       }
       // Ctrl＋ドラッグのコピー状態を切り替える。押している間だけ複製を掴み、離せば
@@ -9658,6 +9748,8 @@
             objDrag = {
               mode: hk, items: [{ obj: sole, src: sole, orig: JSON.parse(JSON.stringify(sole)) }],
               sx: p.x, sy: p.y, moved: false, copy: false, shift: false,
+              // 吹き出しの大きさを変える時は、文字が入る高さを求めるため文字幅を測る（仕様 26章）
+              measure: sole.type === 'callout' ? calloutMeasure(sole) : null,
             };
             canvas.setPointerCapture(e.pointerId);
             return;
@@ -10035,6 +10127,7 @@
           '矢印・直線モードでは、既存の線の端点や図形の頂点の近くでダブルクリックすると、その点を始点に描き始められます（カーソルに線が付いてくるので、クリックで終点を決めます。<kbd>Esc</kbd> か右クリックで中止）。',
           'テキストと吹き出しは、ダブルクリックで文字を編集し直せます。<kbd>Enter</kbd> で確定、<kbd>Shift</kbd>+<kbd>Enter</kbd> か <kbd>Alt</kbd>+<kbd>Enter</kbd> で改行します。',
           'テキストと吹き出しの文字は全角12字で自動的に折り返します。テキストボックスは左右の白丸ハンドルで幅を変えられ、変えた後はその幅で折り返して高さだけが文字量に合わせて変わります。',
+          '吹き出しは、1つだけ選ぶと四角と同じく四隅と各辺の中央に白丸のハンドルが表示され、ドラッグで幅と高さを変えられます。幅を変えた後はその幅で折り返します。高さは文字が入る高さより小さくできません。大きさを変えても、尻尾の先は動きません。',
           '消しゴムで消えるのは描いた注釈だけです（スクリーンショット本体は残ります）。',
         ]],
         ['モードの切り替え', [
@@ -10834,6 +10927,8 @@
         toLocalPoint, toWorldPoint, reanchorRotatedBox,
         // トリミング範囲のドラッグと境界アイコン（仕様 25章）
         cropIconRects, hitCropIcon, cropIsWhole, cropDragMode, cropDragRect, cropDragEndRect, cropCursor,
+        // 吹き出しの行組みと文字の位置（仕様 26章）
+        calloutLayout, calloutTextOffset,
         // PDF出力の倍率・用紙・向き
         clampPdfScale, pdfPaperDims, pdfPageStyleCss, pdfOutSettings, setPdfOutSettings,
         paginateBreaks, parsePdfPageRange, pdfPageRangeString,
