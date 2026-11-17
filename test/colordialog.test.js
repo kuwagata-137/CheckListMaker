@@ -194,7 +194,11 @@ test('キー操作は「色の設定」画面だけで処理し、後ろの画�
   b.open('#336699');
   const ok = b.q('[data-a="ok"]');
   for (const k of ['Delete', 'Backspace', 'ArrowLeft', 'a']) b.key(ok, k);
-  b.key(ok, 'z', { ctrlKey: true });
+  // Ctrl＋Z・Ctrl＋Y は、アプリのメニュー（元に戻す・やり直す）を通して後ろの本文に効くので止める
+  assert.ok(b.key(ok, 'z', { ctrlKey: true }).defaultPrevented, 'Ctrl＋Z を止める');
+  assert.ok(b.key(b.q('.ocd-hx'), 'y', { ctrlKey: true }).defaultPrevented, '入力欄でも Ctrl＋Y を止める');
+  assert.ok(b.key(ok, 'v', { ctrlKey: true }).defaultPrevented, '入力欄の外の貼り付けを止める');
+  assert.equal(b.key(b.q('.ocd-hx'), 'v', { ctrlKey: true }).defaultPrevented, false, '入力欄の貼り付けは使える');
   assert.ok(b.key(ok, 'ArrowDown').defaultPrevented, 'ボタン上の矢印キーで後ろの画面をスクロールさせない');
   assert.equal(b.key(b.q('.ocd-n'), 'ArrowUp').defaultPrevented, false, '数値欄の矢印キーは欄の操作に使う');
   // フォーカスが後ろの画面に残っていた時も、文字を入れずに画面の中へ戻す

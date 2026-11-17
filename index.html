@@ -4206,6 +4206,12 @@
       if (!inBox) { ev.preventDefault(); ctx.focusDefault(); return; } // 後ろの本文などに文字を入れない
       if (ev.key === 'Tab') { ocdTabKey(ctx, ev); return; }
       if (ev.altKey && !ev.ctrlKey && !ev.metaKey) { ocdAccessKey(ctx, ev); return; }
+      // Ctrl＋Z・Ctrl＋Y は、アプリのメニュー（編集→元に戻す・やり直す）を通して後ろの本文の編集に効くので止める。
+      // 切り取り（Ctrl＋X）と貼り付け（Ctrl＋V）は、入力欄の中だけで使えるようにする。
+      if ((ev.ctrlKey || ev.metaKey) && !ev.altKey) {
+        const k = String(ev.key || '').toLowerCase();
+        if (k === 'z' || k === 'y' || ((k === 'x' || k === 'v') && t.tagName !== 'INPUT')) { ev.preventDefault(); return; }
+      }
       // 矢印キーなどで、後ろの画面をスクロールさせない（入力欄とカラー モデルの欄では、欄の操作に使う）
       if (/^(Arrow|Page|Home$|End$)/.test(ev.key) && !/^(INPUT|SELECT)$/.test(t.tagName)) ev.preventDefault();
     }
@@ -4220,11 +4226,13 @@
     }
     // Alt＋下線の文字で、タブ「ユーザー設定」の項目へフォーカスを移す（Office と同じ）
     function ocdAccessKey(ctx, ev) {
+      // 物理キー（ev.code）で判定する。code が空の環境では、押した文字（ev.key）で判定する
       const m = /^Key([A-Z])$/.exec(ev.code || '');
-      if (!m || ctx.tab !== 'custom') return;
+      const letter = m ? m[1] : (/^[a-z]$/i.test(ev.key || '') ? ev.key.toUpperCase() : '');
+      if (!letter || ctx.tab !== 'custom') return;
       const targets = { D: '.ocd-model', H: '.ocd-hx' };
       OCD_LABELS[ctx.model].forEach(([, key], i) => { targets[key] = `.ocd-n[data-i="${i}"]`; });
-      const el = targets[m[1]] && ctx.pane.querySelector(targets[m[1]]);
+      const el = targets[letter] && ctx.pane.querySelector(targets[letter]);
       if (!el) return;
       ev.preventDefault();
       el.focus();
