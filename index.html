@@ -780,7 +780,7 @@
   .ie-canvas.tool-select { cursor: default; } /* 通常のカーソルと同じ見た目 */
   .ie-canvas.tool-hand { cursor: grab; }
   .ie-canvas.tool-hand.panning { cursor: grabbing; }
-  .ie-canvas.tool-crop { cursor: default; }
+  .ie-canvas.tool-crop { cursor: crosshair; } /* トリミング範囲を描ける所（境界アイコン・範囲の内側は JS で矢印・移動に変える） */
   /* 画像内テキストのその場入力欄（Electron は prompt 不可のため自前 UI） */
   .ie-text-input {
     position: absolute;
@@ -7747,6 +7747,96 @@
       }
     }
 
+    // ---- トリミング（仕様 16章・25章）----
+    // トリミング範囲 r は {x, y, w, h}（キャンバス px）。境界アイコン（範囲の四隅と各辺の中央に
+    // 表示する □）は範囲の内側に描く（25章）。四隅は □ の外側の角を範囲の角に、各辺は □ の外側の
+    // 辺を範囲の辺に合わせる。範囲が画像全体の時も、□ が画像の外にはみ出さない。
+    const CROP_MIN = 10; // トリミング範囲の最小の幅と高さ（画像の画素）
+    const CROP_CORNERS = ['nw', 'ne', 'se', 'sw'];
+    // 範囲を決めた後に、範囲の内側から押したドラッグの動作。推奨案（変更前と同じく範囲を動かす）で
+    // 実装している（25章。統括役がユーザーに確認中の質問 Q1）。'new' にすると新しい範囲を描く。
+    const CROP_INSIDE_DRAG = 'move';
+    // 境界アイコン 8 個の位置と大きさ（size は □ の一辺）。各辺 → 四隅の順番に並べる。
+    // この順番に描くと、範囲が小さく □ が重なる時に四隅が上に重なる。
+    function cropIconRects(r, size) {
+      const L = r.x, T = r.y, R = r.x + r.w - size, B = r.y + r.h - size;
+      const CX = r.x + (r.w - size) / 2, CY = r.y + (r.h - size) / 2;
+      const icon = (kind, x, y) => ({ kind, x, y, w: size, h: size });
+      return [
+        icon('n', CX, T), icon('e', R, CY), icon('s', CX, B), icon('w', L, CY),
+        icon('nw', L, T), icon('ne', R, T), icon('se', R, B), icon('sw', L, B),
+      ];
+    }
+    // 点 p にある境界アイコンの向き（nw・n・ne・e・se・s・sw・w）。無ければ null。
+    // 当たり判定は □ の上下左右を pad ずつ広げる。□ が重なる時は四隅を優先し、
+    // 同じ種類どうしは □ の中心が p に近い方を選ぶ。
+    function hitCropIcon(r, p, size, pad) {
+      let best = null;
+      for (const ic of cropIconRects(r, size)) {
+        if (p.x < ic.x - pad || p.x > ic.x + ic.w + pad || p.y < ic.y - pad || p.y > ic.y + ic.h + pad) continue;
+        const corner = CROP_CORNERS.includes(ic.kind);
+        const d = Math.hypot(p.x - (ic.x + ic.w / 2), p.y - (ic.y + ic.h / 2));
+        const better = !best || (corner !== best.corner ? corner : d < best.d);
+        if (better) best = { kind: ic.kind, corner, d };
+      }
+      return best ? best.kind : null;
+    }
+    // トリミング範囲が画像全体か（＝何も切らない）。画素に丸めて比べる。
+    function cropIsWhole(r, imgW, imgH) {
+      return !!r && Math.round(r.x) === 0 && Math.round(r.y) === 0
+        && Math.round(r.w) === imgW && Math.round(r.h) === imgH;
+    }
+    // 点 p を押した時のドラッグの種類（25章）。
+    //   境界アイコンの上 → その向き（範囲の大きさを変える）
+    //   範囲が画像全体の時（［トリミング］を押した直後など）→ 'new'（新しい範囲を描く）
+    //   範囲の内側 → CROP_INSIDE_DRAG（範囲を動かす）／ 範囲の外側（暗い所）→ 'new'
+    function cropDragMode(r, imgW, imgH, p, size, pad) {
+      const icon = hitCropIcon(r, p, size, pad);
+      if (icon) return icon;
+      if (cropIsWhole(r, imgW, imgH)) return 'new';
+      const inside = p.x > r.x && p.x < r.x + r.w && p.y > r.y && p.y < r.y + r.h;
+      return inside ? CROP_INSIDE_DRAG : 'new';
+    }
+    // ドラッグ中のトリミング範囲。d は { mode, sx, sy, rect }（sx, sy は押した所、rect はドラッグ前の範囲）。
+    // 範囲は画像（imgW × imgH）の中に収める。'new' は向きの文字（n・e・w）を含むので先に扱う。
+    function cropDragRect(d, p, imgW, imgH) {
+      if (d.mode === 'new') { // 押した所から今のポインタ位置までの長方形
+        const cx = (v) => Math.max(0, Math.min(imgW, v));
+        const cy = (v) => Math.max(0, Math.min(imgH, v));
+        const x1 = cx(d.sx), y1 = cy(d.sy), x2 = cx(p.x), y2 = cy(p.y);
+        return { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
+      }
+      const r = { ...d.rect };
+      const dx = p.x - d.sx, dy = p.y - d.sy;
+      if (d.mode === 'move') {
+        r.x = Math.max(0, Math.min(imgW - r.w, r.x + dx));
+        r.y = Math.max(0, Math.min(imgH - r.h, r.y + dy));
+        return r;
+      }
+      let x1 = r.x, y1 = r.y, x2 = r.x + r.w, y2 = r.y + r.h;
+      if (d.mode.includes('w')) x1 = Math.max(0, Math.min(x2 - CROP_MIN, x1 + dx));
+      if (d.mode.includes('e')) x2 = Math.min(imgW, Math.max(x1 + CROP_MIN, x2 + dx));
+      if (d.mode.includes('n')) y1 = Math.max(0, Math.min(y2 - CROP_MIN, y1 + dy));
+      if (d.mode.includes('s')) y2 = Math.min(imgH, Math.max(y1 + CROP_MIN, y2 + dy));
+      return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+    }
+    // 離した時のトリミング範囲。新しく描いた範囲の幅か高さが CROP_MIN に満たなければ
+    //（クリックだけを含む）、ドラッグ前の範囲に戻す。
+    function cropDragEndRect(d, r) {
+      if (d.mode === 'new' && (!r || r.w < CROP_MIN || r.h < CROP_MIN)) return { ...d.rect };
+      return r;
+    }
+    // ドラッグの種類に合うカーソル（新しい範囲は十字・境界アイコンは向きに合った矢印・内側は移動）。
+    function cropCursor(mode) {
+      if (mode === 'new') return 'crosshair';
+      if (mode === 'move') return 'move';
+      if (mode === 'nw' || mode === 'se') return 'nwse-resize';
+      if (mode === 'ne' || mode === 'sw') return 'nesw-resize';
+      if (mode === 'n' || mode === 's') return 'ns-resize';
+      if (mode === 'e' || mode === 'w') return 'ew-resize';
+      return '';
+    }
+
     async function openImageEditor(c, sectionId, itemId, index) {
       const item = findItemLive(c.id, sectionId, itemId);
       if (!item || !Array.isArray(item.images) || item.images[index] === undefined) return;
@@ -9312,15 +9402,22 @@
       }
       function endPan() { panning = null; canvas.classList.remove('panning'); }
 
-      // ---- トリミング（Excel 式：8ハンドルで領域を調整→適用） ----
+      // ---- トリミング（Excel 式：トリミング範囲を決めて、もう一度［トリミング］で適用） ----
+      // 範囲はドラッグで描くか、境界アイコン（8 個の □）で大きさを変える（仕様 25章）。
       let cropMode = false;
       let cropRect = null;  // {x,y,w,h} canvas px
-      let cropDrag = null;  // {mode, sx, sy, rect}
+      let cropDrag = null;  // {mode, sx, sy, rect, moved}（mode は cropDragMode の戻り値）
       const cropActions = overlay.querySelector('.ie-crop-actions');
+      // 境界アイコンの一辺（画面上 16px）と、当たり判定を広げる量（画面上 8px）をキャンバス px で。
+      // 当たり判定は 32px 四方で、変更前（角と中点から ±16px）と同じ大きさ。
+      const cropIconSize = () => 16 * dispScale();
+      const cropIconPad = () => 8 * dispScale();
+      const cropModeAt = (p) => cropDragMode(cropRect, canvas.width, canvas.height, p, cropIconSize(), cropIconPad());
       function enterCropMode() {
         if (canvas.width < 10 || canvas.height < 10) return;
         cropMode = true;
-        // 初期選択枠は全画面（＝トリミングなし）。ここから8ハンドルで内側へ縮める。
+        // 最初のトリミング範囲は画像全体（＝トリミングなし）。ドラッグで新しい範囲を描くか、
+        // 境界アイコンで内側へ縮める。
         cropRect = { x: 0, y: 0, w: canvas.width, h: canvas.height };
         if (cropActions) cropActions.hidden = false;
         recomposite();
@@ -9328,34 +9425,16 @@
       function exitCropMode() {
         if (!cropMode) return;
         cropMode = false; cropRect = null; cropDrag = null;
+        canvas.style.cursor = ''; // トリミング中に付けた矢印・十字のカーソルを外す
         if (cropActions) cropActions.hidden = true;
         recomposite();
-      }
-      function handlePoints() {
-        const { x, y, w, h } = cropRect;
-        return {
-          nw: [x, y], n: [x + w / 2, y], ne: [x + w, y],
-          e: [x + w, y + h / 2], se: [x + w, y + h], s: [x + w / 2, y + h],
-          sw: [x, y + h], w: [x, y + h / 2],
-        };
-      }
-      function hitHandle(p) {
-        // 当たり判定は見た目のハンドル(約16px)より広めに取り、掴みやすくする（画面上 ±16px）。
-        const tol = 16 * dispScale();
-        const pts = handlePoints();
-        for (const k in pts) {
-          if (Math.abs(p.x - pts[k][0]) <= tol && Math.abs(p.y - pts[k][1]) <= tol) return k;
-        }
-        if (p.x > cropRect.x && p.x < cropRect.x + cropRect.w &&
-            p.y > cropRect.y && p.y < cropRect.y + cropRect.h) return 'move';
-        return null;
       }
       function drawCropOverlay() {
         const g = ctx, s = dispScale();
         g.save();
         g.setTransform(1, 0, 0, 1, 0, 0);
         g.globalAlpha = 1;
-        g.fillStyle = 'rgba(0,0,0,0.45)'; // 選択外を暗く（evenodd で内側を抜く）
+        g.fillStyle = 'rgba(0,0,0,0.45)'; // 範囲の外側を暗く（evenodd で内側を抜く）
         g.beginPath();
         g.rect(0, 0, canvas.width, canvas.height);
         g.rect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
@@ -9364,34 +9443,24 @@
         g.setLineDash([]);
         g.lineWidth = 2 * s;
         g.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
-        // ハンドルは掴みやすいよう大きめ（画面上 約16px）＋白フチで視認性を上げる。
-        const hs = 16 * s;
-        const pts = handlePoints();
-        g.lineWidth = 2 * s;
-        for (const k in pts) {
-          const hx = pts[k][0] - hs / 2, hy = pts[k][1] - hs / 2;
+        // 境界アイコンは掴みやすいよう大きめ（画面上 16px）＋白い縁で見やすくし、範囲の内側に描く。
+        for (const ic of cropIconRects(cropRect, cropIconSize())) {
           g.fillStyle = '#fff';
-          g.fillRect(hx, hy, hs, hs);
+          g.fillRect(ic.x, ic.y, ic.w, ic.h);
           g.fillStyle = '#1a73e8';
-          g.fillRect(hx + 2 * s, hy + 2 * s, hs - 4 * s, hs - 4 * s);
+          g.fillRect(ic.x + 2 * s, ic.y + 2 * s, ic.w - 4 * s, ic.h - 4 * s);
         }
         g.restore();
       }
       function updateCrop(p) {
-        const d = cropDrag, r = { ...d.rect };
-        const dx = p.x - d.sx, dy = p.y - d.sy, MIN = 10;
-        if (d.mode === 'move') {
-          r.x = Math.max(0, Math.min(canvas.width - r.w, r.x + dx));
-          r.y = Math.max(0, Math.min(canvas.height - r.h, r.y + dy));
-        } else {
-          let x1 = r.x, y1 = r.y, x2 = r.x + r.w, y2 = r.y + r.h;
-          if (d.mode.includes('w')) x1 = Math.max(0, Math.min(x2 - MIN, x1 + dx));
-          if (d.mode.includes('e')) x2 = Math.min(canvas.width, Math.max(x1 + MIN, x2 + dx));
-          if (d.mode.includes('n')) y1 = Math.max(0, Math.min(y2 - MIN, y1 + dy));
-          if (d.mode.includes('s')) y2 = Math.min(canvas.height, Math.max(y1 + MIN, y2 + dy));
-          r.x = x1; r.y = y1; r.w = x2 - x1; r.h = y2 - y1;
-        }
-        cropRect = r;
+        cropRect = cropDragRect(cropDrag, p, canvas.width, canvas.height);
+        recomposite();
+      }
+      // ドラッグを終える（離した時・ポインタを失った時）。小さすぎる新しい範囲は捨てる。
+      function endCropDrag() {
+        if (!cropDrag) return;
+        cropRect = cropDragEndRect(cropDrag, cropRect);
+        cropDrag = null;
         recomposite();
       }
       function applyCrop() {
@@ -9399,8 +9468,8 @@
         const rx = Math.round(cropRect.x), ry = Math.round(cropRect.y);
         const rw = Math.round(cropRect.w), rh = Math.round(cropRect.h);
         if (rw < 4 || rh < 4) return;
-        // 全画面のまま（＝何も切らない）なら履歴を積まずにモードを抜けるだけ
-        if (rx === 0 && ry === 0 && rw === canvas.width && rh === canvas.height) {
+        // 画像全体のまま（＝何も切らない）なら履歴を積まずにモードを抜けるだけ
+        if (cropIsWhole(cropRect, canvas.width, canvas.height)) {
           selectTool('select');
           return;
         }
@@ -9416,6 +9485,7 @@
         // 消さずに残す＝描画時にクリップされるだけで、移動で戻せる）。
         objects.forEach((o) => translateObj(o, o, -rx, -ry));
         cropMode = false; cropRect = null; cropDrag = null;
+        canvas.style.cursor = '';
         if (cropActions) cropActions.hidden = true;
         selectTool('select');
         // 切り出した画像を編集画面の枠いっぱいで見せ直す（仕様 22章）。このあと入れる図形は
@@ -9627,9 +9697,12 @@
         if (tool === 'select') return; // 選択モードは描画・パンへ進まない（選択・移動のみ）
         if (tool === 'hand') { startPan(e); return; }
         if (tool === 'crop') {
+          // 境界アイコン → 大きさを変える／範囲の内側 → 動かす／それ以外 → 新しい範囲を描く（仕様 25章）
           if (!cropRect) return;
-          const h = hitHandle(p);
-          if (h) { cropDrag = { mode: h, sx: p.x, sy: p.y, rect: { ...cropRect } }; canvas.setPointerCapture(e.pointerId); }
+          const mode = cropModeAt(p);
+          cropDrag = { mode, sx: p.x, sy: p.y, rect: { ...cropRect }, moved: false };
+          canvas.style.cursor = cropCursor(mode); // ドラッグ中は押した時のカーソルのまま
+          canvas.setPointerCapture(e.pointerId);
           return;
         }
         // テキスト・吹き出しは押した瞬間ではなく離した時に配置する（配置座標は押下位置）。
@@ -9702,7 +9775,18 @@
           return;
         }
         if (tool === 'hand') { doPan(e); return; }
-        if (tool === 'crop') { if (cropDrag) updateCrop(xy(e)); return; }
+        if (tool === 'crop') {
+          if (!cropRect) return;
+          const p = xy(e);
+          // ドラッグしていない時は、押すと何が起きるかをカーソルで示す
+          if (!cropDrag) { canvas.style.cursor = cropCursor(cropModeAt(p)); return; }
+          if (!cropDrag.moved) { // クリックの手ぶれでは範囲を変えない（図形のドラッグと同じ画面上 2px）
+            if (Math.hypot(p.x - cropDrag.sx, p.y - cropDrag.sy) < 2 * dispScale()) return;
+            cropDrag.moved = true;
+          }
+          updateCrop(p);
+          return;
+        }
         if (!drawing) {
           // 線・矢印の始点スナップ中：カーソルまでの線をプレビュー（確定は次のクリック）。
           if (lineAnchor && (tool === 'arrow' || tool === 'line')) {
@@ -9790,7 +9874,11 @@
           objDrag = null; canvas.style.cursor = ''; recomposite(); return;
         }
         if (tool === 'hand') { endPan(); return; }
-        if (tool === 'crop') { cropDrag = null; return; }
+        if (tool === 'crop') {
+          endCropDrag(); // 新しい範囲はここで決まる（小さすぎるときはドラッグ前の範囲に戻す）
+          if (cropRect) canvas.style.cursor = cropCursor(cropModeAt(xy(e)));
+          return;
+        }
         if (!drawing) return;
         drawing = false;
         const p = xy(e);
@@ -9827,6 +9915,7 @@
         if (activeCallout && activeCallout.dragTip) { activeCallout.dragTip = false; activeCallout.render(); return; }
         if (tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
         if (tool === 'pen' || tool === 'marker') bakeLiveStroke(); // 描きかけ分は確定させる
+        endCropDrag(); // トリミング範囲のドラッグは、離した時と同じく範囲を決める
         drawing = false; pendingPlace = null; cropDrag = null; objDrag = null; marquee = null; lineAnchor = null; endPan();
         chord.active = false;
         canvas.style.cursor = '';
@@ -9976,7 +10065,10 @@
           '直前の20操作までさかのぼれます。',
         ]],
         ['トリミングと表示', [
-          'トリミングは範囲を決めてから、もう一度「トリミング」ボタンを押すと適用されます（Office と同じ）。やめるときは「取消」か <kbd>Esc</kbd>、別のツールへの切り替えでも取り消せます。',
+          '「トリミング」ボタンを押すと、画像全体がトリミング範囲になります。画像の上をドラッグすると、押した所から離した所までの長方形が新しいトリミング範囲になります（範囲選択と同じ操作です）。',
+          '範囲を決めた後も、範囲の外側（暗い所）からドラッグすると範囲を描き直せます。範囲の内側をドラッグすると、範囲が動きます。',
+          '範囲の四隅と各辺の中央にある □（境界アイコン）をドラッグすると、範囲の大きさを変えられます。',
+          '範囲を決めてから、もう一度「トリミング」ボタンを押すと適用されます（Office と同じ）。やめるときは「取消」か <kbd>Esc</kbd>、別のツールへの切り替えでも取り消せます。',
           'ハンドで画像を動かせます。ホイールで拡大縮小（ハンド以外のツールは <kbd>Ctrl</kbd>＋ホイール）。',
           '表示倍率は編集中の見え方だけを変えるもので、保存される画像の仕上がりは変わりません。100% が手順の一覧で見える大きさです。開いたときとトリミングの後は、編集画面の枠いっぱい（フィット）で表示します。拡大縮小した後も「フィット」で枠いっぱいに戻せます。',
         ]],
@@ -10740,6 +10832,8 @@
         // 図形の回転（仕様 18章）
         canRotate, normalizeAngle, rotatePointAround, objRotationCenter,
         toLocalPoint, toWorldPoint, reanchorRotatedBox,
+        // トリミング範囲のドラッグと境界アイコン（仕様 25章）
+        cropIconRects, hitCropIcon, cropIsWhole, cropDragMode, cropDragRect, cropDragEndRect, cropCursor,
         // PDF出力の倍率・用紙・向き
         clampPdfScale, pdfPaperDims, pdfPageStyleCss, pdfOutSettings, setPdfOutSettings,
         paginateBreaks, parsePdfPageRange, pdfPageRangeString,
