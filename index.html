@@ -9088,7 +9088,9 @@
       function undoEdit() {
         if (!undoStack.length) return;
         endUndoGestures();
-        exitCropMode();
+        // トリミング中なら終えて［選択］に戻る（Esc・［取消］と同じ。質問 Q6 の回答 2026-11-17）。
+        // 範囲だけを消すと［トリミング］が選ばれたまま残り、Esc で画像編集画面が閉じていた（v1.0.14・計画外）
+        if (tool === 'crop') selectTool('select');
         try { redoStack.push(snapshotEdit()); } catch (_) {}
         if (redoStack.length > IE_HISTORY_MAX) redoStack.shift();
         restore(undoStack.pop());
@@ -9097,7 +9099,7 @@
       function redoEdit() {
         if (!redoStack.length) return;
         endUndoGestures();
-        exitCropMode();
+        if (tool === 'crop') selectTool('select'); // トリミング中なら終えて［選択］に戻る（undoEdit と同じ）
         try { undoStack.push(snapshotEdit()); } catch (_) {}
         if (undoStack.length > IE_HISTORY_MAX) undoStack.shift();
         restore(redoStack.pop());
@@ -10630,7 +10632,7 @@
           '「トリミング」ボタンを押すと、画像全体がトリミング範囲になります。画像の上をドラッグすると、押した所から離した所までの長方形が新しいトリミング範囲になります（範囲選択と同じ操作です）。',
           '範囲を決めた後も、範囲の外側（暗い所）からドラッグすると範囲を描き直せます。範囲を動かすときは、範囲の青い線（境界線）の □ 以外の所をドラッグします。範囲の内側をドラッグしても、何も起きません。',
           '範囲の四隅と各辺の中央にある □（境界アイコン）をドラッグすると、範囲の大きさを変えられます。',
-          '範囲を決めてから、もう一度「トリミング」ボタンを押すと適用されます（Office と同じ）。やめるときは「取消」か <kbd>Esc</kbd>、別のツールへの切り替えでも取り消せます。',
+          '範囲を決めてから、もう一度「トリミング」ボタンを押すと適用されます（Office と同じ）。やめるときは「取消」か <kbd>Esc</kbd>、別のツールへの切り替えでも取り消せます。トリミング中に「元に戻す」「やり直す」を押した時も、トリミングを終えて「選択」に戻ります。',
           'ハンドで画像を動かせます。ホイールで拡大縮小（ハンド以外のツールは <kbd>Ctrl</kbd>＋ホイール）。',
           '表示倍率は編集中の見え方だけを変えるもので、保存される画像の仕上がりは変わりません。100% が手順の一覧で見える大きさです。開いたときとトリミングの後は、編集画面の枠いっぱい（フィット）で表示します。拡大縮小した後も「フィット」で枠いっぱいに戻せます。',
         ]],
@@ -10744,7 +10746,9 @@
       overlay.querySelector('.ie-save').addEventListener('click', async () => {
         commitCallout(); // 未確定の吹き出しを確定してから書き出す
         finishFreeformIfAny(); // 描きかけのフリーフォームも確定してから書き出す
-        exitCropMode();
+        // トリミング中なら終えて［選択］に戻る（保存に失敗して画像編集画面に残った時も、［トリミング］が
+        // 選ばれたまま残らないように。質問 Q6 の回答。v1.0.14・計画外）
+        if (tool === 'crop') selectTool('select');
         clearSelection();
         // 合成結果（crop オーバーレイ無し）を別 canvas に作って書き出す。
         // baseSrc を原寸で読んでいるため、合成 out も原寸解像度になる（3-B）。
