@@ -3811,7 +3811,7 @@
       return menu;
     }
     // ---- Excel/Office 風カラーパレット ----
-    // 「テーマの色（10色）＋各列の濃淡5段」「標準の色」「塗りつぶしなし」「その他の色」
+    // 「テーマの色（10色）＋各列の濃淡5段」「標準の色」「最近使用した色」「塗りつぶしなし」「その他の色」
     // で構成する（Office アプリの色選択と同じ構造）。文字色・ハイライト・セル塗り・
     // 画像編集の色選択で共通に使う。
     const OP_THEME = ['#FFFFFF', '#000000', '#E7E6E6', '#44546A', '#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5', '#70AD47'];
@@ -3831,6 +3831,23 @@
         : col === 2 ? [-0.1, -0.25, -0.5, -0.75, -0.9]   // 薄い灰: 暗く
         : [0.8, 0.6, 0.4, -0.25, -0.5];                  // 他: 明3段＋暗2段
       return steps.map((t) => opTint(hex, t));
+    }
+    // 「最近使用した色」（v1.0.14。docs/spec-color-dialog.md 8 章）。「色の設定」画面で［OK］を押して決めた色を、
+    // 新しい順に 10 色まで localStorage に保存する。手順書データ（checklistmaker.v1）には入れない。6 か所の色パレットで共通。
+    const OP_RECENT_KEY = 'checklistmaker.recentColors';
+    const OP_RECENT_MAX = 10;
+    function opRecentColors() {
+      try {
+        const list = JSON.parse(localStorage.getItem(OP_RECENT_KEY) || '[]');
+        return Array.isArray(list) ? list.map(ocdParseColor).filter(Boolean).slice(0, OP_RECENT_MAX) : [];
+      } catch (_) { return []; } // 読めない値と、localStorage が使えない時は行を表示しない
+    }
+    // 決めた色を先頭に記録する（同じ色はその色を先頭へ移す）
+    function opPushRecentColor(hex) {
+      const c = ocdParseColor(hex);
+      if (!c) return;
+      const list = [c, ...opRecentColors().filter((x) => x !== c)].slice(0, OP_RECENT_MAX);
+      try { localStorage.setItem(OP_RECENT_KEY, JSON.stringify(list)); } catch (_) { /* 保存できなくても、色の決定は続ける */ }
     }
     // パレット DOM を組み立てる。onPick(色 or 'none') → onClose() の順で呼ぶ。
     // noneLabel: 「なし」ボタンの文言（線の色では「線なし」など）。既定は塗り用の文言。
@@ -3864,6 +3881,12 @@
       pal.appendChild(vars);
       title('標準の色');
       swatchRow(OP_STANDARD, pal);
+      // 「最近使用した色」は、1 色目を決めるまで見出しも行も表示しない
+      const recent = opRecentColors();
+      if (recent.length) {
+        title('最近使用した色');
+        swatchRow(recent, pal);
+      }
       const footer = document.createElement('div');
       footer.className = 'op-footer';
       if (withNone) {
@@ -4040,7 +4063,8 @@
           try { prevFocus.focus({ preventScroll: true }); } catch (_) { /* noop */ }
         }
       };
-      ctx.ok = () => { const c = ocdHexOf(st); dispose(); if (o.onOK) o.onOK(c); };
+      // ［OK］（Enter・六角形のダブルクリックも同じ）で決めた色は、「最近使用した色」に記録する
+      ctx.ok = () => { const c = ocdHexOf(st); dispose(); opPushRecentColor(c); if (o.onOK) o.onOK(c); };
       ctx.cancel = () => { dispose(); if (o.onCancel) o.onCancel(); };
       ocdActive = { dispose };
       // window の capture で受け、画像編集画面・手順の本文などの keydown より先に止める
@@ -10368,7 +10392,7 @@
         ]],
         ['色と書式', [
           '色は「線色」「塗りつぶし」「文字色」の3つに分かれています。図形を選んでから変えると、その図形に反映されます（複数選んでいればまとめて）。',
-          '色パレットで「🎨 その他の色…」を押すと、Office と同じ「色の設定」画面が開きます。タブ「標準」では六角形の色見本から、タブ「ユーザー設定」では色の面・明るさのバー・数値（RGB・HSL・16 進）で色を決めます。「OK」を押すと、色パレットの色見本を押した時と同じように色が変わります。六角形をダブルクリックしても同じです。',
+          '色パレットで「🎨 その他の色…」を押すと、Office と同じ「色の設定」画面が開きます。タブ「標準」では六角形の色見本から、タブ「ユーザー設定」では色の面・明るさのバー・数値（RGB・HSL・16 進）で色を決めます。「OK」を押すと、色パレットの色見本を押した時と同じように色が変わります。六角形をダブルクリックしても同じです。「OK」で決めた色は、色パレットの「最近使用した色」に、新しい順で 10 色まで表示されます。',
           '「線の太さ」も同じで、図形を選んでから動かすとその図形の線（テキストボックスの枠線・吹き出しの枠も）が太くなったり細くなったりします。',
           '線の太さと透過率は、スライダーの右の数値欄に直接入力もできます（<kbd>Enter</kbd> か欄の外クリックで確定）。',
           '四角・丸・多角形（閉じたもの）・テキストボックス・吹き出しは塗りつぶせます。「塗りつぶしなし」で透明に戻せます。',
@@ -11136,6 +11160,7 @@
         STORAGE_KEY, MIGRATED_KEY,
         // 「色の設定」画面（v1.0.14。docs/spec-color-dialog.md）
         ocdOpen, ocdParseColor, ocdRgbToHsl, ocdHslToRgb, ocdRgbToHex, ocdStandardCells, rbOpenPalette, rbSelectionColor,
+        OP_RECENT_KEY, opRecentColors, opPushRecentColor,
         // 録画取り込みウィザードの純関数（2-R4）
         wizardDefaultChoice, wizardStepsFrom, wizardMergeUp, wizardBulkReplace,
         wizardShotFiles, buildImportSection, buildImportItems, clampInsertIndex, insertItemsAt,
