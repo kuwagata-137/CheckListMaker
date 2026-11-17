@@ -65,7 +65,8 @@ test('cropdrag — 押した所で決まるドラッグの種類とカーソル�
   t.after(() => app.close());
   const T = await app.api();
   const W = 400, H = 300;
-  const mode = (rect, x, y) => T.cropDragMode(rect, W, H, { x, y }, 16, 8);
+  // 境界アイコンの一辺 16・当たり判定の広げ 8・境界線の当たり判定は線の両側 6（画面上の値と同じ比で試す）
+  const mode = (rect, x, y) => T.cropDragMode(rect, W, H, { x, y }, 16, 8, 6);
 
   await t.test('cropIsWhole — 範囲が画像全体か（画素に丸めて比べる）', () => {
     assert.equal(T.cropIsWhole({ x: 0, y: 0, w: 400, h: 300 }, W, H), true);
@@ -81,20 +82,31 @@ test('cropdrag — 押した所で決まるドラッグの種類とカーソル�
     assert.equal(mode(whole, 4, 4), 'nw', '左上の境界アイコンは大きさを変える');
     assert.equal(mode(whole, 200, 8), 'n', '上の辺の境界アイコン');
     assert.equal(mode(whole, 396, 296), 'se', '右下の境界アイコン');
+    assert.equal(mode(whole, 100, 2), 'new', '画像の端（境界線）からも新しい範囲（統括役の解釈。外側が無いため）');
   });
 
-  await t.test('範囲を決めた後は、外側から新しい範囲・内側は範囲を動かす・境界アイコンは大きさを変える', () => {
+  await t.test('範囲を決めた後は、外側から新しい範囲・境界線で範囲を動かす・内側は何も起きない（質問 Q1 の回答）', () => {
     const r = { x: 100, y: 50, w: 200, h: 120 };
-    assert.equal(mode(r, 200, 110), 'move', '範囲の内側（質問 Q1 の推奨案）');
+    assert.equal(mode(r, 200, 110), 'none', '範囲の内側（明るい所）は何も起きない');
+    assert.equal(mode(r, 150, 57), 'none', '上の線から内側へ 7px は範囲の内側');
+    assert.equal(mode(r, 150, 50), 'move', '上の辺の境界線（□ 以外の所）');
+    assert.equal(mode(r, 150, 56), 'move', '線から内側へ 6px まで境界線');
+    assert.equal(mode(r, 150, 44), 'move', '線から外側へ 6px まで境界線');
+    assert.equal(mode(r, 150, 43), 'new', '線から外側へ 7px は範囲の外側');
+    assert.equal(mode(r, 100, 140), 'move', '左の辺の境界線');
+    assert.equal(mode(r, 300, 80), 'move', '右の辺の境界線');
+    assert.equal(mode(r, 250, 170), 'move', '下の辺の境界線');
     assert.equal(mode(r, 50, 30), 'new', '範囲の外側（暗い所）');
     assert.equal(mode(r, 350, 250), 'new', '範囲の外側（右下）');
-    assert.equal(mode(r, 100, 50), 'nw', '左上の角');
+    assert.equal(mode(r, 100, 50), 'nw', '左上の角は境界アイコン（境界線より優先）');
+    assert.equal(mode(r, 200, 50), 'n', '上の辺の中央は境界アイコン（境界線より優先）');
     assert.equal(mode(r, 96, 110), 'w', '左の辺の □ は範囲の外へ 8px まで当たる');
   });
 
-  await t.test('cropCursor — 新しい範囲は十字・境界アイコンは向きに合った矢印・内側は移動', () => {
+  await t.test('cropCursor — 新しい範囲は十字・境界アイコンは向きに合った矢印・境界線は移動・内側は通常の矢印', () => {
     assert.equal(T.cropCursor('new'), 'crosshair');
     assert.equal(T.cropCursor('move'), 'move');
+    assert.equal(T.cropCursor('none'), 'default');
     assert.equal(T.cropCursor('nw'), 'nwse-resize');
     assert.equal(T.cropCursor('se'), 'nwse-resize');
     assert.equal(T.cropCursor('ne'), 'nesw-resize');
@@ -123,6 +135,11 @@ test('cropdrag — ドラッグ中と離した時のトリミング範囲（仕�
   await t.test('new — 画像の外までドラッグしても、画像の端で止まる', () => {
     assert.deepEqual(drag('new', 50, 40, -30, 500), { x: 0, y: 40, w: 50, h: 260 });
     assert.deepEqual(drag('new', 380, 10, 999, -50), { x: 380, y: 0, w: 20, h: 10 });
+  });
+
+  await t.test('none — 範囲の内側からのドラッグでは、範囲は変わらない', () => {
+    assert.deepEqual(drag('none', 200, 110, 260, 150), r);
+    assert.deepEqual(plain(T.cropDragEndRect({ mode: 'none', rect: { ...r } }, { ...r })), r);
   });
 
   await t.test('move — 範囲を平行移動し、画像の外へは出さない', () => {

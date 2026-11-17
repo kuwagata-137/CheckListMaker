@@ -7827,9 +7827,6 @@
     // 辺を範囲の辺に合わせる。範囲が画像全体の時も、□ が画像の外にはみ出さない。
     const CROP_MIN = 10; // トリミング範囲の最小の幅と高さ（画像の画素）
     const CROP_CORNERS = ['nw', 'ne', 'se', 'sw'];
-    // 範囲を決めた後に、範囲の内側から押したドラッグの動作。推奨案（変更前と同じく範囲を動かす）で
-    // 実装している（25章。統括役がユーザーに確認中の質問 Q1）。'new' にすると新しい範囲を描く。
-    const CROP_INSIDE_DRAG = 'move';
     // 境界アイコン 8 個の位置と大きさ（size は □ の一辺）。各辺 → 四隅の順番に並べる。
     // この順番に描くと、範囲が小さく □ が重なる時に四隅が上に重なる。
     function cropIconRects(r, size) {
@@ -7860,20 +7857,27 @@
       return !!r && Math.round(r.x) === 0 && Math.round(r.y) === 0
         && Math.round(r.w) === imgW && Math.round(r.h) === imgH;
     }
-    // 点 p を押した時のドラッグの種類（25章）。
+    // 点 p を押した時のドラッグの種類（25章。質問 Q1 の回答 2026-11-17）。
     //   境界アイコンの上 → その向き（範囲の大きさを変える）
     //   範囲が画像全体の時（［トリミング］を押した直後など）→ 'new'（新しい範囲を描く）
-    //   範囲の内側 → CROP_INSIDE_DRAG（範囲を動かす）／ 範囲の外側（暗い所）→ 'new'
-    function cropDragMode(r, imgW, imgH, p, size, pad) {
+    //   境界線（範囲の青い線。線の両側 linePad まで）→ 'move'（範囲を動かす）
+    //   範囲の内側（明るい所）→ 'none'（何も起きない）／ 範囲の外側（暗い所）→ 'new'
+    function cropDragMode(r, imgW, imgH, p, size, pad, linePad) {
       const icon = hitCropIcon(r, p, size, pad);
       if (icon) return icon;
       if (cropIsWhole(r, imgW, imgH)) return 'new';
-      const inside = p.x > r.x && p.x < r.x + r.w && p.y > r.y && p.y < r.y + r.h;
-      return inside ? CROP_INSIDE_DRAG : 'new';
+      const x2 = r.x + r.w, y2 = r.y + r.h, lp = Number(linePad) || 0;
+      const nearBox = p.x >= r.x - lp && p.x <= x2 + lp && p.y >= r.y - lp && p.y <= y2 + lp;
+      const onLine = nearBox && (Math.abs(p.x - r.x) <= lp || Math.abs(p.x - x2) <= lp
+        || Math.abs(p.y - r.y) <= lp || Math.abs(p.y - y2) <= lp);
+      if (onLine) return 'move';
+      const inside = p.x > r.x && p.x < x2 && p.y > r.y && p.y < y2;
+      return inside ? 'none' : 'new';
     }
     // ドラッグ中のトリミング範囲。d は { mode, sx, sy, rect }（sx, sy は押した所、rect はドラッグ前の範囲）。
     // 範囲は画像（imgW × imgH）の中に収める。'new' は向きの文字（n・e・w）を含むので先に扱う。
     function cropDragRect(d, p, imgW, imgH) {
+      if (d.mode === 'none') return { ...d.rect }; // 範囲の内側からのドラッグでは何も起きない
       if (d.mode === 'new') { // 押した所から今のポインタ位置までの長方形
         const cx = (v) => Math.max(0, Math.min(imgW, v));
         const cy = (v) => Math.max(0, Math.min(imgH, v));
@@ -7900,10 +7904,12 @@
       if (d.mode === 'new' && (!r || r.w < CROP_MIN || r.h < CROP_MIN)) return { ...d.rect };
       return r;
     }
-    // ドラッグの種類に合うカーソル（新しい範囲は十字・境界アイコンは向きに合った矢印・内側は移動）。
+    // ドラッグの種類に合うカーソル（新しい範囲は十字・境界アイコンは向きに合った矢印・
+    // 境界線は移動・範囲の内側は通常の矢印）。
     function cropCursor(mode) {
       if (mode === 'new') return 'crosshair';
       if (mode === 'move') return 'move';
+      if (mode === 'none') return 'default';
       if (mode === 'nw' || mode === 'se') return 'nwse-resize';
       if (mode === 'ne' || mode === 'sw') return 'nesw-resize';
       if (mode === 'n' || mode === 's') return 'ns-resize';
@@ -9502,7 +9508,9 @@
       // 当たり判定は 32px 四方で、変更前（角と中点から ±16px）と同じ大きさ。
       const cropIconSize = () => 16 * dispScale();
       const cropIconPad = () => 8 * dispScale();
-      const cropModeAt = (p) => cropDragMode(cropRect, canvas.width, canvas.height, p, cropIconSize(), cropIconPad());
+      // 境界線（範囲の青い線）の当たり判定は、線の両側に画面上 6px ずつ（質問 Q1 の回答）
+      const cropLinePad = () => 6 * dispScale();
+      const cropModeAt = (p) => cropDragMode(cropRect, canvas.width, canvas.height, p, cropIconSize(), cropIconPad(), cropLinePad());
       function enterCropMode() {
         if (canvas.width < 10 || canvas.height < 10) return;
         cropMode = true;
@@ -9789,7 +9797,8 @@
         if (tool === 'select') return; // 選択モードは描画・パンへ進まない（選択・移動のみ）
         if (tool === 'hand') { startPan(e); return; }
         if (tool === 'crop') {
-          // 境界アイコン → 大きさを変える／範囲の内側 → 動かす／それ以外 → 新しい範囲を描く（仕様 25章）
+          // 境界アイコン → 大きさを変える／境界線 → 動かす／範囲の内側 → 何も起きない／
+          // それ以外 → 新しい範囲を描く（仕様 25章）
           if (!cropRect) return;
           const mode = cropModeAt(p);
           cropDrag = { mode, sx: p.x, sy: p.y, rect: { ...cropRect }, moved: false };
@@ -9872,6 +9881,7 @@
           const p = xy(e);
           // ドラッグしていない時は、押すと何が起きるかをカーソルで示す
           if (!cropDrag) { canvas.style.cursor = cropCursor(cropModeAt(p)); return; }
+          if (cropDrag.mode === 'none') return; // 範囲の内側からのドラッグでは何も起きない
           if (!cropDrag.moved) { // クリックの手ぶれでは範囲を変えない（図形のドラッグと同じ画面上 2px）
             if (Math.hypot(p.x - cropDrag.sx, p.y - cropDrag.sy) < 2 * dispScale()) return;
             cropDrag.moved = true;
@@ -10159,7 +10169,7 @@
         ]],
         ['トリミングと表示', [
           '「トリミング」ボタンを押すと、画像全体がトリミング範囲になります。画像の上をドラッグすると、押した所から離した所までの長方形が新しいトリミング範囲になります（範囲選択と同じ操作です）。',
-          '範囲を決めた後も、範囲の外側（暗い所）からドラッグすると範囲を描き直せます。範囲の内側をドラッグすると、範囲が動きます。',
+          '範囲を決めた後も、範囲の外側（暗い所）からドラッグすると範囲を描き直せます。範囲を動かすときは、範囲の青い線（境界線）の □ 以外の所をドラッグします。範囲の内側をドラッグしても、何も起きません。',
           '範囲の四隅と各辺の中央にある □（境界アイコン）をドラッグすると、範囲の大きさを変えられます。',
           '範囲を決めてから、もう一度「トリミング」ボタンを押すと適用されます（Office と同じ）。やめるときは「取消」か <kbd>Esc</kbd>、別のツールへの切り替えでも取り消せます。',
           'ハンドで画像を動かせます。ホイールで拡大縮小（ハンド以外のツールは <kbd>Ctrl</kbd>＋ホイール）。',
