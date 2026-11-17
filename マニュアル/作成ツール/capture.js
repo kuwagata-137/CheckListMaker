@@ -63,10 +63,18 @@ async function launch() {
   let pp = null;
   try { pp = require('puppeteer'); } catch (e) { /* playwright を使う */ }
   if (pp) {
-    const browser = await pp.launch({ headless: true, args: ['--no-sandbox'] });
+    // 言語・時刻・配色は playwright の時と同じにする（Windows を暗い表示にしていても、明るい表示で撮る）
+    const browser = await pp.launch({ headless: true, args: ['--no-sandbox', '--lang=ja-JP'] });
     return {
       browser, kind: 'puppeteer',
-      newPage: async (w, h) => { const p = await browser.newPage(); await p.setViewport({ width: w, height: h, deviceScaleFactor: DSF }); return p; },
+      newPage: async (w, h) => {
+        const p = await browser.newPage();
+        await p.setViewport({ width: w, height: h, deviceScaleFactor: DSF });
+        await p.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }, { name: 'forced-colors', value: 'none' }]);
+        await p.emulateTimezone('Asia/Tokyo');
+        if (p.emulateLocale) await p.emulateLocale('ja-JP');
+        return p;
+      },
       initScript: (p, fn, arg) => p.evaluateOnNewDocument(fn, arg),
       size: () => page.viewport(),
     };
@@ -280,7 +288,12 @@ async function shot(name, opts = {}) {
   const so = { path: path.join(OUT, file), type: fmt };
   if (fmt === 'jpeg') so.quality = 85;
   if (clip) so.clip = clip;
-  if (clip && B.kind === 'puppeteer') so.captureBeyondViewport = false;
+  if (clip && B.kind === 'puppeteer') {
+    // puppeteer は切り抜く範囲の位置を、ページ先頭を基準に受け取る（playwright は画面左上が基準）。スクロール量を加算する
+    const [sx, sy] = await ev(() => [window.visualViewport.pageLeft, window.visualViewport.pageTop]);
+    so.clip = { ...clip, x: clip.x + sx, y: clip.y + sy };
+    so.captureBeyondViewport = false;
+  }
   await page.screenshot(so);
   await ev(() => window.__mnl && window.__mnl.clear());
   manifest[name] = { file, w: clip ? clip.width : vw, h: clip ? clip.height : vh, dsf: DSF };
@@ -742,6 +755,110 @@ CH.m04 = async () => {
       { box: ['.ie-save', '.ie-cancel'], n: 8, pad: 2, at: 'r' },
     ] });
   await shot('m04_ie_tools', { clip: '.ie-tools', pad: 6 });
+
+  // ---- v1.0.14: 吹き出しの大きさ（4.3）・「色の設定」画面（4.4）・トリミング（4.5）----
+  // 画像の上の点（画像の幅と高さに対する割合）を、今の画面の座標にする。ツールを切り替えるとツールバーの段が
+  // 変わって画像の位置がずれるので、操作の直前に求める
+  const atNow = async (fx, fy) => { const b = await box('.ie-canvas-wrap canvas'); return [b.x + b.w * fx, b.y + b.h * fy]; };
+  // 吹き出しを置き、右側中央のハンドルで幅を広げた画面を撮る。撮ったら消す（保存する画像は前と同じにする）
+  await click('.ie-tool[data-tool="callout"]');
+  await sleep(200);
+  await page.mouse.click(...(await atNow(0.05, 0.74)));
+  await sleep(300);
+  await type('金額は税込みで入力し、領収書を添付する');
+  // 吹き出しの本体の位置を、編集中の入力欄の位置から画像に対する割合で求める
+  //（吹き出しを選ぶとツールバーの段が増えて画像の位置が下がるので、画面の座標では持たない）
+  const calloutFrac = () => {
+    const ta = document.querySelector('.ie-callout-input');
+    const cv = document.querySelector('.ie-canvas-wrap canvas').getBoundingClientRect();
+    const r = ta.getBoundingClientRect();
+    const P = Math.round(parseFloat(getComputedStyle(ta).fontSize) * 0.55);
+    return { fx0: (r.left - P - cv.left) / cv.width, fy0: (r.top - P - cv.top) / cv.height,
+      fx1: (r.right - 4 + P - cv.left) / cv.width, fy1: (r.bottom + P - cv.top) / cv.height };
+  };
+  const cbx = await ev(calloutFrac);
+  await page.keyboard.press('Enter');
+  await sleep(200);
+  await click('.ie-tool[data-tool="select"]');
+  await page.mouse.click(...(await atNow((cbx.fx0 + cbx.fx1) / 2, (cbx.fy0 + cbx.fy1) / 2)));
+  await sleep(300);
+  const eFrom = await atNow(cbx.fx1, (cbx.fy0 + cbx.fy1) / 2);
+  const eTo = [eFrom[0] + 130, eFrom[1]];
+  await drag(eFrom, eTo);
+  await sleep(300);
+  // 幅を広げて文字が 1 行に収まると、高さが縮み（上端は動かない）、右側中央のハンドルが上へ動く。
+  // 吹き出しをダブルクリックし、入力欄の位置から本体の上端と下端を求め直してから、Enter で確定して選び直す
+  const cv1 = await box('.ie-canvas-wrap canvas');
+  const fxR = (eTo[0] - cv1.x) / cv1.w; // 広げた後の右端（画像に対する割合）
+  const inside = [(cbx.fx0 + fxR) / 2, cbx.fy0 + (cbx.fy1 - cbx.fy0) * 0.25];
+  await page.mouse.click(...(await atNow(...inside)), B.kind === 'puppeteer' ? { count: 2 } : { clickCount: 2 });
+  await sleep(300);
+  const nbx = await ev(calloutFrac);
+  await page.keyboard.press('Enter');
+  await sleep(200);
+  await page.mouse.click(...(await atNow(...inside)));
+  await sleep(300);
+  const tl = await atNow(cbx.fx0, cbx.fy0);
+  const rm = await atNow(fxR, (nbx.fy0 + nbx.fy1) / 2); // 右側中央のハンドル
+  const oldMid = await atNow(cbx.fx1, (cbx.fy0 + cbx.fy1) / 2); // 尻尾の先まで入れるため、高さは広げる前の本体で決める
+  await shot('m04_callout', {
+    clip: { c: [tl[0] - 24, tl[1] - 44, rm[0] - tl[0] + 48, (oldMid[1] - tl[1]) * 2 + 80] }, pad: 8,
+    anno: [{ box: { c: [rm[0] - 9, rm[1] - 9, 18, 18] }, n: 1, pad: 3, at: 'r' }],
+  });
+  await page.keyboard.press('Delete');
+  await sleep(200);
+
+  // 「色の設定」画面: 線色の色パレットで「🎨 その他の色…」を押して開いた画面を撮る
+  await click('.ie-color .ie-color-btn');
+  await sleep(300);
+  await click('#rb-palette .op-more');
+  await sleep(400);
+  await shot('m04_color_dialog', { clip: '#ocd-dlg .ocd-box', pad: 28,
+    anno: [
+      { box: '#ocd-dlg .ocd-tabs', n: 1, pad: 2, at: 'l' },
+      { box: ['#ocd-dlg .ocd-field', '#ocd-dlg .ocd-lum'], n: 2, pad: 3, at: 'l' },
+      { box: ['#ocd-dlg .ocd-model', '#ocd-dlg .ocd-hx'], n: 3, pad: 3, at: 'r' },
+      { box: ['#ocd-dlg [data-a="ok"]', '#ocd-dlg [data-a="cancel"]'], n: 4, pad: 2, at: 'r' },
+      { box: '#ocd-dlg .ocd-newcur', n: 5, pad: 2, at: 'r' },
+    ] });
+  // 16 進の欄に色を入れて［OK］を押す（決めた色は、色パレットの「最近使用した色」に入る）
+  await ev(() => { const h = document.querySelector('#ocd-dlg .ocd-hx'); h.focus(); h.select(); });
+  await type('#2E8B57');
+  await click('#ocd-dlg [data-a="ok"]');
+  await sleep(300);
+  await click('.ie-color .ie-color-btn');
+  await sleep(300);
+  const recentRow = await ev(() => {
+    const t = [...document.querySelectorAll('#rb-palette .op-title')].find((e) => e.textContent === '最近使用した色');
+    const a = t.getBoundingClientRect(), b = t.nextElementSibling.getBoundingClientRect();
+    const x0 = Math.min(a.left, b.left);
+    return [x0, a.top, Math.max(a.right, b.right) - x0, b.bottom - a.top];
+  });
+  await shot('m04_palette_recent', { clip: '#rb-palette', pad: 12,
+    anno: [
+      { box: { c: recentRow }, n: 1, pad: 3, at: 'r' },
+      { box: '#rb-palette .op-more', n: 2, pad: 2, at: 'r' },
+    ] });
+  await click('.ie-color .ie-color-btn'); // もう一度押して色パレットを閉じる
+  await sleep(300);
+
+  // トリミング: ［トリミング］を押し、画像の上をドラッグしてトリミング範囲を決めた画面を撮る。撮ったら［取消］でやめる
+  await click('.ie-tool[data-tool="crop"]');
+  await sleep(300);
+  const [cx0, cy0] = await atNow(0.04, 0.14);
+  const [cx1, cy1] = await atNow(0.70, 0.86);
+  await drag([cx0, cy0], [cx1, cy1]);
+  await sleep(300);
+  await shot('m04_crop', {
+    anno: [
+      { box: '.ie-tool[data-tool="crop"]', n: 1, pad: 2, at: 'r' }, // 下に置くとボタン名「トリミング」に重なる
+      { box: { c: [cx0, cy0, cx1 - cx0, cy1 - cy0] }, n: 2, pad: 4, at: 'tr', dash: true },
+      { box: { c: [cx1 - 16, cy1 - 16, 16, 16] }, n: 3, pad: 3, at: 'br' },
+      { box: '.ie-crop-cancel', n: 4, pad: 2, at: 'b' },
+    ] });
+  await click('.ie-crop-cancel');
+  await sleep(300);
+
   await click('.ie-help-btn');
   await sleep(400);
   await shot('m04_ie_help', { clip: '.modal.ie-help-doc', pad: 0, maxH: 640 });

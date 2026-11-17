@@ -82,8 +82,30 @@
 3. 保存に失敗したら LocalStorageAdapter で従来どおり継続（次回起動時に再試行）。
    途中まで書いた画像ファイルは次回の起動時 GC が回収する。
 
+## 閉じる前と再読み込みの前の保存（v1.0.14・計画外）
+
+- 決定（質問 Q5 の回答 2026-11-17。選択肢「保存漏れ修正（推奨）」。図は `screenshots/v1.0.14-q5-existing-bugs.png`）:
+  手順の本文・手順名・メモを編集したまま窓を閉じても、最後の編集が残るようにする。
+- それまでの動き（v1.0.13 以前から）: 欄の保存は、欄を離れた時（本文は focusout、手順名・メモは change）に
+  行う作りで、フォーカスを置いたまま窓を閉じる・再読み込みすると、最後の編集が保存されずに消えていた。
+- 作り:
+  - main プロセス（`save-before-close.js`）: メイン窓の `close` を一度止め、ページ側の
+    `window.clmFlushBeforeUnload()` を `executeJavaScript` で呼び、終わってから閉じ直す。ページ側が
+    3 秒応答しない時と、例外の時も閉じる。確定の途中にもう一度閉じる操作が来ても、確定は 1 回だけ。
+  - メニューの「再読み込み」（Ctrl+R）と「強制的に再読み込み」（Ctrl+Shift+R）も、`reloadAfterSave` で
+    確定してから読み直す（ロールの reload・forceReload から差し替えた）。
+  - ページ側（`index.html`）: `clmFlushBeforeUnload()` は、フォーカスがある欄からフォーカスを外して
+    （change・focusout を発火させて）確定し、`store.flushPending()`（FileAdapter の書き込みの完了）を待つ。
+  - ブラウザ版・単体 HTML: `beforeunload` でフォーカスを外す（localStorage へは同期で保存するので、待たない）。
+- 対象外: 画像編集画面で編集中の図形（画像編集画面は［保存］で保存する作りで、変えていない）。
+- 確認: `test/savebeforeclose.test.js`（jsdom と、BrowserWindow の代わりの窓）。実物の Electron 31 で、
+  本物の preload.js・storage.js を使い、本文と手順名を編集したまま閉じた時と、再読み込みした時に、
+  `checklists.json` に残ることを確認した（2026-11-17）。
+
 ## 変更ファイル
 
+- `save-before-close.js`（新規・メインプロセス。v1.0.14）: 閉じる前と再読み込みの前の保存。
+  `package.json` の build.files に追加した。
 - `storage.js`（新規・メインプロセス）: 上記 IPC の実装。前提2（メインプロセスの
   ファイル分割許容）に基づく分割第1号。
 - `main.js`: storage.js の登録のみ。
