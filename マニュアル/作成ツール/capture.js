@@ -63,10 +63,18 @@ async function launch() {
   let pp = null;
   try { pp = require('puppeteer'); } catch (e) { /* playwright を使う */ }
   if (pp) {
-    const browser = await pp.launch({ headless: true, args: ['--no-sandbox'] });
+    // 言語・時刻・配色は playwright の時と同じにする（Windows を暗い表示にしていても、明るい表示で撮る）
+    const browser = await pp.launch({ headless: true, args: ['--no-sandbox', '--lang=ja-JP'] });
     return {
       browser, kind: 'puppeteer',
-      newPage: async (w, h) => { const p = await browser.newPage(); await p.setViewport({ width: w, height: h, deviceScaleFactor: DSF }); return p; },
+      newPage: async (w, h) => {
+        const p = await browser.newPage();
+        await p.setViewport({ width: w, height: h, deviceScaleFactor: DSF });
+        await p.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }, { name: 'forced-colors', value: 'none' }]);
+        await p.emulateTimezone('Asia/Tokyo');
+        if (p.emulateLocale) await p.emulateLocale('ja-JP');
+        return p;
+      },
       initScript: (p, fn, arg) => p.evaluateOnNewDocument(fn, arg),
       size: () => page.viewport(),
     };
@@ -280,7 +288,12 @@ async function shot(name, opts = {}) {
   const so = { path: path.join(OUT, file), type: fmt };
   if (fmt === 'jpeg') so.quality = 85;
   if (clip) so.clip = clip;
-  if (clip && B.kind === 'puppeteer') so.captureBeyondViewport = false;
+  if (clip && B.kind === 'puppeteer') {
+    // puppeteer は切り抜く範囲の位置を、ページ先頭を基準に受け取る（playwright は画面左上が基準）。スクロール量を加算する
+    const [sx, sy] = await ev(() => [window.visualViewport.pageLeft, window.visualViewport.pageTop]);
+    so.clip = { ...clip, x: clip.x + sx, y: clip.y + sy };
+    so.captureBeyondViewport = false;
+  }
   await page.screenshot(so);
   await ev(() => window.__mnl && window.__mnl.clear());
   manifest[name] = { file, w: clip ? clip.width : vw, h: clip ? clip.height : vh, dsf: DSF };
