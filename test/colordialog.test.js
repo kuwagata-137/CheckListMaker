@@ -168,6 +168,20 @@ test('背景は、押した所と離した所が背景の時だけ閉じる', as
   assert.equal(calls.cancel, 0);
 });
 
+test('［🎨 その他の色…］をダブルクリックした時の 2 回目の押下（背景で detail 2）では閉じない', async (t) => {
+  // 1 回目のクリックで「色の設定」画面が開き、2 回目の押下は画面全体を覆う背景が受ける（コードレビューの指摘。v1.0.14）
+  const b = await boot(t);
+  const calls = b.open('#336699');
+  b.mouse(b.q('.ocd-bg'), 'mousedown', { detail: 2 });
+  b.mouse(b.q('.ocd-bg'), 'click', { detail: 2 });
+  assert.ok(b.dlg(), 'ダブルクリックの 2 回目では閉じない');
+  assert.equal(calls.cancel, 0);
+  b.mouse(b.q('.ocd-bg'), 'mousedown', { detail: 1 });
+  b.mouse(b.q('.ocd-bg'), 'click', { detail: 1 });
+  assert.equal(b.dlg(), null, 'その後の 1 回のクリックでは閉じる');
+  assert.equal(calls.cancel, 1);
+});
+
 test('Enter は OK（ボタン上と日本語入力の変換中は除く）', async (t) => {
   const b = await boot(t);
   let calls = b.open('#336699');

@@ -4093,7 +4093,9 @@
       const bg = root.querySelector('.ocd-bg');
       let bgDown = false;
       bg.addEventListener('mousedown', () => { bgDown = true; });
-      bg.addEventListener('click', () => { if (bgDown) ctx.cancel(); });
+      // ［🎨 その他の色…］をダブルクリックすると、2 回目の押下は背景が受ける。ダブルクリックの 2 回目
+      //（e.detail が 2 以上）では閉じない（開いてすぐ閉じるのを防ぐ。コードレビューの指摘）。
+      bg.addEventListener('click', (e) => { if (bgDown && e.detail < 2) ctx.cancel(); });
       root.querySelector('.ocd-x').addEventListener('click', ctx.cancel);
       root.querySelector('[data-a="ok"]').addEventListener('click', ctx.ok);
       root.querySelector('[data-a="cancel"]').addEventListener('click', ctx.cancel);
