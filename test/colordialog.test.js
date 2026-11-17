@@ -16,8 +16,8 @@ const seedState = (body) => ({
   settings: { theme: 'auto' },
 });
 
-async function boot(t, body = '<p>本文</p>') {
-  const app = bootApp({ localStorage: { [STORAGE_KEY]: JSON.stringify(seedState(body)) } });
+async function boot(t, body = '<p>本文</p>', extraStorage = {}) {
+  const app = bootApp({ localStorage: { [STORAGE_KEY]: JSON.stringify(seedState(body)), ...extraStorage } });
   t.after(() => app.close());
   const api = await app.api();
   const win = app.window, doc = app.document;
@@ -441,4 +441,101 @@ test('rbOpenPalette — opts.current の色を「現在」に表示し、［OK�
   b.q('[data-a="ok"]').click();
   assert.deepEqual(picked, ['#123456']);
   assert.equal(b.doc.activeElement, btn, '閉じた後は、開く前のフォーカスへ戻す');
+});
+
+// ---- 最近使用した色（docs/spec-color-dialog.md 8 章。質問 Q2 の回答） ----
+const RECENT_KEY = 'checklistmaker.recentColors';
+// 色パレットを開く・「色の設定」画面で色を決める・「最近使用した色」の行を読む
+function paletteHelpers(b) {
+  const btn = b.doc.createElement('button');
+  b.doc.body.appendChild(btn);
+  const picked = [];
+  const openPalette = () => {
+    b.api.rbOpenPalette(btn, true, (c) => picked.push(c), undefined, { current: '#336699' });
+    return b.doc.getElementById('rb-palette');
+  };
+  const titles = () => [...openPalette().querySelectorAll('.op-title')].map((x) => x.textContent);
+  const recentRow = () => {
+    const head = [...openPalette().querySelectorAll('.op-title')].find((x) => x.textContent === '最近使用した色');
+    return head ? [...head.nextElementSibling.querySelectorAll('.op-swatch')].map((s) => s.title) : null;
+  };
+  const decide = (hex) => {
+    openPalette().querySelector('.op-more').click();
+    b.setValue(b.q('.ocd-hx'), hex);
+    b.q('[data-a="ok"]').click();
+  };
+  const stored = () => b.win.localStorage.getItem(RECENT_KEY);
+  return { btn, picked, openPalette, titles, recentRow, decide, stored };
+}
+
+test('最近使用した色 — 1 色目を決めるまでは表示せず、決めた色を「標準の色」の下に新しい順で表示する', async (t) => {
+  const b = await boot(t);
+  const p = paletteHelpers(b);
+  assert.deepEqual(p.titles(), ['テーマの色', '標準の色'], '1 色目を決めるまでは見出しも行もない');
+  assert.equal(p.recentRow(), null);
+  p.decide('#112233');
+  assert.deepEqual(p.titles(), ['テーマの色', '標準の色', '最近使用した色'], '見出しは「標準の色」の下');
+  assert.deepEqual(p.recentRow(), ['#112233']);
+  p.decide('#445566');
+  p.decide('#112233');
+  assert.deepEqual(p.recentRow(), ['#112233', '#445566'], '決め直した色は先頭へ移す');
+  for (let i = 0; i < 12; i++) p.decide('#0000' + (16 + i).toString(16).toUpperCase());
+  const row = p.recentRow();
+  assert.equal(row.length, 10, '10 色まで');
+  assert.equal(row[0], '#00001B', '先頭が最後に決めた色');
+  assert.equal(row[9], '#000012');
+  assert.deepEqual(JSON.parse(p.stored()), row, 'localStorage の別のキーに保存する');
+  const state = b.win.localStorage.getItem(STORAGE_KEY);
+  assert.ok(!/#00001B|recentColors/i.test(state), '手順書データには入れない');
+});
+
+test('最近使用した色 — Enter と六角形のダブルクリックで決めた時も記録し、［キャンセル］では記録しない', async (t) => {
+  const b = await boot(t);
+  const p = paletteHelpers(b);
+  b.open('#336699');
+  b.key(b.q('.ocd-hx'), 'Enter');
+  b.open('#FFFFFF');
+  b.mouse(b.q('.ocd-tabs [data-t="std"]'), 'click');
+  const black = [...b.dlg().querySelectorAll('.ocd-hex .hx')].find((x) => x.dataset.c === '#000000');
+  b.mouse(black, 'dblclick');
+  assert.deepEqual(p.recentRow(), ['#000000', '#336699']);
+  b.open('#ABCDEF');
+  b.setValue(b.q('.ocd-hx'), '#FEDCBA');
+  b.q('[data-a="cancel"]').click();
+  b.open('#ABCDEF');
+  b.key(b.doc.activeElement, 'Escape');
+  assert.deepEqual(p.recentRow(), ['#000000', '#336699'], '［キャンセル］・Esc では記録しない');
+});
+
+test('最近使用した色 — 開き直しても残り、行の色見本は onPick で色を反映する。色見本・「なし」・行の色見本では記録しない', async (t) => {
+  // アプリを開き直した時と同じく、localStorage に保存済みの状態で起動する
+  const b = await boot(t, '<p>本文</p>', { [RECENT_KEY]: JSON.stringify(['#ABCDEF', '#123456']) });
+  const p = paletteHelpers(b);
+  assert.deepEqual(p.recentRow(), ['#ABCDEF', '#123456'], '開き直しても行が残る');
+  const before = p.stored();
+  b.mouse(p.openPalette().querySelector('.op-row .op-swatch'), 'mousedown'); // テーマの色の左上
+  b.mouse(p.openPalette().querySelector('.op-none'), 'mousedown');
+  const head = [...p.openPalette().querySelectorAll('.op-title')].find((x) => x.textContent === '最近使用した色');
+  b.mouse(head.nextElementSibling.querySelectorAll('.op-swatch')[1], 'mousedown');
+  assert.deepEqual(p.picked, ['#FFFFFF', 'none', '#123456'], '行の色見本は、ほかの色見本と同じく onPick で反映する');
+  assert.equal(b.doc.getElementById('rb-palette'), null, '色見本を押すと色パレットは閉じる');
+  assert.equal(p.stored(), before, '色見本・「なし」・行の色見本では記録しない（順番も変えない）');
+});
+
+test('最近使用した色 — 保存した値が読めない時は行を表示せず、localStorage に書けなくても色は決まる', async (t) => {
+  const b = await boot(t, '<p>本文</p>', { [RECENT_KEY]: '{壊れた値' });
+  const p = paletteHelpers(b);
+  assert.deepEqual(p.titles(), ['テーマの色', '標準の色'], '読めない値では行を表示しない');
+  b.win.localStorage.setItem(RECENT_KEY, JSON.stringify(['#zzz', 5, '#abcdef', null]));
+  assert.deepEqual(p.recentRow(), ['#ABCDEF'], '色として読める値だけを表示する');
+  const proto = b.win.Storage.prototype, orig = proto.setItem;
+  proto.setItem = function () { throw new Error('容量不足'); };
+  try {
+    const calls = b.open('#336699');
+    b.q('[data-a="ok"]').click();
+    assert.deepEqual(calls.ok, ['#336699'], '書けなくても［OK］の色は返す');
+  } finally {
+    proto.setItem = orig;
+  }
+  assert.deepEqual(p.recentRow(), ['#ABCDEF']);
 });
