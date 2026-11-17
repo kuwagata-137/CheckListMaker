@@ -51,6 +51,21 @@ test('calloutresize — 吹き出しの行組みと文字の位置（仕様 26�
     assert.equal(lay.h, 51, '高さは文字量（3 行）で決まる');
   });
 
+  await t.test('calloutLayout — 幅を広げた吹き出しは、1 行に入る文字が増える（質問 Q3 の回答）', () => {
+    // 折り返し幅 = 200 − 12 = 188 → 全角18字まで 1 行に入る（大きさを変えていなければ 12 字で折り返す）
+    const lay = plain(T.calloutLayout(TEXT15, 10, measure, { wFixed: true, w: 200 }));
+    assert.deepEqual(lay.lines, [TEXT15]);
+    assert.equal(lay.tw, 150);
+  });
+
+  await t.test('calloutLayout — Shift+Enter・Alt+Enter で入れた改行は、幅を広げても残る（質問 Q3 の回答）', () => {
+    const NL = 'あいう' + String.fromCharCode(10) + 'えお'; // Shift+Enter で入れた改行（\n）
+    const lay = plain(T.calloutLayout(NL, 10, measure, { wFixed: true, w: 300 }));
+    assert.deepEqual(lay.lines, ['あいう', 'えお']);
+    const auto = plain(T.calloutLayout(NL, 10, measure, {}));
+    assert.deepEqual(auto.lines, ['あいう', 'えお'], '大きさを変えていない吹き出しも同じ');
+  });
+
   await t.test('calloutLayout — 高さを変えた吹き出し（hMin）は、hMin と文字が入る高さの大きい方', () => {
     assert.equal(T.calloutLayout(TEXT15, 10, measure, { hMin: 100 }).h, 100, '大きくした高さ');
     assert.equal(T.calloutLayout(TEXT15, 10, measure, { hMin: 20 }).h, 38, '文字を隠す高さにはしない');
@@ -63,7 +78,7 @@ test('calloutresize — 吹き出しの行組みと文字の位置（仕様 26�
     assert.deepEqual(plain(T.calloutTextOffset(lay)), { x: 6, y: 6 });
   });
 
-  await t.test('calloutTextOffset — 大きくした吹き出しは、文字のかたまりを上下左右の中央に置く（質問 Q3 の推奨案）', () => {
+  await t.test('calloutTextOffset — 大きくした吹き出しは、文字のかたまりを上下左右の中央に置く（質問 Q3 の回答「中央配置」）', () => {
     const lay = T.calloutLayout('あいう', 10, measure, { wFixed: true, w: 200, hMin: 100 });
     // 文字のかたまり 30×13 → x = (200 − 30) / 2 = 85、y = (100 − 13) / 2 = 43.5
     assert.deepEqual(plain(T.calloutTextOffset(lay)), { x: 85, y: 43.5 });
