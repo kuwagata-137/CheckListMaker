@@ -26,6 +26,7 @@ const screenshot = require('screenshot-desktop');
 const { uIOhook } = require('uiohook-napi');
 const windowStateKeeper = require('electron-window-state');
 const { initStorage } = require('./storage');
+const { guardCloseUntilSaved, reloadAfterSave } = require('./save-before-close');
 const { initErrorLog } = require('./errorlog');
 const session = require('./session');
 const uia = require('./uia');
@@ -191,8 +192,9 @@ function buildAppMenu() {
     {
       label: '表示',
       submenu: [
-        { role: 'reload', label: '再読み込み' },
-        { role: 'forceReload', label: '強制的に再読み込み' },
+        // 編集中の欄を確定して保存を終えてから読み直す（v1.0.14・計画外。save-before-close.js）
+        { label: '再読み込み', accelerator: 'CmdOrCtrl+R', click: (_item, win) => reloadAfterSave(win, false) },
+        { label: '強制的に再読み込み', accelerator: 'CmdOrCtrl+Shift+R', click: (_item, win) => reloadAfterSave(win, true) },
         { type: 'separator' },
         { role: 'resetZoom', label: '実際のサイズ' },
         { role: 'zoomIn', label: '拡大' },
@@ -277,6 +279,8 @@ function createMainWindow() {
     },
   });
   winState.manage(mainWin); // resize / move / close で保存し、最大化状態も復元する
+  // 閉じる前に、編集中の欄（手順名・メモ・本文など）を確定して保存を終える（v1.0.14・計画外）
+  guardCloseUntilSaved(mainWin);
   mainWin.loadFile('index.html');
   mainWin.on('closed', () => {
     mainWin = null;

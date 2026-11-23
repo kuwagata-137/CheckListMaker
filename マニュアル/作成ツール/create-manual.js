@@ -23,7 +23,7 @@ const {
 const shotDir = path.join(__dirname, '..', '..', 'screenshots', 'manual');   // リポジトリのルートの screenshots/manual/
 // 版は package.json の version（例: 1.0.13 → v1.0.13）。原稿を直したら LAST_UPDATED も直す
 const APP_VERSION = 'v' + require(path.join(__dirname, '..', '..', 'package.json')).version;
-const LAST_UPDATED = '2026年11月11日';
+const LAST_UPDATED = '2026年11月17日';
 const FONT = 'Meiryo UI';
 const manifest = JSON.parse(fs.readFileSync(path.join(shotDir, '_manifest.json'), 'utf8'));
 const content = require('./manual-content.js')({ APP_VERSION, LAST_UPDATED });

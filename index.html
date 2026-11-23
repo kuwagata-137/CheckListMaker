@@ -780,7 +780,7 @@
   .ie-canvas.tool-select { cursor: default; } /* 通常のカーソルと同じ見た目 */
   .ie-canvas.tool-hand { cursor: grab; }
   .ie-canvas.tool-hand.panning { cursor: grabbing; }
-  .ie-canvas.tool-crop { cursor: default; }
+  .ie-canvas.tool-crop { cursor: crosshair; } /* トリミング範囲を描ける所（境界アイコン・範囲の内側は JS で矢印・移動に変える） */
   /* 画像内テキストのその場入力欄（Electron は prompt 不可のため自前 UI） */
   .ie-text-input {
     position: absolute;
@@ -1573,6 +1573,10 @@
   .rb-body table { border-collapse: collapse; margin: 6px 0; font-size: 0.9rem; max-width: 100%; }
   .rb-body th, .rb-body td { border: 1px solid #c9ccd2; padding: 5px 9px; text-align: left; vertical-align: top; min-width: 48px; }
   .rb-body thead th { background: #eef4fb; font-weight: 700; }
+  /* 暗い表示では、見出し行の背景を暗い色にする（明るい背景に明るい文字で読めなかった。v1.0.14・計画外） */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) .rb-body thead th { background: #243042; }
+  }
   /* 行列コントロール（フローティング・近接時のみ表示） */
   #rb-tctl { position: fixed; inset: 0; pointer-events: none; z-index: 60; }
   #rb-tctl[hidden] { display: none; }
@@ -1591,6 +1595,43 @@
   .op-footer { display: flex; gap: 6px; margin-top: 8px; }
   .op-none, .op-more { flex: 1; font: inherit; font-size: 0.75rem; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; white-space: nowrap; }
   .op-none:hover, .op-more:hover { border-color: var(--primary); }
+  /* 「色の設定」画面（［🎨 その他の色…］で開く。v1.0.14。docs/spec-color-dialog.md）
+     並びと大きさは MultipurposeDiagramMaker v8.34 の #oc-dlg と同じ。配色はアプリの変数を使い、
+     明るい表示と暗い表示の両方で読めるようにする。色パレット（z=130）より上に表示する。 */
+  #ocd-dlg { position: fixed; inset: 0; z-index: 140; font-size: 12px; line-height: normal; color: var(--text); }
+  #ocd-dlg .ocd-bg { position: absolute; inset: 0; background: rgba(0,0,0,.12); }
+  #ocd-dlg .ocd-box { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 440px; background: var(--surface); border: 1px solid var(--border-strong); box-shadow: 0 8px 30px rgba(0,0,0,.35); }
+  .ocd-tt { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; }
+  .ocd-tt b { font-weight: 400; }
+  .ocd-x { border: 0; background: none; font: inherit; font-size: 13px; cursor: pointer; color: var(--muted); padding: 2px 6px; }
+  .ocd-x:hover { background: #e81123; color: #fff; }
+  .ocd-bd { display: flex; gap: 14px; padding: 4px 14px 14px; }
+  .ocd-left { flex: 1; }
+  .ocd-tabs { display: flex; border-bottom: 1px solid var(--border-strong); }
+  .ocd-tabs div { padding: 4px 12px; border: 1px solid transparent; border-bottom: 0; margin-bottom: -1px; cursor: pointer; }
+  .ocd-tabs div.on { border-color: var(--border-strong); background: var(--surface); }
+  .ocd-pane { border: 1px solid var(--border-strong); border-top: 0; padding: 10px 12px; height: 330px; box-sizing: border-box; }
+  .ocd-hex { display: block; margin: 14px auto 0; }
+  .ocd-hex .hx { cursor: pointer; stroke: var(--surface); stroke-width: .6; }
+  .ocd-hex .hxsel { fill: none; stroke: var(--text); stroke-width: 2; pointer-events: none; }
+  .ocd-right { width: 92px; display: flex; flex-direction: column; gap: 7px; padding-top: 27px; }
+  .ocd-btn { border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text); padding: 4px 0; text-align: center; border-radius: 2px; cursor: pointer; font: inherit; font-size: 12px; }
+  .ocd-btn:hover { border-color: var(--primary); }
+  .ocd-btn.def { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+  .ocd-newcur { margin-top: auto; text-align: center; }
+  .ocd-newcur .bx { width: 60px; margin: 3px auto; border: 1px solid var(--border-strong); }
+  .ocd-newcur .bx div { height: 26px; }
+  .ocd-cf { display: flex; gap: 10px; margin-top: 4px; }
+  .ocd-field { position: relative; width: 226px; height: 150px; border: 1px solid var(--border-strong); cursor: crosshair; background: linear-gradient(to bottom, rgba(128,128,128,0), #808080), linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); }
+  .ocd-field i { position: absolute; width: 11px; height: 11px; margin: -6px 0 0 -6px; border: 2px solid #000; border-radius: 50%; box-shadow: 0 0 0 1px #fff inset; pointer-events: none; }
+  .ocd-lum { position: relative; width: 14px; height: 150px; border: 1px solid var(--border-strong); cursor: ns-resize; }
+  .ocd-lum i { position: absolute; left: 17px; margin-top: -8px; font-size: 11px; font-style: normal; color: var(--text); pointer-events: none; }
+  .ocd-f { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .ocd-f label { width: 112px; white-space: nowrap; }
+  .ocd-f input, .ocd-f select { border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); padding: 2px 5px; width: 74px; font: inherit; font-size: 12px; box-sizing: border-box; height: 22px; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) #ocd-dlg { color-scheme: dark; }
+  }
   /* 文字サイズ一覧（Word のサイズプルダウン風。rb-palette の枠で開く） */
   .op-sizes { display: grid; max-height: 280px; overflow-y: auto; min-width: 64px; }
   .op-size { font: inherit; font-size: 0.9rem; padding: 4px 18px 4px 14px; border: none; border-radius: 4px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
@@ -2429,6 +2470,11 @@
           notifySaveError('データの保存に失敗しました（容量上限の可能性）。\nJSON エクスポートでの退避を推奨します。');
         }
         return this.lastSaveOk;
+      }
+      // 書き込みの途中の保存（FileAdapter の非同期の保存）が終わるのを待つ。同期で保存する adapter はすぐ終わる。
+      //（窓を閉じる前・再読み込みの前の確定で使う。v1.0.14・計画外）
+      flushPending() {
+        return (this.adapter && this.adapter.queue) || Promise.resolve();
       }
     }
 
@@ -3774,7 +3820,7 @@
       return menu;
     }
     // ---- Excel/Office 風カラーパレット ----
-    // 「テーマの色（10色）＋各列の濃淡5段」「標準の色」「塗りつぶしなし」「その他の色」
+    // 「テーマの色（10色）＋各列の濃淡5段」「標準の色」「最近使用した色」「塗りつぶしなし」「その他の色」
     // で構成する（Office アプリの色選択と同じ構造）。文字色・ハイライト・セル塗り・
     // 画像編集の色選択で共通に使う。
     const OP_THEME = ['#FFFFFF', '#000000', '#E7E6E6', '#44546A', '#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5', '#70AD47'];
@@ -3795,9 +3841,28 @@
         : [0.8, 0.6, 0.4, -0.25, -0.5];                  // 他: 明3段＋暗2段
       return steps.map((t) => opTint(hex, t));
     }
+    // 「最近使用した色」（v1.0.14。docs/spec-color-dialog.md 8 章）。「色の設定」画面で［OK］を押して決めた色を、
+    // 新しい順に 10 色まで localStorage に保存する。手順書データ（checklistmaker.v1）には入れない。6 か所の色パレットで共通。
+    const OP_RECENT_KEY = 'checklistmaker.recentColors';
+    const OP_RECENT_MAX = 10;
+    function opRecentColors() {
+      try {
+        const list = JSON.parse(localStorage.getItem(OP_RECENT_KEY) || '[]');
+        return Array.isArray(list) ? list.map(ocdParseColor).filter(Boolean).slice(0, OP_RECENT_MAX) : [];
+      } catch (_) { return []; } // 読めない値と、localStorage が使えない時は行を表示しない
+    }
+    // 決めた色を先頭に記録する（同じ色はその色を先頭へ移す）
+    function opPushRecentColor(hex) {
+      const c = ocdParseColor(hex);
+      if (!c) return;
+      const list = [c, ...opRecentColors().filter((x) => x !== c)].slice(0, OP_RECENT_MAX);
+      try { localStorage.setItem(OP_RECENT_KEY, JSON.stringify(list)); } catch (_) { /* 保存できなくても、色の決定は続ける */ }
+    }
     // パレット DOM を組み立てる。onPick(色 or 'none') → onClose() の順で呼ぶ。
     // noneLabel: 「なし」ボタンの文言（線の色では「線なし」など）。既定は塗り用の文言。
-    function buildOfficePalette({ withNone, noneLabel, onPick, onClose }) {
+    // current: 「色の設定」画面の「現在」の見本に表示する色（関数なら［🎨 その他の色…］を押した時に呼ぶ）。
+    // editor: 手順の本文（リッチ編集）。「色の設定」画面を閉じた時に、フォーカスと文字範囲を戻す。
+    function buildOfficePalette({ withNone, noneLabel, onPick, onClose, current, editor }) {
       const pal = document.createElement('div');
       const pick = (col) => { onPick(col); onClose(); };
       const swatchRow = (colors, parent) => {
@@ -3825,6 +3890,12 @@
       pal.appendChild(vars);
       title('標準の色');
       swatchRow(OP_STANDARD, pal);
+      // 「最近使用した色」は、1 色目を決めるまで見出しも行も表示しない
+      const recent = opRecentColors();
+      if (recent.length) {
+        title('最近使用した色');
+        swatchRow(recent, pal);
+      }
       const footer = document.createElement('div');
       footer.className = 'op-footer';
       if (withNone) {
@@ -3835,28 +3906,372 @@
       }
       const more = document.createElement('button');
       more.type = 'button'; more.className = 'op-more'; more.textContent = '🎨 その他の色…';
-      const inp = document.createElement('input');
-      inp.type = 'color'; inp.hidden = true;
-      let savedRange = null;
-      more.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        // ネイティブの色ダイアログでフォーカスが移っても、本文の選択範囲へ
-        // 適用できるよう、開く直前の選択を保存しておく。
-        const sel = window.getSelection();
-        savedRange = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-        inp.click();
-      });
-      inp.addEventListener('change', () => {
-        if (savedRange) {
-          const sel = window.getSelection();
-          try { sel.removeAllRanges(); sel.addRange(savedRange); } catch (_) { /* noop */ }
-        }
-        pick(inp.value);
-      });
+      // mousedown で本文のフォーカスと選択を残し、離した時（click）に開く。押した時に開くと、
+      // 離した時のマウスが「色の設定」画面の上に来るため。
+      more.addEventListener('mousedown', (e) => e.preventDefault());
+      more.addEventListener('click', () => opOpenMoreColors({ onPick, onClose, current, editor }));
       footer.appendChild(more);
-      footer.appendChild(inp);
       pal.appendChild(footer);
       return pal;
+    }
+    // ［🎨 その他の色…］: 色パレットを閉じて「色の設定」画面を開く（v1.0.14。docs/spec-color-dialog.md）。
+    // 本文の文字範囲は、画面へフォーカスが移ると失われるので、開く前に保存し、閉じた時に戻す
+    //（［OK］の時は、戻してから onPick で色を付ける）。
+    function opOpenMoreColors({ onPick, onClose, current, editor }) {
+      const sel = window.getSelection();
+      const saved = editor && sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+      const restore = () => {
+        if (!editor || !editor.isConnected) return;
+        editor.focus({ preventScroll: true });
+        if (!saved) return;
+        const s = window.getSelection();
+        try { s.removeAllRanges(); s.addRange(saved); } catch (_) { /* noop */ }
+      };
+      const now = typeof current === 'function' ? current() : current;
+      onClose();
+      ocdOpen({ current: now, onOK: (col) => { restore(); onPick(col); }, onCancel: restore });
+    }
+
+    // ---- 「色の設定」画面（その他の色。v1.0.14。docs/spec-color-dialog.md）----
+    // Microsoft Office の「色の設定」と同じ作り。MultipurposeDiagramMaker v8.34 の ocDialog を元に、
+    // 配色をアプリの CSS 変数に合わせ、透過性の行を外した。
+    const OCD_HEX_R = 9.2; // タブ「標準」の六角形の半径（MDM と同じ）
+    const OCD_LABELS = {   // タブ「ユーザー設定」の数値欄の名前とアクセスキー
+      RGB: [['赤', 'R'], ['緑', 'G'], ['青', 'B']],
+      HSL: [['色合い', 'U'], ['鮮やかさ', 'S'], ['明るさ', 'L']],
+    };
+    const OCD_HTML =
+      '<div class="ocd-bg"></div>' +
+      '<div class="ocd-box" role="dialog" aria-modal="true" aria-label="色の設定">' +
+        '<div class="ocd-tt"><b>色の設定</b><button type="button" class="ocd-x" tabindex="-1" title="閉じる" aria-label="閉じる">✕</button></div>' +
+        '<div class="ocd-bd">' +
+          '<div class="ocd-left">' +
+            '<div class="ocd-tabs" role="tablist"><div role="tab" data-t="std">標準</div><div role="tab" data-t="custom">ユーザー設定</div></div>' +
+            '<div class="ocd-pane" role="tabpanel"></div>' +
+          '</div>' +
+          '<div class="ocd-right">' +
+            '<button type="button" class="ocd-btn def" data-a="ok">OK</button>' +
+            '<button type="button" class="ocd-btn" data-a="cancel">キャンセル</button>' +
+            '<div class="ocd-newcur">新規<div class="bx"><div class="nw"></div><div class="cu"></div></div>現在</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    let ocdActive = null; // 開いている「色の設定」画面（{ dispose }）。開いていなければ null
+
+    // 色の文字列（#RGB・#RRGGBB・rgb()・rgba()）を #RRGGBB（大文字）にする。
+    // 「なし」（null・'none'・'transparent'・透明の rgba）と、読めない値は null。
+    function ocdParseColor(v) {
+      const s = String(v == null ? '' : v).trim();
+      const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(s);
+      if (hex) return '#' + (hex[1].length === 3 ? hex[1].replace(/./g, (c) => c + c) : hex[1]).toUpperCase();
+      const m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)\s*(?:[,/]\s*([\d.]+)%?\s*)?\)$/i.exec(s);
+      if (!m) return null;
+      if (m[4] !== undefined && parseFloat(m[4]) === 0) return null; // 透明
+      return ocdRgbToHex(+m[1], +m[2], +m[3]);
+    }
+    function ocdHexToRgb(hex) {
+      const n = parseInt(hex.slice(1), 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    function ocdRgbToHex(r, g, b) {
+      const t = (v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
+      return ('#' + t(r) + t(g) + t(b)).toUpperCase();
+    }
+    // RGB（各 0〜255）→ [色合い 0〜360, 鮮やかさ 0〜1, 明るさ 0〜1]（MDM の ocRgb2Hsl と同じ式）
+    function ocdRgbToHsl(r, g, b) {
+      r /= 255; g /= 255; b /= 255;
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+      let h = 0, s = 0;
+      if (mx !== mn) {
+        const d = mx - mn;
+        s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+        h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+        h *= 60;
+      }
+      return [h, s, l];
+    }
+    // [色合い, 鮮やかさ, 明るさ] → RGB（各 0〜255 の整数。MDM の ocHsl2Rgb と同じ式）
+    function ocdHslToRgb(h, s, l) {
+      const a = s * Math.min(l, 1 - l);
+      const f = (n) => {
+        const k = (n + h / 30) % 12;
+        return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
+      };
+      return [f(0), f(8), f(4)];
+    }
+    // 中心 (cx, cy)・半径 R の六角形（頂点が上）の SVG パス
+    function ocdHexPath(cx, cy, R) {
+      let d = '';
+      for (let i = 0; i < 6; i++) {
+        const a = Math.PI / 180 * (60 * i - 90);
+        d += (i ? 'L' : 'M') + (cx + R * Math.cos(a)).toFixed(2) + ' ' + (cy + R * Math.sin(a)).toFixed(2);
+      }
+      return d + 'Z';
+    }
+    // タブ「標準」の色見本: 六角形 127 色（中心が白・中心から 6 段）と、その下の灰色 15 段（白から黒）。
+    // 色の計算は MDM と同じ。[{ x, y, c }] を返す（x, y は六角形の中心、c は #RRGGBB）。
+    function ocdStandardCells() {
+      const R = OCD_HEX_R, W = R * Math.sqrt(3), N = 6;
+      const snap51 = (v) => Math.round(v / 51) * 51;
+      const cells = [];
+      for (let r = -N; r <= N; r++) {
+        for (let q = -N; q <= N; q++) {
+          const dist = Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r));
+          if (dist > N) continue;
+          const x = W * (q + r / 2), y = 1.5 * R * r, t = dist / N;
+          const hue = (Math.atan2(y, x) * 180 / Math.PI + 360 + 150) % 360;
+          const l = Math.max(0.2, Math.min(0.95, (1 - 0.5 * t) - (y / (1.5 * R * N)) * 0.14 * t));
+          cells.push({ x, y, c: dist === 0 ? '#FFFFFF' : ocdRgbToHex(...ocdHslToRgb(hue, 1, l).map(snap51)) });
+        }
+      }
+      for (let i = 0; i < 15; i++) {
+        const v = Math.round(255 - 255 * i / 14);
+        cells.push({ x: (i - 7) * W * 0.5, y: 122 + (i % 2 ? 1.5 * R : 0), c: ocdRgbToHex(v, v, v) });
+      }
+      return cells;
+    }
+    // 画面の色。RGB と HSL を両方持つ（灰色では色合い・鮮やかさが決まらないので、直前の値を残す）。
+    function ocdSetRgb(st, r, g, b) {
+      st.r = r; st.g = g; st.b = b;
+      const [h, s, l] = ocdRgbToHsl(r, g, b);
+      if (s > 0) st.h = h;
+      if (l > 0 && l < 1) st.s = s;
+      st.l = l;
+    }
+    function ocdSetHsl(st, h, s, l) {
+      st.h = h; st.s = s; st.l = l;
+      [st.r, st.g, st.b] = ocdHslToRgb(h, s, l);
+    }
+    const ocdHexOf = (st) => ocdRgbToHex(st.r, st.g, st.b);
+
+    // 「色の設定」画面を開く。o = { current: 「現在」の色, onOK(#RRGGBB), onCancel() }。
+    // 開いている間のキー操作は、この画面だけで処理する（後ろの画面へ届けない）。
+    function ocdOpen(o) {
+      if (ocdActive) ocdActive.dispose();
+      const prevFocus = document.activeElement;
+      const root = document.createElement('div');
+      root.id = 'ocd-dlg';
+      root.innerHTML = OCD_HTML;
+      document.body.appendChild(root);
+      const cur = ocdParseColor(o.current) || '#FFFFFF';
+      const st = { r: 0, g: 0, b: 0, h: 0, s: 0, l: 0 };
+      ocdSetRgb(st, ...ocdHexToRgb(cur));
+      const okBtn = root.querySelector('[data-a="ok"]');
+      const ctx = { root, pane: root.querySelector('.ocd-pane'), st, tab: 'custom', model: 'RGB' };
+      ctx.preview = () => { root.querySelector('.nw').style.background = ocdHexOf(st); };
+      ctx.focusDefault = () => okBtn.focus({ preventScroll: true });
+      ctx.show = (t) => ocdShowTab(ctx, t);
+      const onKey = (ev) => ocdKeydown(ctx, ev);
+      const stopKey = (ev) => ev.stopPropagation();
+      const dispose = () => {
+        root.remove();
+        window.removeEventListener('keydown', onKey, true);
+        window.removeEventListener('keyup', stopKey, true);
+        ocdActive = null;
+        if (prevFocus && prevFocus !== document.body && prevFocus.isConnected) {
+          try { prevFocus.focus({ preventScroll: true }); } catch (_) { /* noop */ }
+        }
+      };
+      // ［OK］（Enter・六角形のダブルクリックも同じ）で決めた色は、「最近使用した色」に記録する
+      ctx.ok = () => { const c = ocdHexOf(st); dispose(); opPushRecentColor(c); if (o.onOK) o.onOK(c); };
+      ctx.cancel = () => { dispose(); if (o.onCancel) o.onCancel(); };
+      ocdActive = { dispose };
+      // window の capture で受け、画像編集画面・手順の本文などの keydown より先に止める
+      window.addEventListener('keydown', onKey, true);
+      window.addEventListener('keyup', stopKey, true);
+      ocdWire(ctx);
+      root.querySelector('.cu').style.background = cur;
+      ctx.show('custom');
+      ctx.focusDefault();
+      return root;
+    }
+    // ボタン・タブ・背景のイベントを登録する
+    function ocdWire(ctx) {
+      const { root } = ctx;
+      // 背景は、押して離した時（click）に閉じる。押した時に閉じると、離した時のクリックが
+      // 後ろのモーダル（表紙を編集する画面など）へ届いて、そのモーダルまで閉じてしまう。
+      const bg = root.querySelector('.ocd-bg');
+      let bgDown = false;
+      bg.addEventListener('mousedown', () => { bgDown = true; });
+      // ［🎨 その他の色…］をダブルクリックすると、2 回目の押下は背景が受ける。ダブルクリックの 2 回目
+      //（e.detail が 2 以上）では閉じない（開いてすぐ閉じるのを防ぐ。コードレビューの指摘）。
+      bg.addEventListener('click', (e) => { if (bgDown && e.detail < 2) ctx.cancel(); });
+      root.querySelector('.ocd-x').addEventListener('click', ctx.cancel);
+      root.querySelector('[data-a="ok"]').addEventListener('click', ctx.ok);
+      root.querySelector('[data-a="cancel"]').addEventListener('click', ctx.cancel);
+      root.querySelectorAll('.ocd-tabs [data-t]').forEach((d) => d.addEventListener('click', () => ctx.show(d.dataset.t)));
+      // 入力欄・ボタン以外を押した時も、フォーカスを画面の中に残す（後ろの本文へ文字が入らないように）
+      root.querySelector('.ocd-box').addEventListener('mousedown', (e) => {
+        if (!e.target.closest('input, select, button, label')) e.preventDefault();
+      });
+      // 画面の上のホイールで、後ろの画面をスクロールさせない
+      root.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
+    }
+    function ocdShowTab(ctx, t) {
+      const hadFocus = ctx.pane.contains(document.activeElement); // 中身を作り直すと、フォーカスが失われる
+      ctx.tab = t;
+      ctx.root.querySelectorAll('.ocd-tabs [data-t]').forEach((d) => {
+        d.classList.toggle('on', d.dataset.t === t);
+        d.setAttribute('aria-selected', String(d.dataset.t === t));
+      });
+      if (t === 'std') ocdRenderStandard(ctx); else ocdRenderCustom(ctx);
+      ctx.preview();
+      if (hadFocus) ctx.focusDefault();
+    }
+    // タブ「標準」: クリックで選び、ダブルクリックで決定する
+    function ocdRenderStandard(ctx) {
+      const { pane, st } = ctx;
+      const cells = ocdStandardCells()
+        .map((p) => `<path class="hx" data-c="${p.c}" d="${ocdHexPath(p.x, p.y, OCD_HEX_R)}" fill="${p.c}"/>`)
+        .join('');
+      pane.innerHTML = '<div>色(<u>C</u>):</div>' +
+        `<svg class="ocd-hex" width="260" height="262" viewBox="-130 -108 260 262">${cells}<path class="hxsel" d=""/></svg>`;
+      const svg = pane.querySelector('.ocd-hex');
+      const mark = () => {
+        const c = ocdHexOf(st);
+        const hit = [...svg.querySelectorAll('.hx')].find((p) => p.dataset.c === c);
+        svg.querySelector('.hxsel').setAttribute('d', hit ? hit.getAttribute('d') : '');
+      };
+      const cellOf = (e) => (e.target && e.target.closest ? e.target.closest('.hx') : null);
+      svg.addEventListener('click', (e) => {
+        const p = cellOf(e);
+        if (!p) return;
+        ocdSetRgb(st, ...ocdHexToRgb(p.dataset.c));
+        mark();
+        ctx.preview();
+      });
+      // ダブルクリックした六角形の色で決定する（前のクリックが別の六角形に届いていても、この色にする）
+      svg.addEventListener('dblclick', (e) => {
+        const p = cellOf(e);
+        if (!p) return;
+        ocdSetRgb(st, ...ocdHexToRgb(p.dataset.c));
+        ctx.ok();
+      });
+      mark();
+    }
+    // タブ「ユーザー設定」: 色の面・明るさのバー・カラー モデル・数値欄 3 つ・16 進
+    function ocdRenderCustom(ctx) {
+      const { pane, st } = ctx;
+      pane.innerHTML = '<div>色(<u>C</u>):</div>' +
+        '<div class="ocd-cf"><div class="ocd-field"><i></i></div><div class="ocd-lum"><i>◀</i></div></div>' +
+        '<div class="ocd-f"><label for="ocd-model">カラー モデル(<u>D</u>):</label>' +
+        '<select id="ocd-model" class="ocd-model"><option>RGB</option><option>HSL</option></select></div>' +
+        [0, 1, 2].map((i) => `<div class="ocd-f"><label for="ocd-n${i}"></label>` +
+          `<input type="number" min="0" max="255" id="ocd-n${i}" class="ocd-n" data-i="${i}"></div>`).join('') +
+        '<div class="ocd-f"><label for="ocd-hx">16 進(<u>H</u>):</label>' +
+        '<input type="text" id="ocd-hx" class="ocd-hx" maxlength="7" spellcheck="false"></div>';
+      const field = pane.querySelector('.ocd-field'), lum = pane.querySelector('.ocd-lum');
+      const ms = pane.querySelector('.ocd-model'), hx = pane.querySelector('.ocd-hx');
+      const ns = [...pane.querySelectorAll('.ocd-n')];
+      const relabel = () => ns.forEach((n, i) => {
+        const [name, key] = OCD_LABELS[ctx.model][i];
+        pane.querySelector(`label[for="ocd-n${i}"]`).innerHTML = `${name}(<u>${key}</u>):`;
+      });
+      // 色の面・明るさのバー・数値欄・16 進をそろえる。skip（入力中の欄）は書き換えない。
+      const sync = (skip) => {
+        field.firstChild.style.left = (st.h / 360 * 100) + '%';
+        field.firstChild.style.top = ((1 - st.s) * 100) + '%';
+        lum.firstChild.style.top = ((1 - st.l) * 100) + '%';
+        lum.style.background = `linear-gradient(to bottom, #fff, ${ocdRgbToHex(...ocdHslToRgb(st.h, st.s, 0.5))}, #000)`;
+        const v = ctx.model === 'RGB' ? [st.r, st.g, st.b]
+          : [Math.round(st.h / 360 * 255), Math.round(st.s * 255), Math.round(st.l * 255)];
+        ns.forEach((n, i) => { if (n !== skip) n.value = v[i]; });
+        if (hx !== skip) hx.value = ocdHexOf(st);
+        ctx.preview();
+      };
+      ms.value = ctx.model;
+      ms.addEventListener('change', () => { ctx.model = ms.value; relabel(); sync(); });
+      // 明るさが 0% か 100% の時は、色が見えるように 50% にする（MDM と同じ）
+      ocdDrag(field, (x, y) => ocdSetHsl(st, x * 360, 1 - y, st.l <= 0 || st.l >= 1 ? 0.5 : st.l), sync);
+      ocdDrag(lum, (x, y) => ocdSetHsl(st, st.h, st.s, 1 - y), sync);
+      ns.forEach((n) => {
+        n.addEventListener('input', () => {
+          const v = ns.map((x) => Math.max(0, Math.min(255, Math.round(Number(x.value) || 0))));
+          if (ctx.model === 'RGB') ocdSetRgb(st, v[0], v[1], v[2]);
+          else ocdSetHsl(st, v[0] / 255 * 360, v[1] / 255, v[2] / 255);
+          sync(n);
+        });
+        n.addEventListener('change', () => sync()); // 欄を離れた時に、0〜255 に収めた値を表示する
+      });
+      hx.addEventListener('input', () => {
+        const m = /^#?([0-9a-f]{6})$/i.exec(hx.value.trim());
+        if (!m) return;
+        ocdSetRgb(st, ...ocdHexToRgb('#' + m[1]));
+        sync(hx);
+      });
+      hx.addEventListener('change', () => sync()); // 欄を離れた時に #RRGGBB の形へそろえる
+      relabel();
+      sync();
+    }
+    // 色の面・明るさのバーのドラッグ。fn(x, y) に、要素の中の位置（0〜1）を渡す。
+    // マウスを要素の外へ出しても、端の値で止まる。
+    function ocdDrag(el, fn, after) {
+      el.addEventListener('mousedown', (ev) => {
+        if (ev.button !== 0) return;
+        ev.preventDefault();
+        const clamp = (v) => Math.max(0, Math.min(1, v));
+        const move = (e) => {
+          const b = el.getBoundingClientRect();
+          if (!b.width || !b.height) return; // 閉じた後（要素が外れた後）は何もしない
+          fn(clamp((e.clientX - b.left) / b.width), clamp((e.clientY - b.top) / b.height));
+          after();
+        };
+        const up = () => {
+          document.removeEventListener('mousemove', move);
+          document.removeEventListener('mouseup', up);
+        };
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+        move(ev);
+      });
+    }
+    // キー操作（docs/spec-color-dialog.md 3.3 節）
+    function ocdKeydown(ctx, ev) {
+      ev.stopPropagation(); // 後ろの画面（画像編集画面・手順の本文など）へ届けない
+      if (ev.isComposing || ev.keyCode === 229) return; // 日本語入力の変換中は、入力欄に任せる
+      const t = ev.target;
+      const inBox = !!(t && t.closest && t.closest('#ocd-dlg'));
+      if (ev.key === 'Escape') { ev.preventDefault(); ctx.cancel(); return; }
+      if (ev.key === 'Enter') {
+        if (inBox && t.tagName === 'BUTTON') return; // ボタン上の Enter は、そのボタンを押す（既定の動作）
+        ev.preventDefault();
+        ctx.ok();
+        return;
+      }
+      if (!inBox) { ev.preventDefault(); ctx.focusDefault(); return; } // 後ろの本文などに文字を入れない
+      if (ev.key === 'Tab') { ocdTabKey(ctx, ev); return; }
+      if (ev.altKey && !ev.ctrlKey && !ev.metaKey) { ocdAccessKey(ctx, ev); return; }
+      // Ctrl＋Z・Ctrl＋Y は、アプリのメニュー（編集→元に戻す・やり直す）を通して後ろの本文の編集に効くので止める。
+      // 切り取り（Ctrl＋X）と貼り付け（Ctrl＋V）は、入力欄の中だけで使えるようにする。
+      if ((ev.ctrlKey || ev.metaKey) && !ev.altKey) {
+        const k = String(ev.key || '').toLowerCase();
+        if (k === 'z' || k === 'y' || ((k === 'x' || k === 'v') && t.tagName !== 'INPUT')) { ev.preventDefault(); return; }
+      }
+      // 矢印キーなどで、後ろの画面をスクロールさせない（入力欄とカラー モデルの欄では、欄の操作に使う）
+      if (/^(Arrow|Page|Home$|End$)/.test(ev.key) && !/^(INPUT|SELECT)$/.test(t.tagName)) ev.preventDefault();
+    }
+    // Tab／Shift＋Tab は画面の中だけを順に移る。Ctrl＋Tab はタブ「標準」と「ユーザー設定」を切り替える。
+    function ocdTabKey(ctx, ev) {
+      ev.preventDefault();
+      if (ev.ctrlKey) { ctx.show(ctx.tab === 'std' ? 'custom' : 'std'); return; }
+      const list = [...ctx.root.querySelectorAll('select, input, button:not([tabindex="-1"])')];
+      const i = list.indexOf(document.activeElement);
+      const next = ev.shiftKey ? (i <= 0 ? list.length - 1 : i - 1) : (i < 0 || i >= list.length - 1 ? 0 : i + 1);
+      list[next].focus();
+    }
+    // Alt＋下線の文字で、タブ「ユーザー設定」の項目へフォーカスを移す（Office と同じ）
+    function ocdAccessKey(ctx, ev) {
+      // 物理キー（ev.code）で判定する。code が空の環境では、押した文字（ev.key）で判定する
+      const m = /^Key([A-Z])$/.exec(ev.code || '');
+      const letter = m ? m[1] : (/^[a-z]$/i.test(ev.key || '') ? ev.key.toUpperCase() : '');
+      if (!letter || ctx.tab !== 'custom') return;
+      const targets = { D: '.ocd-model', H: '.ocd-hx' };
+      OCD_LABELS[ctx.model].forEach(([, key], i) => { targets[key] = `.ocd-n[data-i="${i}"]`; });
+      const el = targets[letter] && ctx.pane.querySelector(targets[letter]);
+      if (!el) return;
+      ev.preventDefault();
+      el.focus();
+      if (el.tagName === 'INPUT') el.select();
     }
 
     const RB_SIZE_RE = /^\d+(\.\d+)?(px|%)$/; // 表リサイズの保存単位。pt を通さない（Excel 貼り付けのゴミ幅対策）
@@ -3962,11 +4377,31 @@
     function rbExec(cmd, editor, btn) {
       editor.focus();
       if (cmd === 'insertTable') return rbInsertTable(editor);
-      if (cmd === 'foreColor') return rbOpenPalette(btn, false, (col) => { document.execCommand('styleWithCSS', false, true); document.execCommand('foreColor', false, col); });
-      if (cmd === 'hiliteColor') return rbOpenPalette(btn, true, (col) => { document.execCommand('styleWithCSS', false, true); document.execCommand('hiliteColor', false, col === 'none' ? 'transparent' : col); });
-      if (cmd === 'cellFill') return rbOpenPalette(btn, true, (col) => rbApplyCellFill(editor, col));
+      // opts: 「色の設定」画面の「現在」の色と、閉じた時にフォーカスと文字範囲を戻す本文（v1.0.14）
+      if (cmd === 'foreColor') return rbOpenPalette(btn, false, (col) => { document.execCommand('styleWithCSS', false, true); document.execCommand('foreColor', false, col); },
+        undefined, { editor, current: () => rbSelectionColor(editor, 'color') });
+      if (cmd === 'hiliteColor') return rbOpenPalette(btn, true, (col) => { document.execCommand('styleWithCSS', false, true); document.execCommand('hiliteColor', false, col === 'none' ? 'transparent' : col); },
+        undefined, { editor, current: () => rbSelectionColor(editor, 'highlight') });
+      if (cmd === 'cellFill') return rbOpenPalette(btn, true, (col) => rbApplyCellFill(editor, col),
+        undefined, { editor, current: () => { const cell = rbCurrentCell(editor); return cell ? getComputedStyle(cell).backgroundColor : null; } });
       document.execCommand('styleWithCSS', false, false); // 太字等はタグ(<b>等)で出力させる
       document.execCommand(cmd, false, null);
+    }
+    // 本文で選んでいる文字の色（「色の設定」画面の「現在」の見本に使う。docs/spec-color-dialog.md 3.5 節）。
+    // kind 'color': 文字の表示色。kind 'highlight': 文字に付けたハイライトの色（セル・段落の背景は含めない）。
+    // 選択が本文の外にある時と、ハイライトを付けていない時は null。
+    function rbSelectionColor(editor, kind) {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return null;
+      const n = sel.getRangeAt(0).startContainer;
+      let el = n && (n.nodeType === 1 ? n : n.parentElement);
+      if (!el || !editor.contains(el)) return null;
+      if (kind === 'color') return getComputedStyle(el).color;
+      for (; el && el !== editor; el = el.parentElement) {
+        if (/^(TD|TH|P|DIV|LI|UL|OL|TABLE|BLOCKQUOTE)$/.test(el.tagName)) break;
+        if (el.style && el.style.backgroundColor) return el.style.backgroundColor;
+      }
+      return null;
     }
     function rbInsertTable(editor) {
       editor.focus();
@@ -4213,8 +4648,10 @@
       pal.style.top = (r.bottom + 4 + h > window.innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4) + 'px';
     }
     // 色パレット（Excel/Office 風。buildOfficePalette を btn の下に開く）
-    function rbOpenPalette(btn, withNone, onPick, noneLabel) {
-      rbOpenPopup(btn, buildOfficePalette({ withNone, noneLabel, onPick, onClose: rbClosePalette }));
+    // opts.current: 「色の設定」画面の「現在」の見本に表示する色（関数も可）。
+    // opts.editor: 「色の設定」画面を閉じた時に、フォーカスと文字範囲を戻す本文（v1.0.14）。
+    function rbOpenPalette(btn, withNone, onPick, noneLabel, opts = {}) {
+      rbOpenPopup(btn, buildOfficePalette({ withNone, noneLabel, onPick, onClose: rbClosePalette, current: opts.current, editor: opts.editor }));
     }
     // 表/TSV の貼り付けをセルに取り込む
     function rbTsvToTable(text) {
@@ -4618,7 +5055,8 @@
       const disarm = () => { if (armed) { armed.removeAttribute('draggable'); armed = null; } };
       document.addEventListener('mouseup', disarm);
       container.addEventListener('dragstart', (e) => {
-        const el = e.target.closest('[data-drag]');
+        // 本文で選んだ文字をドラッグした時は、e.target が文字のノードで closest を持たない（v1.0.14・計画外）
+        const el = e.target.closest && e.target.closest('[data-drag]');
         if (!el || el.getAttribute('draggable') !== 'true') return;
         const kind = el.dataset.drag;
         if (kind === 'item') {
@@ -4905,6 +5343,20 @@
       }
     }
     const store = await createAppStore();
+    // 窓を閉じる前・再読み込みの前に、編集中の欄（手順名・メモ・本文など）を確定し、ファイルへの書き込みが
+    // 終わるのを待つ（v1.0.14・計画外。docs/spec-file-storage-migration.md「閉じる前と再読み込みの前の保存」）。欄の保存は change・focusout
+    //（欄を離れた時）に行うので、フォーカスを外して確定させる。main プロセスの save-before-close.js が呼ぶ。
+    function blurActiveField() {
+      const a = document.activeElement;
+      if (a && a !== document.body && typeof a.blur === 'function') a.blur();
+    }
+    window.clmFlushBeforeUnload = async () => {
+      blurActiveField();
+      await store.flushPending();
+      return true;
+    };
+    // ブラウザ版・単体 HTML は localStorage へ同期で保存するので、閉じる直前にフォーカスを外すだけで保存できる
+    window.addEventListener('beforeunload', blurActiveField);
     const app = document.getElementById('app');
     const fileInput = document.getElementById('file-input');
 
@@ -7625,23 +8077,60 @@
       const boxed = (o.fill && o.fill !== 'none') || (o.color && o.color !== 'none');
       return boxed ? Math.round((Number(o.fs) || 16) * 0.3) : 0;
     }
+    // ── 吹き出しの行組み（仕様 26章）──
+    // 本体（尻尾を除く）の行組みと寸法。measure(str) は文字列の幅を返す関数（canvas の measureText を
+    // 注入する。jsdom には canvas が無いため試験では擬似関数）。o は吹き出し（または書式）。
+    //   大きさを変えていない … 全角12字で折り返し、文字量で幅と高さが決まる（変更前と同じ）
+    //   幅を変えた（wFixed）… o.w から左右の余白を除いた幅で折り返す。幅は o.w のまま
+    //     （幅を広げたら 1 行に入る文字が増える。Shift+Enter などの改行は残す。質問 Q3 の回答）
+    //   高さを変えた（hMin）… 高さは hMin と文字が入る高さの大きい方（文字を隠さない）
+    // wFixed・hMin が無ければ o.w・o.h は使わない（描くたびに上書きする計算値のため）。
+    // 戻り値: lines（行）・lh（行の高さ）・P（余白）・tw / th（文字のかたまりの幅と高さ）・
+    //   w / h（本体の幅と高さ）・needH（文字が入る高さ）
+    function calloutLayout(text, fs, measure, o) {
+      fs = Number(fs) || 16;
+      const m = typeof measure === 'function' ? measure : () => 0;
+      const P = Math.round(fs * 0.55);
+      const lh = Math.round(fs * 1.3);
+      const fixedW = !!(o && o.wFixed && o.w > 0);
+      const str = String(text == null ? '' : text);
+      const lines = wrapTextLines(str.length ? str : ' ', fixedW ? Math.max(1, o.w - P * 2) : fs * TEXT_WRAP_CHARS, m);
+      let tw = 0;
+      for (const l of lines) tw = Math.max(tw, m(l.length ? l : ' '));
+      tw = Math.ceil(tw);
+      const th = lines.length * lh;
+      const needH = th + P * 2;
+      return { lines, lh, P, tw, th, needH, w: fixedW ? o.w : tw + P * 2, h: Math.max(needH, Number(o && o.hMin) || 0) };
+    }
+    // 吹き出しの中で、文字のかたまりを置く位置（本体の左上からのずれ）。行の左端はそろえたまま
+    //（各行を同じ x から書く）、かたまりを上下左右の中央に置く（仕様 26章。質問 Q3 の回答
+    // 2026-11-17「中央配置とする」）。大きさを変えていない吹き出しは (P, P) になり、変更前と同じ位置。
+    function calloutTextOffset(lay) {
+      return { x: (lay.w - lay.tw) / 2, y: (lay.h - lay.th) / 2 };
+    }
+    // 矩形の四つ角＋各辺の中点の8か所（四角・丸・×印・吹き出し）。n/s/e/w は縦のみ／横のみのリサイズ
+    function boxHandles(o) {
+      const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+      return [
+        { kind: 'nw', x: o.x, y: o.y }, { kind: 'n', x: cx, y: o.y }, { kind: 'ne', x: o.x + o.w, y: o.y },
+        { kind: 'w', x: o.x, y: cy }, { kind: 'e', x: o.x + o.w, y: cy },
+        { kind: 'sw', x: o.x, y: o.y + o.h }, { kind: 's', x: cx, y: o.y + o.h }, { kind: 'se', x: o.x + o.w, y: o.y + o.h },
+      ];
+    }
     function objHandles(o) {
       if (o.type === 'arrow' || o.type === 'line') {
         return [{ kind: 'p1', x: o.x1, y: o.y1 }, { kind: 'p2', x: o.x2, y: o.y2 }];
       }
-      if (o.type === 'rect' || o.type === 'ellipse' || o.type === 'cross') {
-        const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
-        return [
-          // 四つ角＋各辺の中点の8か所。n/s/e/w は縦のみ／横のみのリサイズ
-          { kind: 'nw', x: o.x, y: o.y }, { kind: 'n', x: cx, y: o.y }, { kind: 'ne', x: o.x + o.w, y: o.y },
-          { kind: 'w', x: o.x, y: cy }, { kind: 'e', x: o.x + o.w, y: cy },
-          { kind: 'sw', x: o.x, y: o.y + o.h }, { kind: 's', x: cx, y: o.y + o.h }, { kind: 'se', x: o.x + o.w, y: o.y + o.h },
-        ];
-      }
+      if (o.type === 'rect' || o.type === 'ellipse' || o.type === 'cross') return boxHandles(o);
       if (o.type === 'freeform') {
         return (Array.isArray(o.pts) ? o.pts : []).map((p, i) => ({ kind: `pt${i}`, x: p.x, y: p.y }));
       }
-      if (o.type === 'callout') return [{ kind: 'tip', x: o.tip.x, y: o.tip.y }];
+      if (o.type === 'callout') {
+        // 本体の大きさ（o.w / o.h。drawObject が描くたびに最新にする）が分かれば、四角と同じ 8 個と
+        // 尻尾（仕様 26章）。尻尾は最後＝上に描く（当たり判定は hitObjHandle が尻尾を先に見る）。
+        const tip = { kind: 'tip', x: o.tip.x, y: o.tip.y };
+        return o.w > 0 && o.h > 0 ? [...boxHandles(o), tip] : [tip];
+      }
       if (o.type === 'text' && o.w > 0) {
         // 左右の辺の中点だけ（幅を変える。高さは文字量から自動で決まる）。
         // o.w / o.h は textLayout が描画のたびに最新へ更新している。
@@ -7721,12 +8210,13 @@
           }
         }
       }
-      else { // nw/n/ne/w/e/sw/s/se（rect・ellipse・cross のリサイズ。単字は縦のみ／横のみ）
+      else { // nw/n/ne/w/e/sw/s/se（rect・ellipse・cross・callout のリサイズ。単字は縦のみ／横のみ）
         const rot = objRotation(s);
         if (rot) { // 回転中はドラッグ差分を図形ローカル軸へ写してから辺の計算をする
           const v = rotatePointAround({ x: dx, y: dy }, { x: 0, y: 0 }, -rot);
           dx = v.x; dy = v.y;
         }
+        if (o.type === 'callout') { resizeCallout(d, o, s, rot, dx, dy); return; }
         let x1 = s.x, y1 = s.y, x2 = s.x + s.w, y2 = s.y + s.h;
         if (d.mode.includes('w')) x1 = Math.min(x2 - 4, x1 + dx);
         if (d.mode.includes('e')) x2 = Math.max(x1 + 4, x2 + dx);
@@ -7745,6 +8235,138 @@
         o.x = x1; o.y = y1; o.w = x2 - x1; o.h = y2 - y1;
         if (rot) reanchorRotatedBox(o, s, d.mode, rot, x1, y1, x2, y2);
       }
+    }
+    // 吹き出しの大きさをハンドル 8 個で変える（仕様 26章）。dx, dy は吹き出しの軸に合わせた移動量、
+    // d.measure は吹き出しの書式で文字幅を測る関数（文字が入る高さを求める）。
+    //  - 幅（左右の辺・四隅）: 反対側の辺を固定し、最小は 1 文字ぶん。幅を変えたら wFixed（その幅で折り返す）。
+    //  - 高さ（上下の辺・四隅）: 反対側の辺を固定し、その幅で文字が入る高さより小さくしない。決めた高さは hMin。
+    //  - 幅だけ: 上の辺を固定し、高さは hMin と文字が入る高さの大きい方（行が増えたら下へ伸びる）。
+    //  - 回転していても、固定した辺と尻尾の先（tip）は画面上で動かない。
+    function resizeCallout(d, o, s, rot, dx, dy) {
+      const mode = d.mode, fs = Number(s.fs) || 16;
+      const lay0 = calloutLayout(s.text, fs, d.measure, s);
+      const W0 = s.w > 0 ? s.w : lay0.w, H0 = s.h > 0 ? s.h : lay0.h; // ドラッグ前の本体の大きさ
+      const minW = fs + lay0.P * 2;
+      let x1 = s.x, y1 = s.y, x2 = s.x + W0, y2 = s.y + H0;
+      if (mode.includes('w')) x1 = Math.min(x2 - minW, x1 + dx);
+      if (mode.includes('e')) x2 = Math.max(x1 + minW, x2 + dx);
+      const w = x2 - x1;
+      const needH = calloutLayout(s.text, fs, d.measure, { wFixed: true, w }).needH; // その幅で文字が入る高さ
+      const setH = mode.includes('n') || mode.includes('s');
+      if (mode.includes('n')) y1 = Math.min(y2 - needH, y1 + dy);
+      if (mode.includes('s')) y2 = Math.max(y1 + needH, y2 + dy);
+      if (!setH) y2 = y1 + Math.max(Number(s.hMin) || 0, needH);
+      const h = y2 - y1;
+      if (mode.includes('w') || mode.includes('e')) o.wFixed = true;
+      if (setH) o.hMin = h;
+      o.w = w; o.h = h;
+      if (!rot) {
+        o.x = x1; o.y = y1;
+        o.tip = { x: s.tip.x, y: s.tip.y };
+        return;
+      }
+      // 新しい本体の中心を、ドラッグ前の軸で求めた画面上の位置に置く（固定した辺はそのまま残る）。
+      // 尻尾の先は、画面上の位置が変わらないよう、新しい中心のまわりで吹き出しの軸の座標に直す。
+      const c0 = { x: s.x + W0 / 2, y: s.y + H0 / 2 };
+      const c1 = rotatePointAround({ x: (x1 + x2) / 2, y: (y1 + y2) / 2 }, c0, rot);
+      o.x = c1.x - w / 2; o.y = c1.y - h / 2;
+      o.tip = rotatePointAround(rotatePointAround(s.tip, c0, rot), c1, -rot);
+    }
+
+    // ---- トリミング（仕様 16章・25章）----
+    // トリミング範囲 r は {x, y, w, h}（キャンバス px）。境界アイコン（範囲の四隅と各辺の中央に
+    // 表示する □）は範囲の内側に描く（25章）。四隅は □ の外側の角を範囲の角に、各辺は □ の外側の
+    // 辺を範囲の辺に合わせる。範囲が画像全体の時も、□ が画像の外にはみ出さない。
+    const CROP_MIN = 10; // トリミング範囲の最小の幅と高さ（画像の画素）
+    const CROP_CORNERS = ['nw', 'ne', 'se', 'sw'];
+    // 境界アイコン 8 個の位置と大きさ（size は □ の一辺）。各辺 → 四隅の順番に並べる。
+    // この順番に描くと、範囲が小さく □ が重なる時に四隅が上に重なる。
+    function cropIconRects(r, size) {
+      const L = r.x, T = r.y, R = r.x + r.w - size, B = r.y + r.h - size;
+      const CX = r.x + (r.w - size) / 2, CY = r.y + (r.h - size) / 2;
+      const icon = (kind, x, y) => ({ kind, x, y, w: size, h: size });
+      return [
+        icon('n', CX, T), icon('e', R, CY), icon('s', CX, B), icon('w', L, CY),
+        icon('nw', L, T), icon('ne', R, T), icon('se', R, B), icon('sw', L, B),
+      ];
+    }
+    // 点 p にある境界アイコンの向き（nw・n・ne・e・se・s・sw・w）。無ければ null。
+    // 当たり判定は □ の上下左右を pad ずつ広げる。□ が重なる時は四隅を優先し、
+    // 同じ種類どうしは □ の中心が p に近い方を選ぶ。
+    function hitCropIcon(r, p, size, pad) {
+      let best = null;
+      for (const ic of cropIconRects(r, size)) {
+        if (p.x < ic.x - pad || p.x > ic.x + ic.w + pad || p.y < ic.y - pad || p.y > ic.y + ic.h + pad) continue;
+        const corner = CROP_CORNERS.includes(ic.kind);
+        const d = Math.hypot(p.x - (ic.x + ic.w / 2), p.y - (ic.y + ic.h / 2));
+        const better = !best || (corner !== best.corner ? corner : d < best.d);
+        if (better) best = { kind: ic.kind, corner, d };
+      }
+      return best ? best.kind : null;
+    }
+    // トリミング範囲が画像全体か（＝何も切らない）。画素に丸めて比べる。
+    function cropIsWhole(r, imgW, imgH) {
+      return !!r && Math.round(r.x) === 0 && Math.round(r.y) === 0
+        && Math.round(r.w) === imgW && Math.round(r.h) === imgH;
+    }
+    // 点 p を押した時のドラッグの種類（25章。質問 Q1 の回答 2026-11-17）。
+    //   境界アイコンの上 → その向き（範囲の大きさを変える）
+    //   範囲が画像全体の時（［トリミング］を押した直後など）→ 'new'（新しい範囲を描く）
+    //   境界線（範囲の青い線。線の両側 linePad まで）→ 'move'（範囲を動かす）
+    //   範囲の内側（明るい所）→ 'none'（何も起きない）／ 範囲の外側（暗い所）→ 'new'
+    function cropDragMode(r, imgW, imgH, p, size, pad, linePad) {
+      const icon = hitCropIcon(r, p, size, pad);
+      if (icon) return icon;
+      if (cropIsWhole(r, imgW, imgH)) return 'new';
+      const x2 = r.x + r.w, y2 = r.y + r.h, lp = Number(linePad) || 0;
+      const nearBox = p.x >= r.x - lp && p.x <= x2 + lp && p.y >= r.y - lp && p.y <= y2 + lp;
+      const onLine = nearBox && (Math.abs(p.x - r.x) <= lp || Math.abs(p.x - x2) <= lp
+        || Math.abs(p.y - r.y) <= lp || Math.abs(p.y - y2) <= lp);
+      if (onLine) return 'move';
+      const inside = p.x > r.x && p.x < x2 && p.y > r.y && p.y < y2;
+      return inside ? 'none' : 'new';
+    }
+    // ドラッグ中のトリミング範囲。d は { mode, sx, sy, rect }（sx, sy は押した所、rect はドラッグ前の範囲）。
+    // 範囲は画像（imgW × imgH）の中に収める。'new' は向きの文字（n・e・w）を含むので先に扱う。
+    function cropDragRect(d, p, imgW, imgH) {
+      if (d.mode === 'none') return { ...d.rect }; // 範囲の内側からのドラッグでは何も起きない
+      if (d.mode === 'new') { // 押した所から今のポインタ位置までの長方形
+        const cx = (v) => Math.max(0, Math.min(imgW, v));
+        const cy = (v) => Math.max(0, Math.min(imgH, v));
+        const x1 = cx(d.sx), y1 = cy(d.sy), x2 = cx(p.x), y2 = cy(p.y);
+        return { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
+      }
+      const r = { ...d.rect };
+      const dx = p.x - d.sx, dy = p.y - d.sy;
+      if (d.mode === 'move') {
+        r.x = Math.max(0, Math.min(imgW - r.w, r.x + dx));
+        r.y = Math.max(0, Math.min(imgH - r.h, r.y + dy));
+        return r;
+      }
+      let x1 = r.x, y1 = r.y, x2 = r.x + r.w, y2 = r.y + r.h;
+      if (d.mode.includes('w')) x1 = Math.max(0, Math.min(x2 - CROP_MIN, x1 + dx));
+      if (d.mode.includes('e')) x2 = Math.min(imgW, Math.max(x1 + CROP_MIN, x2 + dx));
+      if (d.mode.includes('n')) y1 = Math.max(0, Math.min(y2 - CROP_MIN, y1 + dy));
+      if (d.mode.includes('s')) y2 = Math.min(imgH, Math.max(y1 + CROP_MIN, y2 + dy));
+      return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+    }
+    // 離した時のトリミング範囲。新しく描いた範囲の幅か高さが CROP_MIN に満たなければ
+    //（クリックだけを含む）、ドラッグ前の範囲に戻す。
+    function cropDragEndRect(d, r) {
+      if (d.mode === 'new' && (!r || r.w < CROP_MIN || r.h < CROP_MIN)) return { ...d.rect };
+      return r;
+    }
+    // ドラッグの種類に合うカーソル（新しい範囲は十字・境界アイコンは向きに合った矢印・
+    // 境界線は移動・範囲の内側は通常の矢印）。
+    function cropCursor(mode) {
+      if (mode === 'new') return 'crosshair';
+      if (mode === 'move') return 'move';
+      if (mode === 'none') return 'default';
+      if (mode === 'nw' || mode === 'se') return 'nwse-resize';
+      if (mode === 'ne' || mode === 'sw') return 'nesw-resize';
+      if (mode === 'n' || mode === 's') return 'ns-resize';
+      if (mode === 'e' || mode === 'w') return 'ew-resize';
+      return '';
     }
 
     async function openImageEditor(c, sectionId, itemId, index) {
@@ -8091,6 +8713,14 @@
       }
       // 塗れる面を持つ描画ツールか（矢印・直線・×印は線だけなので塗らない）
       const canFillShape = (t) => t === 'rect' || t === 'ellipse';
+      // 「色の設定」画面の「現在」の見本に表示する色（v1.0.14）。ボタンの色見本（syncColorUI）と同じ決め方で、
+      // 図形を選んでいれば図形の色、選んでいなければ次に描く色。「なし」は null（画面では白）。
+      function currentColorFor(key) {
+        const sel = selectedObj();
+        if (key === 'color') return sel ? sel.color : lineColor();
+        if (key === 'fill') return sel ? sel.fill : fillValue;
+        return isTextObj(sel) ? sel.textColor : textColorValue;
+      }
       // 色ボタン: Excel風パレットを開く。開いた状態でもう一度押したら閉じる
       //（document の mousedown が先に閉じるため、mousedown 時点で開いていたかを覚えておく）。
       let palWasOpen = false;
@@ -8098,7 +8728,7 @@
         btn.addEventListener('mousedown', () => { palWasOpen = !!document.getElementById('rb-palette'); });
         btn.addEventListener('click', () => {
           if (palWasOpen) { palWasOpen = false; return; }
-          rbOpenPalette(btn, withNone, (col) => applyColor(key, col), noneLabel);
+          rbOpenPalette(btn, withNone, (col) => applyColor(key, col), noneLabel, { current: () => currentColorFor(key) });
         });
       }
       wireColorButton(colorBtn, 'color', true, '線なし');
@@ -8460,7 +9090,9 @@
       function undoEdit() {
         if (!undoStack.length) return;
         endUndoGestures();
-        exitCropMode();
+        // トリミング中なら終えて［選択］に戻る（Esc・［取消］と同じ。質問 Q6 の回答 2026-11-17）。
+        // 範囲だけを消すと［トリミング］が選ばれたまま残り、Esc で画像編集画面が閉じていた（v1.0.14・計画外）
+        if (tool === 'crop') selectTool('select');
         try { redoStack.push(snapshotEdit()); } catch (_) {}
         if (redoStack.length > IE_HISTORY_MAX) redoStack.shift();
         restore(undoStack.pop());
@@ -8469,7 +9101,7 @@
       function redoEdit() {
         if (!redoStack.length) return;
         endUndoGestures();
-        exitCropMode();
+        if (tool === 'crop') selectTool('select'); // トリミング中なら終えて［選択］に戻る（undoEdit と同じ）
         try { undoStack.push(snapshotEdit()); } catch (_) {}
         if (undoStack.length > IE_HISTORY_MAX) undoStack.shift();
         restore(redoStack.pop());
@@ -8625,13 +9257,15 @@
       }
       function drawObject(g, o) {
         if (o.hidden) return; // 入力欄で再編集中は canvas 側を消しておく
+        // 吹き出しは文字量（大きさを変えた吹き出しは決めた大きさ）で本体の箱が決まるので、回転の有無に
+        // かかわらず描くたびに o.w / o.h を最新にする（ハンドル 8 個の位置と回転の中心に使う。仕様 26章）。
+        if (o.type === 'callout') { const b = calloutBox(o.text, o.fs, o); o.w = b.w; o.h = b.h; }
         // 回転は中心まわりの座標変換で掛ける（各描画関数は無回転のまま）。
         const rot = objRotation(o);
         if (rot) {
-          // 回転の中心は最新の箱で決める。テキスト・吹き出しは文字量で箱が変わるため、
-          // 中心を計算する前に o.w / o.h を測り直す（保存データを開いた直後も正しく回る）。
-          if (o.type === 'callout') { const b = calloutBox(o.text, o.fs, o); o.w = b.w; o.h = b.h; }
-          else if (o.type === 'text') textLayout(o);
+          // 回転の中心は最新の箱で決める。テキストは文字量で箱が変わるため、中心を計算する前に
+          // o.w / o.h を測り直す（保存データを開いた直後も正しく回る。吹き出しは上で測り直した）。
+          if (o.type === 'text') textLayout(o);
           const c = objRotationCenter(o);
           g.save();
           g.translate(c.x, c.y); g.rotate(rot * Math.PI / 180); g.translate(-c.x, -c.y);
@@ -8826,7 +9460,9 @@
           const rp = rotateHandleWorldPos(o);
           if (Math.abs(p.x - rp.x) <= tol && Math.abs(p.y - rp.y) <= tol) return 'rotate';
         }
-        for (const h of objHandles(o)) {
+        // 吹き出しの尻尾は本体のハンドル 8 個より先に見る（重なっても、上に描いた尻尾を掴める。仕様 26章）
+        const hs = objHandles(o);
+        for (const h of hs.filter((x) => x.kind === 'tip').concat(hs.filter((x) => x.kind !== 'tip'))) {
           const wp = toWorldPoint(o, h); // 回転している図形はハンドルもワールドへ写して判定
           if (Math.abs(p.x - wp.x) <= tol && Math.abs(p.y - wp.y) <= tol) return h.kind;
         }
@@ -8951,21 +9587,24 @@
         }
         g.restore();
       }
-      // ── 吹き出し（クリック挿入・文字で自動リサイズ・尻尾を好きな向きへ）──────
-      // calloutBox: 文字から本体（尻尾を除く）の寸法を測る。
+      // ── 吹き出し（クリック挿入・文字で自動リサイズ・尻尾を好きな向きへ・ハンドル 8 個で大きさを変える）──
+      // calloutBox: 文字から本体（尻尾を除く）の寸法を測る。行組みは calloutLayout（仕様 26章）。
+      // 大きさを変えていなければ全角12字（fs×12）で自動的に折り返す（テキストボックスと同じ。明示の改行は残す）。
       function calloutBox(text, fs, style) {
         annoCtx.save();
         annoCtx.font = objFont({ fs, bold: style && style.bold, italic: style && style.italic });
-        // 全角12字（fs×12）で自動的に折り返す（テキストボックスと同じ。明示の改行は残す）
-        const measure = (str) => annoCtx.measureText(str).width;
-        const lines = wrapTextLines(text.length ? text : ' ', fs * TEXT_WRAP_CHARS, measure);
-        const lh = Math.round(fs * 1.3);
-        let tw = 0;
-        for (const l of lines) tw = Math.max(tw, measure(l.length ? l : ' '));
+        const lay = calloutLayout(text, fs, (str) => annoCtx.measureText(str).width, style);
         annoCtx.restore();
-        const P = Math.round(fs * 0.55);
-        return { lines, lh, P, w: Math.ceil(tw) + P * 2, h: lines.length * lh + P * 2 };
+        return lay;
       }
+      // 吹き出しの書式で文字幅を測る関数。ハンドルで大きさを変える時に、文字が入る高さを求めるのに使う。
+      const calloutMeasure = (o) => (str) => {
+        annoCtx.save();
+        annoCtx.font = objFont(o);
+        const w = annoCtx.measureText(str).width;
+        annoCtx.restore();
+        return w;
+      };
       // calloutPath: 角丸本体＋「tip（先端）が向く辺」に尻尾を差し込んだ一筆書きパス。
       // 本体中心から tip への方向で上下左右いずれの辺から尻尾を出すか決めるので、
       // tip をどこへ動かしても（360°）自然に向く。
@@ -9016,7 +9655,8 @@
           g.fillStyle = o.textColor || o.color || '#ff3b30';
           g.font = objFont(o);
           g.textBaseline = 'top';
-          box.lines.forEach((l, i) => g.fillText(l, o.x + box.P, o.y + box.P + i * box.lh));
+          const off = calloutTextOffset(box); // 大きくした吹き出しでは、文字のかたまりを中央に置く（仕様 26章）
+          box.lines.forEach((l, i) => g.fillText(l, o.x + off.x, o.y + off.y + i * box.lh));
         }
         g.restore();
       }
@@ -9176,6 +9816,10 @@
           x: existing ? existing.x : p.x,
           y: existing ? existing.y : p.y,
           fs: fmt0.fs, bold: fmt0.bold, italic: fmt0.italic,
+          // ハンドルで大きさを変えた吹き出しは、その大きさのまま編集する（calloutBox が読む。仕様 26章）
+          wFixed: existing ? !!existing.wFixed : false,
+          w: existing && existing.wFixed ? existing.w : 0,
+          hMin: existing ? existing.hMin : undefined,
           ta, existing: existing || null,
           done: false, dragTip: false, hoverTip: false,
           // 初期の尻尾先端＝本体の下・少し左（下向き）。以後ドラッグで自由に。
@@ -9201,7 +9845,10 @@
             const b0 = calloutBox(ta.value, ac.fs, ac);
             ac.tip = { x: ac.x + Math.min(b0.w * 0.25, 40 * fsScale()), y: ac.y + b0.h + Math.round(ac.fs * 1.6) };
           }
-          const preview = { x: ac.x, y: ac.y, text: ta.value, fs: ac.fs, bold: ac.bold, italic: ac.italic, tip: ac.tip, color, fill, textColor: textCol, size, u, opacity };
+          const preview = {
+            x: ac.x, y: ac.y, text: ta.value, fs: ac.fs, bold: ac.bold, italic: ac.italic, tip: ac.tip,
+            wFixed: ac.wFixed, w: ac.w, hMin: ac.hMin, color, fill, textColor: textCol, size, u, opacity,
+          };
           recomposite();
           drawCalloutObj(ctx, preview, false);
           if (ac.dragTip || ac.hoverTip) {
@@ -9212,15 +9859,16 @@
             ctx.fill(); ctx.stroke();
             ctx.restore();
           }
-          // textarea を本文位置へ重ねる（透明背景）。
+          // textarea を本文位置（文字のかたまりの位置。仕様 26章）へ重ねる（透明背景）。
           const box = calloutBox(ta.value, ac.fs, ac);
+          const off = calloutTextOffset(box);
           const s = canvas.offsetWidth ? canvas.offsetWidth / canvas.width : 1;
-          ta.style.left = (canvas.offsetLeft + (ac.x + box.P) * s) + 'px';
-          ta.style.top = (canvas.offsetTop + (ac.y + box.P) * s) + 'px';
+          ta.style.left = (canvas.offsetLeft + (ac.x + off.x) * s) + 'px';
+          ta.style.top = (canvas.offsetTop + (ac.y + off.y) * s) + 'px';
           // 幅は本文の行組みと同じ幅＋わずかなキャレット余白。広く取ると入力欄側だけ
           // 1文字多く入ってしまい、確定後の折り返し位置とずれる。
-          ta.style.width = (Math.ceil((box.w - box.P * 2) * s) + 4) + 'px';
-          ta.style.height = ((box.h - box.P * 2) * s) + 'px';
+          ta.style.width = (Math.ceil(box.tw * s) + 4) + 'px';
+          ta.style.height = (box.th * s) + 'px';
           ta.style.font = objFont(ac, s);
           ta.style.lineHeight = (box.lh * s) + 'px';
           ta.style.color = textCol;
@@ -9312,15 +9960,24 @@
       }
       function endPan() { panning = null; canvas.classList.remove('panning'); }
 
-      // ---- トリミング（Excel 式：8ハンドルで領域を調整→適用） ----
+      // ---- トリミング（Excel 式：トリミング範囲を決めて、もう一度［トリミング］で適用） ----
+      // 範囲はドラッグで描くか、境界アイコン（8 個の □）で大きさを変える（仕様 25章）。
       let cropMode = false;
       let cropRect = null;  // {x,y,w,h} canvas px
-      let cropDrag = null;  // {mode, sx, sy, rect}
+      let cropDrag = null;  // {mode, sx, sy, rect, moved}（mode は cropDragMode の戻り値）
       const cropActions = overlay.querySelector('.ie-crop-actions');
+      // 境界アイコンの一辺（画面上 16px）と、当たり判定を広げる量（画面上 8px）をキャンバス px で。
+      // 当たり判定は 32px 四方で、変更前（角と中点から ±16px）と同じ大きさ。
+      const cropIconSize = () => 16 * dispScale();
+      const cropIconPad = () => 8 * dispScale();
+      // 境界線（範囲の青い線）の当たり判定は、線の両側に画面上 6px ずつ（質問 Q1 の回答）
+      const cropLinePad = () => 6 * dispScale();
+      const cropModeAt = (p) => cropDragMode(cropRect, canvas.width, canvas.height, p, cropIconSize(), cropIconPad(), cropLinePad());
       function enterCropMode() {
         if (canvas.width < 10 || canvas.height < 10) return;
         cropMode = true;
-        // 初期選択枠は全画面（＝トリミングなし）。ここから8ハンドルで内側へ縮める。
+        // 最初のトリミング範囲は画像全体（＝トリミングなし）。ドラッグで新しい範囲を描くか、
+        // 境界アイコンで内側へ縮める。
         cropRect = { x: 0, y: 0, w: canvas.width, h: canvas.height };
         if (cropActions) cropActions.hidden = false;
         recomposite();
@@ -9328,34 +9985,16 @@
       function exitCropMode() {
         if (!cropMode) return;
         cropMode = false; cropRect = null; cropDrag = null;
+        canvas.style.cursor = ''; // トリミング中に付けた矢印・十字のカーソルを外す
         if (cropActions) cropActions.hidden = true;
         recomposite();
-      }
-      function handlePoints() {
-        const { x, y, w, h } = cropRect;
-        return {
-          nw: [x, y], n: [x + w / 2, y], ne: [x + w, y],
-          e: [x + w, y + h / 2], se: [x + w, y + h], s: [x + w / 2, y + h],
-          sw: [x, y + h], w: [x, y + h / 2],
-        };
-      }
-      function hitHandle(p) {
-        // 当たり判定は見た目のハンドル(約16px)より広めに取り、掴みやすくする（画面上 ±16px）。
-        const tol = 16 * dispScale();
-        const pts = handlePoints();
-        for (const k in pts) {
-          if (Math.abs(p.x - pts[k][0]) <= tol && Math.abs(p.y - pts[k][1]) <= tol) return k;
-        }
-        if (p.x > cropRect.x && p.x < cropRect.x + cropRect.w &&
-            p.y > cropRect.y && p.y < cropRect.y + cropRect.h) return 'move';
-        return null;
       }
       function drawCropOverlay() {
         const g = ctx, s = dispScale();
         g.save();
         g.setTransform(1, 0, 0, 1, 0, 0);
         g.globalAlpha = 1;
-        g.fillStyle = 'rgba(0,0,0,0.45)'; // 選択外を暗く（evenodd で内側を抜く）
+        g.fillStyle = 'rgba(0,0,0,0.45)'; // 範囲の外側を暗く（evenodd で内側を抜く）
         g.beginPath();
         g.rect(0, 0, canvas.width, canvas.height);
         g.rect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
@@ -9364,34 +10003,24 @@
         g.setLineDash([]);
         g.lineWidth = 2 * s;
         g.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
-        // ハンドルは掴みやすいよう大きめ（画面上 約16px）＋白フチで視認性を上げる。
-        const hs = 16 * s;
-        const pts = handlePoints();
-        g.lineWidth = 2 * s;
-        for (const k in pts) {
-          const hx = pts[k][0] - hs / 2, hy = pts[k][1] - hs / 2;
+        // 境界アイコンは掴みやすいよう大きめ（画面上 16px）＋白い縁で見やすくし、範囲の内側に描く。
+        for (const ic of cropIconRects(cropRect, cropIconSize())) {
           g.fillStyle = '#fff';
-          g.fillRect(hx, hy, hs, hs);
+          g.fillRect(ic.x, ic.y, ic.w, ic.h);
           g.fillStyle = '#1a73e8';
-          g.fillRect(hx + 2 * s, hy + 2 * s, hs - 4 * s, hs - 4 * s);
+          g.fillRect(ic.x + 2 * s, ic.y + 2 * s, ic.w - 4 * s, ic.h - 4 * s);
         }
         g.restore();
       }
       function updateCrop(p) {
-        const d = cropDrag, r = { ...d.rect };
-        const dx = p.x - d.sx, dy = p.y - d.sy, MIN = 10;
-        if (d.mode === 'move') {
-          r.x = Math.max(0, Math.min(canvas.width - r.w, r.x + dx));
-          r.y = Math.max(0, Math.min(canvas.height - r.h, r.y + dy));
-        } else {
-          let x1 = r.x, y1 = r.y, x2 = r.x + r.w, y2 = r.y + r.h;
-          if (d.mode.includes('w')) x1 = Math.max(0, Math.min(x2 - MIN, x1 + dx));
-          if (d.mode.includes('e')) x2 = Math.min(canvas.width, Math.max(x1 + MIN, x2 + dx));
-          if (d.mode.includes('n')) y1 = Math.max(0, Math.min(y2 - MIN, y1 + dy));
-          if (d.mode.includes('s')) y2 = Math.min(canvas.height, Math.max(y1 + MIN, y2 + dy));
-          r.x = x1; r.y = y1; r.w = x2 - x1; r.h = y2 - y1;
-        }
-        cropRect = r;
+        cropRect = cropDragRect(cropDrag, p, canvas.width, canvas.height);
+        recomposite();
+      }
+      // ドラッグを終える（離した時・ポインタを失った時）。小さすぎる新しい範囲は捨てる。
+      function endCropDrag() {
+        if (!cropDrag) return;
+        cropRect = cropDragEndRect(cropDrag, cropRect);
+        cropDrag = null;
         recomposite();
       }
       function applyCrop() {
@@ -9399,8 +10028,8 @@
         const rx = Math.round(cropRect.x), ry = Math.round(cropRect.y);
         const rw = Math.round(cropRect.w), rh = Math.round(cropRect.h);
         if (rw < 4 || rh < 4) return;
-        // 全画面のまま（＝何も切らない）なら履歴を積まずにモードを抜けるだけ
-        if (rx === 0 && ry === 0 && rw === canvas.width && rh === canvas.height) {
+        // 画像全体のまま（＝何も切らない）なら履歴を積まずにモードを抜けるだけ
+        if (cropIsWhole(cropRect, canvas.width, canvas.height)) {
           selectTool('select');
           return;
         }
@@ -9416,6 +10045,7 @@
         // 消さずに残す＝描画時にクリップされるだけで、移動で戻せる）。
         objects.forEach((o) => translateObj(o, o, -rx, -ry));
         cropMode = false; cropRect = null; cropDrag = null;
+        canvas.style.cursor = '';
         if (cropActions) cropActions.hidden = true;
         selectTool('select');
         // 切り出した画像を編集画面の枠いっぱいで見せ直す（仕様 22章）。このあと入れる図形は
@@ -9486,7 +10116,7 @@
       // orig 基準の絶対計算なので、何度呼んでもずれない（掴み替えの土台）。
       function applyDrag(d, p, shift) {
         d.items.forEach((it) => {
-          applyObjDrag({ mode: d.mode, obj: it.obj, sx: d.sx, sy: d.sy, orig: it.orig }, p, shift);
+          applyObjDrag({ mode: d.mode, obj: it.obj, sx: d.sx, sy: d.sy, orig: it.orig, measure: d.measure }, p, shift);
         });
       }
       // Ctrl＋ドラッグのコピー状態を切り替える。押している間だけ複製を掴み、離せば
@@ -9588,6 +10218,8 @@
             objDrag = {
               mode: hk, items: [{ obj: sole, src: sole, orig: JSON.parse(JSON.stringify(sole)) }],
               sx: p.x, sy: p.y, moved: false, copy: false, shift: false,
+              // 吹き出しの大きさを変える時は、文字が入る高さを求めるため文字幅を測る（仕様 26章）
+              measure: sole.type === 'callout' ? calloutMeasure(sole) : null,
             };
             canvas.setPointerCapture(e.pointerId);
             return;
@@ -9627,9 +10259,13 @@
         if (tool === 'select') return; // 選択モードは描画・パンへ進まない（選択・移動のみ）
         if (tool === 'hand') { startPan(e); return; }
         if (tool === 'crop') {
+          // 境界アイコン → 大きさを変える／境界線 → 動かす／範囲の内側 → 何も起きない／
+          // それ以外 → 新しい範囲を描く（仕様 25章）
           if (!cropRect) return;
-          const h = hitHandle(p);
-          if (h) { cropDrag = { mode: h, sx: p.x, sy: p.y, rect: { ...cropRect } }; canvas.setPointerCapture(e.pointerId); }
+          const mode = cropModeAt(p);
+          cropDrag = { mode, sx: p.x, sy: p.y, rect: { ...cropRect }, moved: false };
+          canvas.style.cursor = cropCursor(mode); // ドラッグ中は押した時のカーソルのまま
+          canvas.setPointerCapture(e.pointerId);
           return;
         }
         // テキスト・吹き出しは押した瞬間ではなく離した時に配置する（配置座標は押下位置）。
@@ -9702,7 +10338,19 @@
           return;
         }
         if (tool === 'hand') { doPan(e); return; }
-        if (tool === 'crop') { if (cropDrag) updateCrop(xy(e)); return; }
+        if (tool === 'crop') {
+          if (!cropRect) return;
+          const p = xy(e);
+          // ドラッグしていない時は、押すと何が起きるかをカーソルで示す
+          if (!cropDrag) { canvas.style.cursor = cropCursor(cropModeAt(p)); return; }
+          if (cropDrag.mode === 'none') return; // 範囲の内側からのドラッグでは何も起きない
+          if (!cropDrag.moved) { // クリックの手ぶれでは範囲を変えない（図形のドラッグと同じ画面上 2px）
+            if (Math.hypot(p.x - cropDrag.sx, p.y - cropDrag.sy) < 2 * dispScale()) return;
+            cropDrag.moved = true;
+          }
+          updateCrop(p);
+          return;
+        }
         if (!drawing) {
           // 線・矢印の始点スナップ中：カーソルまでの線をプレビュー（確定は次のクリック）。
           if (lineAnchor && (tool === 'arrow' || tool === 'line')) {
@@ -9790,7 +10438,11 @@
           objDrag = null; canvas.style.cursor = ''; recomposite(); return;
         }
         if (tool === 'hand') { endPan(); return; }
-        if (tool === 'crop') { cropDrag = null; return; }
+        if (tool === 'crop') {
+          endCropDrag(); // 新しい範囲はここで決まる（小さすぎるときはドラッグ前の範囲に戻す）
+          if (cropRect) canvas.style.cursor = cropCursor(cropModeAt(xy(e)));
+          return;
+        }
         if (!drawing) return;
         drawing = false;
         const p = xy(e);
@@ -9827,6 +10479,7 @@
         if (activeCallout && activeCallout.dragTip) { activeCallout.dragTip = false; activeCallout.render(); return; }
         if (tool === 'eraser') { try { annoCtx.restore(); } catch (_) {} }
         if (tool === 'pen' || tool === 'marker') bakeLiveStroke(); // 描きかけ分は確定させる
+        endCropDrag(); // トリミング範囲のドラッグは、離した時と同じく範囲を決める
         drawing = false; pendingPlace = null; cropDrag = null; objDrag = null; marquee = null; lineAnchor = null; endPan();
         chord.active = false;
         canvas.style.cursor = '';
@@ -9946,6 +10599,7 @@
           '矢印・直線モードでは、既存の線の端点や図形の頂点の近くでダブルクリックすると、その点を始点に描き始められます（カーソルに線が付いてくるので、クリックで終点を決めます。<kbd>Esc</kbd> か右クリックで中止）。',
           'テキストと吹き出しは、ダブルクリックで文字を編集し直せます。<kbd>Enter</kbd> で確定、<kbd>Shift</kbd>+<kbd>Enter</kbd> か <kbd>Alt</kbd>+<kbd>Enter</kbd> で改行します。',
           'テキストと吹き出しの文字は全角12字で自動的に折り返します。テキストボックスは左右の白丸ハンドルで幅を変えられ、変えた後はその幅で折り返して高さだけが文字量に合わせて変わります。',
+          '吹き出しは、1つだけ選ぶと四角と同じく四隅と各辺の中央に白丸のハンドルが表示され、ドラッグで幅と高さを変えられます。幅を変えた後はその幅で折り返します。高さは文字が入る高さより小さくできません。大きさを変えても、尻尾の先は動きません。',
           '消しゴムで消えるのは描いた注釈だけです（スクリーンショット本体は残ります）。',
         ]],
         ['モードの切り替え', [
@@ -9958,6 +10612,7 @@
         ]],
         ['色と書式', [
           '色は「線色」「塗りつぶし」「文字色」の3つに分かれています。図形を選んでから変えると、その図形に反映されます（複数選んでいればまとめて）。',
+          '色パレットで「🎨 その他の色…」を押すと、Office と同じ「色の設定」画面が開きます。タブ「標準」では六角形の色見本から、タブ「ユーザー設定」では色の面・明るさのバー・数値（RGB・HSL・16 進）で色を決めます。「OK」を押すと、色パレットの色見本を押した時と同じように色が変わります。六角形をダブルクリックしても同じです。「OK」で決めた色は、色パレットの「最近使用した色」に、新しい順で 10 色まで表示されます。',
           '「線の太さ」も同じで、図形を選んでから動かすとその図形の線（テキストボックスの枠線・吹き出しの枠も）が太くなったり細くなったりします。',
           '線の太さと透過率は、スライダーの右の数値欄に直接入力もできます（<kbd>Enter</kbd> か欄の外クリックで確定）。',
           '四角・丸・多角形（閉じたもの）・テキストボックス・吹き出しは塗りつぶせます。「塗りつぶしなし」で透明に戻せます。',
@@ -9976,7 +10631,10 @@
           '直前の20操作までさかのぼれます。',
         ]],
         ['トリミングと表示', [
-          'トリミングは範囲を決めてから、もう一度「トリミング」ボタンを押すと適用されます（Office と同じ）。やめるときは「取消」か <kbd>Esc</kbd>、別のツールへの切り替えでも取り消せます。',
+          '「トリミング」ボタンを押すと、画像全体がトリミング範囲になります。画像の上をドラッグすると、押した所から離した所までの長方形が新しいトリミング範囲になります（範囲選択と同じ操作です）。',
+          '範囲を決めた後も、範囲の外側（暗い所）からドラッグすると範囲を描き直せます。範囲を動かすときは、範囲の青い線（境界線）の □ 以外の所をドラッグします。範囲の内側をドラッグしても、何も起きません。',
+          '範囲の四隅と各辺の中央にある □（境界アイコン）をドラッグすると、範囲の大きさを変えられます。',
+          '範囲を決めてから、もう一度「トリミング」ボタンを押すと適用されます（Office と同じ）。やめるときは「取消」か <kbd>Esc</kbd>、別のツールへの切り替えでも取り消せます。トリミング中に「元に戻す」「やり直す」を押した時も、トリミングを終えて「選択」に戻ります。',
           'ハンドで画像を動かせます。ホイールで拡大縮小（ハンド以外のツールは <kbd>Ctrl</kbd>＋ホイール）。',
           '表示倍率は編集中の見え方だけを変えるもので、保存される画像の仕上がりは変わりません。100% が手順の一覧で見える大きさです。開いたときとトリミングの後は、編集画面の枠いっぱい（フィット）で表示します。拡大縮小した後も「フィット」で枠いっぱいに戻せます。',
         ]],
@@ -10090,7 +10748,9 @@
       overlay.querySelector('.ie-save').addEventListener('click', async () => {
         commitCallout(); // 未確定の吹き出しを確定してから書き出す
         finishFreeformIfAny(); // 描きかけのフリーフォームも確定してから書き出す
-        exitCropMode();
+        // トリミング中なら終えて［選択］に戻る（保存に失敗して画像編集画面に残った時も、［トリミング］が
+        // 選ばれたまま残らないように。質問 Q6 の回答。v1.0.14・計画外）
+        if (tool === 'crop') selectTool('select');
         clearSelection();
         // 合成結果（crop オーバーレイ無し）を別 canvas に作って書き出す。
         // baseSrc を原寸で読んでいるため、合成 out も原寸解像度になる（3-B）。
@@ -10723,6 +11383,9 @@
         imageMime, fullImagePlan, makeFullImage, storeImagePair,
         showToast, notifySaveError, askJsonImportMode,
         STORAGE_KEY, MIGRATED_KEY,
+        // 「色の設定」画面（v1.0.14。docs/spec-color-dialog.md）
+        ocdOpen, ocdParseColor, ocdRgbToHsl, ocdHslToRgb, ocdRgbToHex, ocdStandardCells, rbOpenPalette, rbSelectionColor,
+        OP_RECENT_KEY, opRecentColors, opPushRecentColor,
         // 録画取り込みウィザードの純関数（2-R4）
         wizardDefaultChoice, wizardStepsFrom, wizardMergeUp, wizardBulkReplace,
         wizardShotFiles, buildImportSection, buildImportItems, clampInsertIndex, insertItemsAt,
@@ -10740,6 +11403,10 @@
         // 図形の回転（仕様 18章）
         canRotate, normalizeAngle, rotatePointAround, objRotationCenter,
         toLocalPoint, toWorldPoint, reanchorRotatedBox,
+        // トリミング範囲のドラッグと境界アイコン（仕様 25章）
+        cropIconRects, hitCropIcon, cropIsWhole, cropDragMode, cropDragRect, cropDragEndRect, cropCursor,
+        // 吹き出しの行組みと文字の位置（仕様 26章）
+        calloutLayout, calloutTextOffset,
         // PDF出力の倍率・用紙・向き
         clampPdfScale, pdfPaperDims, pdfPageStyleCss, pdfOutSettings, setPdfOutSettings,
         paginateBreaks, parsePdfPageRange, pdfPageRangeString,
